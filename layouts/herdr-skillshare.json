@@ -114,7 +114,7 @@
               "id": "skillshare-toggle",
               "type": "block",
               "content": {
-                "mod": "skillshare",
+                "mod": "skillshare-wsl",
                 "props": {
                   "role": "toggle"
                 }
@@ -206,7 +206,7 @@
                   "id": "skillshare",
                   "type": "block",
                   "content": {
-                    "mod": "skillshare"
+                    "mod": "skillshare-wsl"
                   }
                 }
               ]

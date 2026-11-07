@@ -48,6 +48,37 @@ cd "$top"
 echo "top $top"
 git status --porcelain=v1 --branch --untracked-files=all`;
 
+// skillshare-wsl: the CLI's list JSON has no descriptions, so read them from each skill's SKILL.md
+// and each agent's .md frontmatter: "@@descs" then "<kind>\t<rel>\t<description>" lines.
+const DESC_AWK = String.raw`function flush(){ if(file!="" && d!=""){ gsub(/[\t\r]/," ",d); r=substr(file,length(root)+2); sub(strip,"",r); print kind "\t" r "\t" d } }
+FNR==1{ flush(); file=FILENAME; n=0; d=""; grab=0 }
+/^---[ \t\r]*$/{ n++; next }
+n!=1{ next }
+grab{ if($0 ~ /^[ \t]+[^ \t]/){ l=$0; sub(/^[ \t]+/,"",l); sub(/\r$/,"",l); d=(d=="" ? l : d " " l); next } grab=0 }
+/^description:/{ v=$0; sub(/^description:[ \t]*/,"",v); sub(/\r$/,"",v); if(v=="" || v ~ /^[>|][-+]?$/){ grab=1; d="" } else d=v; next }
+END{ flush() }`;
+const DESCS = `st=$(skillshare status --json "$f" 2>/dev/null)
+src=$(printf '%s\\n' "$st" | sed -n 's/^ *"path": *"\\(.*\\)",*$/\\1/p' | head -n 1)
+asrc=$(printf '%s\\n' "$st" | sed -n 's/^ *"source": *"\\(.*\\)",*$/\\1/p' | head -n 1)
+printf '@@descs 0\\n'
+[ -n "$src" ] && [ -d "$src" ] && find "$src" -name SKILL.md -not -path '*/.git/*' -not -path '*/node_modules/*' -exec awk -v kind=skills -v root="$src" -v strip='/SKILL[.]md$' '${DESC_AWK}' {} +
+[ -n "$asrc" ] && [ -d "$asrc" ] && find "$asrc" -name '*.md' -not -path '*/.git/*' -exec awk -v kind=agents -v root="$asrc" -v strip='[.]md$' '${DESC_AWK}' {} +
+true`;
+
+// "<kind>\t<rel>\t<description>" lines to { "<kind>:<rel>": description }, YAML quotes removed.
+export function parseDescs(text) {
+  const out = {};
+  for (const line of String(text ?? "").split("\n")) {
+    const [kind, rel, ...rest] = line.split("\t");
+    let d = rest.join(" ").trim();
+    if (!kind || !rel || !d) continue;
+    if (/^".*"$/.test(d)) { try { d = JSON.parse(d); } catch { d = d.slice(1, -1); } }
+    else if (/^'.*'$/.test(d)) d = d.slice(1, -1).replace(/''/g, "'");
+    out[`${kind}:${rel}`] = d;
+  }
+  return out;
+}
+
 // sh -c SNAPSHOT <name> <dir> <-p|-g>: every read for one scope in one trip, each section headed
 // "@@<name> <seconds>" so a slow command shows.
 export const SNAPSHOT = `cd "$1" 2>/dev/null || cd; f=$2
@@ -56,7 +87,8 @@ run list list --all --json
 run diff diff --json
 run mcp mcp list --json
 run plugins plugin list --json
-run hooks hooks list --json`;
+run hooks hooks list --json
+${DESCS}`;
 
 // Sections of SNAPSHOT's output, parsed, plus how long each took.
 export function parseSnapshot(text) {
@@ -64,7 +96,7 @@ export function parseSnapshot(text) {
   for (const part of String(text ?? "").split(/^@@/m).slice(1)) {
     const nl = part.indexOf("\n");
     const [name, secs] = part.slice(0, nl).split(" ");
-    out[name] = parseJSON(part.slice(nl + 1));
+    out[name] = name === "descs" ? parseDescs(part.slice(nl + 1)) : parseJSON(part.slice(nl + 1));
     out.took[name] = Number(secs);
   }
   return out;
@@ -250,6 +282,7 @@ export function buildItems(scope, raw) {
       key: `${scope}:${kind}:${flat}`, kind, scope, name: flat, label: rel.split("/").pop(), rel,
       src: shortSource(check?.source ?? s.source) || (s.repoName ? `tracked repo ${s.repoName}` : rel.includes("/") ? rel : "local"),
       disabled: Boolean(s.disabled), version: check?.version ?? null, state: "ok", repo: s.repoName || null,
+      description: raw.descs?.[`${kind}:${rel}`] ?? null,
     };
     if (item.disabled) item.state = "off";
     else if (check?.status === "update_available" || repo?.status === "behind") {

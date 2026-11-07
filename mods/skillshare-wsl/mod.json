@@ -1,0 +1,9 @@
+{
+  "place": "none",
+  "title": "skillshare",
+  "focusable": true,
+  "cloned_from": {
+    "name": "skillshare",
+    "version": "0.1.13"
+  }
+}

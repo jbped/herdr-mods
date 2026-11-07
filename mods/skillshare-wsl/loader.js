@@ -23,7 +23,7 @@ export async function loadResources(io, on, project, network) {
   await Promise.all(scopesOf(project).map(async (scope) => {
     const r = await io.job([flag(scope)], { ...at(on, project, scope), script: SNAPSHOT });
     const snap = parseSnapshot(r.stdout);
-    raw[scope] = { list: snap.list, diff: snap.diff, mcp: snap.mcp, plugins: snap.plugins, hooks: snap.hooks, took: snap.took, error: Array.isArray(snap.list) ? null : failure(r, "skillshare list") };
+    raw[scope] = { list: snap.list, diff: snap.diff, mcp: snap.mcp, plugins: snap.plugins, hooks: snap.hooks, descs: snap.descs, took: snap.took, error: Array.isArray(snap.list) ? null : failure(r, "skillshare list") };
   }));
   const status = parseJSON((await statusRead).stdout);
   const git = status?.source?.path ? parseGitStatus((await io.sh(GIT_STATUS, [status.source.path, network ? "fetch" : ""], on)).stdout) : { repo: false };
