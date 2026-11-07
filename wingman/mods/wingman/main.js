@@ -73,7 +73,7 @@ export default class Review extends View {
     // Opened as a popup (reason or follow-up prompt): a small form, none of the pane's work.
     if (props()?.form) return this.initForm(cx);
     this.id = Math.random().toString(36).slice(2);
-    this.settings = { autoNote: true };
+    this.settings = { autoNote: true, autosave: true, autosaveDelay: 0 };
     loadSettings().then((st) => { this.settings = st; });
     // The pane takes the keyboard back after its popup closes.
     // Commands: "focus" when a popup over the pane closes; the rest come from the right-click menu.
@@ -81,7 +81,7 @@ export default class Review extends View {
       for (;;) {
         const c = String(await nextCommand()).replace(/^wingman\./, "");
         if (c === "focus") this.handle.focus();
-        else ({
+        else await ({
           prompt: () => this.askPrompt(this.current, cx),
           reject: () => this.decide("reject", cx),
           // Reject, then open the reason popup for that rejection right away.
@@ -90,6 +90,8 @@ export default class Review extends View {
           reason: () => this.askReason(cx),
           clear: () => this.clearSelection(cx),
           save: () => this.save(cx),
+          // The settings popup saved a change.
+          settings: async () => { this.settings = await loadSettings(); },
         })[c]?.();
         cx.notify();
       }
@@ -99,6 +101,7 @@ export default class Review extends View {
     this.reset([]);
     this.queue = Promise.resolve(); this.writing = 0;
     cx.timer.every(1000, (cx) => this.follow(cx));
+    cx.timer.every(250, (cx) => this.autosave(cx));
     cx.timer.every(500, (cx) => this.lead(cx));
     cx.timer.every(3000, (cx) => this.collectAll(cx));
     // Watch events would be the fast path, but they did not fire on Windows in testing,
@@ -126,6 +129,7 @@ export default class Review extends View {
       const sp = spaces().find((s) => s.active);
       const key = sp?.id ?? null;
       if (key !== this.spaceId) {
+        if (this.settings.autosave) this.saveAll(cx);
         if (this.spaceId) this.views.set(this.spaceId, this.snapshotView());
         this.spaceId = key;
         const saved = this.views.get(key);
@@ -548,7 +552,11 @@ export default class Review extends View {
   }
 
   pick(key, cx) {
-    if (key !== this.sel) { this.cur = this.anchor = null; this.hx = 0; }
+    if (key !== this.sel) {
+      const old = this.file();
+      if (old && this.settings.autosave && this.dirty(old) && !old.conflict) this.save(cx, old);
+      this.cur = this.anchor = null; this.hx = 0;
+    }
     this.sel = key; this.current = 0; this.top = 0; this.showTab(key); this.handle.focus(); this.reveal(); cx.notify();
   }
 
@@ -770,11 +778,27 @@ export default class Review extends View {
     openOverlay({ mod: "wingman", props: p, kind: "dialog", width: 560, height: p.quote ? 430 : 290 });
   }
 
-  toggleNotes(cx) {
-    this.settings = { ...this.settings, autoNote: !this.settings.autoNote };
-    saveSettings(this.settings).catch((e) => { this.error = String(e.message ?? e); });
-    cx.notify();
+  openSettings() {
+    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 440, height: 300 });
   }
+
+  /** Every 250 ms (Q46). Herdr has no blur event, so focus is polled: the pane losing the
+   *  keyboard, or the window losing focus, saves every file with unsaved edits. With a delay
+   *  set, a pause in typing that long saves too. */
+  autosave(cx) {
+    if (!this.handle || !this.settings.autosave) return;
+    let active = true;
+    try { active = window.is_window_active(); } catch {}
+    const focused = this.handle.is_focused() && active, lost = this.wasFocused && !focused;
+    this.wasFocused = focused;
+    const delay = this.settings.autosaveDelay, idle = delay > 0 && this.typedAt && Date.now() - this.typedAt >= delay * 1000;
+    if (lost || idle) this.saveAll(cx);
+  }
+
+  saveAll(cx) {
+    for (const f of this.files) if (this.dirty(f) && !f.conflict) this.save(cx, f);
+  }
+
 
   hunk(how, i, cx) {
     const f = this.file();
@@ -1071,6 +1095,11 @@ export default class Review extends View {
   initForm(cx) {
     this.form = props();
     if (this.form.form === "menu") return; // the right-click menu has no input
+    if (this.form.form === "settings") {
+      this.formHandle = cx.focus_handle(); this.formHandle.focus();
+      cx.spawn(async (cx) => { this.st = await loadSettings(); cx.notify(); });
+      return;
+    }
     this.text = "";
     // A text area: Enter adds a line, Ctrl+Enter sends (also caught on the form, in case the
     // text area doesn't report it as a submit).
@@ -1170,6 +1199,41 @@ export default class Review extends View {
     cx.notify();
   }
 
+  // ---- settings popup (Q47) ---------------------------------------------------
+
+  /** Saves one setting; the pane copy rereads them through wingman.settings. */
+  setSetting(patch, cx) {
+    this.st = { ...this.st, ...patch };
+    const next = this.st;
+    cx.notify();
+    cx.spawn(async () => {
+      try { await saveSettings(next); run("wingman.settings"); } catch (e) { log(`settings: ${e.message ?? e}`); }
+    });
+  }
+
+  renderSettings() {
+    const t = theme(), st = this.st, { overlay } = this.form;
+    const toggle = (id, label, hint, on, flip) => h_flex().id(id).gap(10).py(6).items_center().cursor_pointer()
+      .on_click((_e, cx) => flip(cx))
+      .child(div().w(34).h(18).flex_none().rounded(9).p(2).bg(on ? t.accent : t.raised)
+        .child(div().size(14).rounded(7).bg(t.foreground).when(on, (e) => e.ml(16))))
+      .child(v_flex().child(div().text_size(13).child(label)).child(div().text_size(11).text_color(t.dim).child(hint)));
+    return v_flex().id("wingman-settings").track_focus(this.formHandle)
+      .on_key_down((e, cx) => { if (e.key === "escape") { closeOverlay(overlay); cx.stop_propagation(); } })
+      .size_full().p(18).gap(10).bg(t.popover).text_color(t.foreground)
+      .child(h_flex().items_center().child(div().flex_1().text_size(15).font_semibold().child("Settings")).child(div().text_size(11).text_color(t.dim).child("Esc")))
+      .when(!st, (e) => e.child(div().text_size(12).text_color(t.dim).child("Loading…")))
+      .when(!!st, (e) => e
+        .child(toggle("set-note", "Auto note on rejections", "Tell the agent which of its changes you rejected.", st.autoNote, (cx) => this.setSetting({ autoNote: !st.autoNote }, cx)))
+        .child(toggle("set-autosave", "Autosave", "Save when Wingman loses focus, and when you switch files or spaces.", st.autosave, (cx) => this.setSetting({ autosave: !st.autosave }, cx)))
+        .child(v_flex().gap(6).when(!st.autosave, (e) => e.opacity(0.4))
+          .child(div().text_size(12).text_color(t.muted).child("Also save after typing stops for"))
+          .child(h_flex().gap(4).children([0, 1, 2, 3, 5, 10].map((n) => div().id(`delay-${n}`).h(24).px(10).flex().items_center().rounded(5).text_size(12).cursor_pointer()
+            .bg(st.autosaveDelay === n ? t.accent + "77" : t.raised).hover((s) => s.opacity(0.85))
+            .on_click((_e, cx) => { if (st.autosave) this.setSetting({ autosaveDelay: n }, cx); })
+            .child(n ? `${n}s` : "Off"))))));
+  }
+
   renderMenu() {
     const t = theme(), { items, overlay } = this.form;
     return v_flex().id("review-menu").size_full().p(6).gap(2).bg(t.popover).text_color(t.foreground).text_size(12.5)
@@ -1225,6 +1289,7 @@ export default class Review extends View {
 
   render() {
     if (this.form?.form === "menu") return this.renderMenu();
+    if (this.form?.form === "settings") return this.renderSettings();
     if (this.form) return this.renderForm();
     const t = theme(), f = this.file(), vis = this.visible(), total = vis.reduce((n, x) => n + x.hunks.length, 0);
     const tag = (x) => x.created ? "new" : x.Ctext === null ? "deleted" : `${x.hunks.length}`;
@@ -1237,7 +1302,7 @@ export default class Review extends View {
         .child(div().text_size(11).text_color(t.muted).truncate().child(`${this.stores.map((st) => base(st.root)).join(", ")} · ${total} change${total === 1 ? "" : "s"} in ${vis.length} file${vis.length === 1 ? "" : "s"} · ${this.history.length} undoable${this.writing ? " · saving…" : ""}${agents().some((a) => a.space === this.spaceId && ACTIVE.has(a.status)) ? " · agent working" : ""}`))
         .child(div().flex_1())
         .when(!!this.lastReject, (e) => e.child(this.button("reason", "Comment last rejection  ctrl-r", t.raised, (cx) => this.askReason(cx))))
-        .child(this.button("notes", `Auto note: ${this.settings.autoNote ? "on" : "off"}`, t.raised, (cx) => this.toggleNotes(cx)))
+        .child(this.button("settings", "⚙ Settings", t.raised, () => this.openSettings()))
         .when(total > 0, (e) => e
           .child(this.button("reject-all", "Reject all files", t.ansi1 + "55", (cx) => this.everything("reject", cx)))
           .child(this.button("accept-all", "Accept all files", t.ansi2 + "55", (cx) => this.everything("accept", cx)))))

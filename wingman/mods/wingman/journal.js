@@ -169,7 +169,8 @@ export async function drainOutbox(busy, send, log) {
 const SETTINGS = () => `${reviewDir()}/settings.json`;
 export async function loadSettings() {
   const t = await readTextFile(SETTINGS());
-  return { autoNote: true, ...(t ? JSON.parse(t) : {}) };
+  // autosave: save on focus loss and file switch; autosaveDelay: also after typing stops (s, 0 = off).
+  return { autoNote: true, autosave: true, autosaveDelay: 0, ...(t ? JSON.parse(t) : {}) };
 }
 export async function saveSettings(next) {
   await writeTextFile(SETTINGS(), JSON.stringify(next, null, 2) + "\n", await readTextFile(SETTINGS()));
