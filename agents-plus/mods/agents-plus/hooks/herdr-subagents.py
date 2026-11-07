@@ -140,6 +140,16 @@ def main():
                 "started": int(time.time() * 1000),
             },
         )
+    elif event == "PostToolUse":
+        # The final report ends the subagent, even with background work still running
+        # (an orphaned Monitor would otherwise keep it "waiting" forever). A later
+        # resume makes a new row through SubagentStart.
+        agent_id = payload.get("agent_id")
+        if payload.get("tool_name") == "SubagentHandback" and agent_id:
+            try:
+                os.remove(os.path.join(STATE_DIR, f"{term}__{safe(agent_id)}.json"))
+            except OSError:
+                pass
     elif event == "SubagentStop":
         agent_id = payload.get("agent_id")
         if not agent_id:
