@@ -69,9 +69,13 @@ export class Capture {
     for (const { status, path } of changes) {
       if (index.files[path]) continue;
       const created = status === "A";
+      // Binary files (a NUL byte, as git decides) aren't reviewed, before or after the change.
+      const blob = (tree) => exec("git", ["cat-file", "blob", `${tree}:${path}`], { cwd: this.store.root });
+      const after = status === "D" ? null : await blob(now);
+      if (after && (after.code !== 0 || after.stdout.includes("\0"))) continue;
       let text = "";
       if (!created) {
-        const r = await exec("git", ["cat-file", "blob", `${base}:${path}`], { cwd: this.store.root });
+        const r = await blob(base);
         if (r.code !== 0 || r.stdout.includes("\0")) continue; // unreadable or binary: not reviewed
         text = r.stdout;
         // With autocrlf the stored blob is LF even when the file on disk was CRLF. Git's own

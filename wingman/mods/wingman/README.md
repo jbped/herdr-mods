@@ -72,7 +72,7 @@ The diff is also an editor. Click in the text to place the cursor and type. Your
 | Edit | type, `backspace` / `delete` (with `ctrl` by word), `enter` keeps the indent, `tab` / `shift-tab` indent and outdent |
 | Copy, cut, paste | `ctrl-c` / `ctrl-x` / `ctrl-v` (without a selection: the whole line) |
 | Save | `ctrl-s` |
-| Undo / redo | `ctrl-z` / `ctrl-shift-z` (one history with accept and reject; redo is for edits) |
+| Undo / redo | `ctrl-z` / `ctrl-shift-y` (one history with accept and reject; redo is for edits) |
 | Scroll sideways | Shift+wheel |
 
 Comment, Accept and Reject act on the lines a text selection covers. Clicking the line numbers still selects whole lines. Not supported: input methods that compose characters (Chinese, Japanese, Korean), and wide characters or emoji, which put the cursor in the wrong column.

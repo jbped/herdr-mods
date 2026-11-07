@@ -1045,7 +1045,7 @@ export default class Review extends View {
     if (this.cur && this.editable(f) && this.editKey(e, f, cx)) { cx.stop_propagation(); return; }
     const act = {
       "ctrl-s": () => this.save(cx),
-      "ctrl-shift-z": () => this.redoEdit(cx),
+      "ctrl-shift-y": () => this.redoEdit(cx), // ctrl-shift-z is Herdr's pane.zoom
       "ctrl-y": () => this.decide("accept", cx),
       "ctrl-n": () => this.decide("reject", cx),
       "ctrl-shift-enter": () => this.wholeFile("accept", cx),
@@ -1229,6 +1229,7 @@ export default class Review extends View {
     const t = theme(), f = this.file(), vis = this.visible(), total = vis.reduce((n, x) => n + x.hunks.length, 0);
     const tag = (x) => x.created ? "new" : x.Ctext === null ? "deleted" : `${x.hunks.length}`;
     const rows = f ? this.rowsOf(f) : [], sel = f ? this.selection(f) : null, lsel = f ? this.lineSel(f) : null;
+    const picked = this.files.find((x) => x.key === this.sel); // an error tab shows its error
     return v_flex().id("review").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .child(h_flex().h(40).flex_none().px(12).gap(10).items_center().border_b(1).border_color(t.border)
@@ -1262,7 +1263,7 @@ export default class Review extends View {
         .child(this.button("reload", "Reload (drop my edits)", t.raised, (cx) => this.resolve("reload", cx)))
         .child(this.button("overwrite", "Overwrite with mine", t.ansi1 + "55", (cx) => this.resolve("overwrite", cx)))))
       .when(!!(this.error || this.status || !f), (e) => e.child(div().px(12).py(6).text_size(12)
-        .text_color(this.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? "No changes to review")))
+        .text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : "No changes to review"))))
       .when(!!f, (e) => e.child(div().id("review-diff").flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(12)
         .on_size_change((size, cx) => { this.viewH = size.height; this.viewW = size.width; cx.notify(); })
         // One character's width in the diff font, for cursor columns (the font is monospace).
