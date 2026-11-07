@@ -1580,7 +1580,7 @@ Prism.languages.insertBefore('scss', 'function', {
 
 Prism.languages.scss['atrule'].inside.rest = Prism.languages.scss;
 
-// ---- review mod additions (not from Prism)
+// ---- Wingman mod additions (not from Prism)
 // prism-javascript wires <script> into markup only if markup loaded first; here it loads after.
 Prism.languages.markup.tag.addInlined("script", "javascript");
 // Vue and Angular templates: HTML plus {{ expression }} interpolation, framework attributes

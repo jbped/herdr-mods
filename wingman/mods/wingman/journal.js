@@ -1,5 +1,5 @@
-// Claude hook events -> review stores. The hook (hooks/review-hook.sh) saves each
-// Edit/Write as data/review/events/<ns>-<terminal>-<pid>.json. Each edited file goes to
+// Claude hook events -> review stores. The hook (hooks/wingman-hook.sh) saves each
+// Edit/Write as data/wingman/events/<ns>-<terminal>-<pid>.json. Each edited file goes to
 // the store of the repo it lives in, so one space's review can span several repos.
 // The first edit of a file sets its baseline from Claude's own `originalFile`, which is
 // exactly what was on disk before the edit. Files outside any git repo are skipped.
@@ -8,7 +8,7 @@ import { readTextFile, writeTextFile, appHome, terminals } from "herdr";
 import { Store, ensureDir } from "./store.js";
 import { hostPath } from "./capture.js";
 
-export const reviewDir = () => `${appHome()}/data/review`;
+export const reviewDir = () => `${appHome()}/data/wingman`;
 const SPACES = () => `${reviewDir()}/spaces.json`;
 
 /** Repos each space's agents have edited: { "<space id>": ["C:/dev/a", ...] }. */

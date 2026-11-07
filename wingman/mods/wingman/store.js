@@ -1,4 +1,4 @@
-// Review store on disk: <git-dir>/claude-review/{index.json, baselines/*}.
+// Review store on disk: <git-dir>/wingman/{index.json, baselines/*}.
 // Every write is compare-and-swap (writeTextFile's `expected`), so a file that
 // changed since it was read is never overwritten; the action fails instead.
 import { exec, readTextFile, writeTextFile } from "herdr";
@@ -42,7 +42,7 @@ export class Store {
   }
 
   constructor(root, gitDir) {
-    this.root = root; this.gitDir = gitDir; this.dir = `${gitDir}/claude-review`;
+    this.root = root; this.gitDir = gitDir; this.dir = `${gitDir}/wingman`;
   }
 
   /**

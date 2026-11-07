@@ -17,9 +17,9 @@ Needs the skillshare CLI installed in WSL (`~/.local/bin/skillshare`) and set up
 
 Based on runkids/skillshare's `herdr/skillshare` (MIT, see `skillshare-wsl/LICENSE`).
 
-## review
+## wingman
 
-A Cursor-style review pane for coding agents' changes: whole-file diffs with Accept and Reject per change, per file or for everything, undo, rejection notes and comments sent to the agent, syntax highlighting, and editing in the diff. Captures any agent's changes, and every edit Claude Code makes through its hooks. See [`review/mods/review/README.md`](review/mods/review/README.md) for install (it adds Claude Code hooks and, on Windows, two user environment variables) and keys.
+A Cursor-style review pane for coding agents' changes: whole-file diffs with Accept and Reject per change, per file or for everything, undo, rejection notes and comments sent to the agent, syntax highlighting, and editing in the diff. Captures any agent's changes, and every edit Claude Code makes through its hooks. See [`wingman/mods/wingman/README.md`](wingman/mods/wingman/README.md) for install (it adds Claude Code hooks and, on Windows, two user environment variables) and keys.
 
 ## agents-plus
 

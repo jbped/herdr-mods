@@ -24,7 +24,7 @@ export class Capture {
 
   /** Tree id of the working tree right now (index copy + add -A + write-tree). */
   async snapshot() {
-    const { gitDir, root } = this.store, dir = `${appHome()}/mods/review`;
+    const { gitDir, root } = this.store, dir = `${appHome()}/mods/wingman`;
     const r = isWindows(root)
       ? await exec("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", `${dir}/snapshot.ps1`, gitDir, root])
       : await exec("sh", [`${dir}/snapshot.sh`, gitDir, root]);

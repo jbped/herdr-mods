@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code hook for the Herdr review mod. Installed by install.sh; does nothing
+# Claude Code hook for the Herdr Wingman mod. Installed by install.sh; does nothing
 # outside a Herdr terminal or when the mod's data folder is missing.
 #
 #   post   (PostToolUse on Edit|Write|MultiEdit|NotebookEdit): saves the hook input as
@@ -10,7 +10,7 @@
 # additionalContext. The mod writes it as a ready JSON string in feedback/<terminal>.ctx.
 # POSIX sh only: no jq, Python or Node.
 event="${1:-}"
-dir="${HERDR_REVIEW_DIR:-$HOME/.config/herdr-app/data/review}"
+dir="${HERDR_WINGMAN_DIR:-$HOME/.config/herdr-app/data/wingman}"
 if [ -z "${HC_TERMINAL_ID:-}" ] || [ ! -d "$dir" ]; then cat >/dev/null; exit 0; fi
 
 if [ "$event" = post ]; then

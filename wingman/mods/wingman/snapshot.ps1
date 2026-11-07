@@ -4,7 +4,7 @@
 # Usage: snapshot.ps1 <git-dir> <work-tree>
 param([string]$GitDir, [string]$WorkTree)
 $ErrorActionPreference = "Stop"
-$store = Join-Path $GitDir "claude-review"
+$store = Join-Path $GitDir "wingman"
 New-Item -ItemType Directory -Force -Path (Join-Path $store "baselines") | Out-Null
 $tmp = Join-Path $store "snap.index"
 $real = Join-Path $GitDir "index"

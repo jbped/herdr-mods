@@ -1,8 +1,8 @@
-// Review: Cursor-style whole-file diffs of an agent's changes, with per-hunk
+// Wingman: Cursor-style whole-file diffs of an agent's changes, with per-hunk
 // Accept/Reject that write to disk and undo. A space's review covers every repo its
 // agents touched: the repo its agents started in (capture.js, any agent) and every
 // repo Claude edited (journal.js, from the Claude hook). Each repo keeps its own store
-// in <git-dir>/claude-review.
+// in <git-dir>/wingman.
 //
 // Actions update the in-memory file state and redraw at once; disk writes run
 // after, in order, on a queue. Every write is compare-and-swap, so a failure
@@ -31,13 +31,13 @@ function agentPath(path, terminal) {
 }
 
 // Outside mods/: any write under a mod folder (even a hidden file) hot-reloads every copy.
-const LEADER_FILE = () => `${appHome()}/data/review-leader.json`;
+const LEADER_FILE = () => `${appHome()}/data/wingman-leader.json`;
 const LEASE_MS = 5000;
 
 /** Capture runs in whichever copy leads, often a hidden one, so it logs to a file (in order). */
 let logQueue = Promise.resolve();
 function log(msg) {
-  const path = `${appHome()}/data/review-capture.log`, line = `${new Date().toISOString()} ${msg}\n`;
+  const path = `${appHome()}/data/wingman-capture.log`, line = `${new Date().toISOString()} ${msg}\n`;
   logQueue = logQueue.then(async () => {
     const old = await readTextFile(path);
     await writeTextFile(path, ((old ?? "").length > 20000 ? old.slice(-10000) : old ?? "") + line, old);
@@ -50,9 +50,9 @@ function agentFolders(space) {
     ?? terminals().find((t) => t.address === a.address)?.cwd)).filter(Boolean);
 }
 
-/** Spaces that hold a review pane. */
+/** Spaces that hold a Wingman pane. */
 function reviewSpaces() {
-  const tabs = new Set(panes().filter((p) => p.mod === "review").map((p) => p.tab));
+  const tabs = new Set(panes().filter((p) => p.mod === "wingman").map((p) => p.tab));
   return spaces().filter((s) => s.tabs.some((t) => tabs.has(t.id)));
 }
 
@@ -65,10 +65,10 @@ async function openFirst(folders) {
 export default class Review extends View {
   // A pane copy can't tell which pane it is (mod panes get no props, and every copy
   // restarts together on reload), so copies don't depend on it:
-  // - Display: a review pane is only visible while its space is active, so every copy
+  // - Display: a Wingman pane is only visible while its space is active, so every copy
   //   shows the active space's review, and keeps each space's state for when it returns.
   // - Capture: one copy holds a lease (.leader.json) and captures for every space that
-  //   has a review pane, so the work never runs twice.
+  //   has a Wingman pane, so the work never runs twice.
   init(_props, cx) {
     // Opened as a popup (reason or follow-up prompt): a small form, none of the pane's work.
     if (props()?.form) return this.initForm(cx);
@@ -79,7 +79,7 @@ export default class Review extends View {
     // Commands: "focus" when a popup over the pane closes; the rest come from the right-click menu.
     cx.spawn(async (cx) => {
       for (;;) {
-        const c = String(await nextCommand()).replace(/^review\./, "");
+        const c = String(await nextCommand()).replace(/^wingman\./, "");
         if (c === "focus") this.handle.focus();
         else ({
           prompt: () => this.askPrompt(this.current, cx),
@@ -767,7 +767,7 @@ export default class Review extends View {
   }
 
   openForm(p) {
-    openOverlay({ mod: "review", props: p, kind: "dialog", width: 560, height: p.quote ? 430 : 290 });
+    openOverlay({ mod: "wingman", props: p, kind: "dialog", width: 560, height: p.quote ? 430 : 290 });
   }
 
   toggleNotes(cx) {
@@ -1166,7 +1166,7 @@ export default class Review extends View {
       ...(this.lastReject ? [{ cmd: "reason", label: "Comment last rejection", key: "ctrl-r" }] : []),
       ...(hasSel ? [{ cmd: "clear", label: "Clear selection", key: "Esc" }] : []),
     ];
-    openOverlay({ mod: "review", props: { form: "menu", items }, kind: "popup", at: "pointer", width: 260, height: items.length * 30 + 12 });
+    openOverlay({ mod: "wingman", props: { form: "menu", items }, kind: "popup", at: "pointer", width: 260, height: items.length * 30 + 12 });
     cx.notify();
   }
 
@@ -1175,8 +1175,8 @@ export default class Review extends View {
     return v_flex().id("review-menu").size_full().p(6).gap(2).bg(t.popover).text_color(t.foreground).text_size(12.5)
       .children(items.map((it) => h_flex().id(`m-${it.cmd}`).h(28).flex_none().px(10).items_center().rounded(6).cursor_pointer()
         .hover((s) => s.bg(t.hover))
-        // The menu is its own copy of the mod; the pane does the work, reached as review.<cmd>.
-        .on_click(() => { closeOverlay(overlay); run(`review.${it.cmd}`); })
+        // The menu is its own copy of the mod; the pane does the work, reached as wingman.<cmd>.
+        .on_click(() => { closeOverlay(overlay); run(`wingman.${it.cmd}`); })
         .child(div().flex_1().child(it.label)).child(div().text_size(11).text_color(t.dim).child(it.key))));
   }
 
@@ -1232,7 +1232,7 @@ export default class Review extends View {
     return v_flex().id("review").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .child(h_flex().h(40).flex_none().px(12).gap(10).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().child("Review"))
+        .child(div().font_semibold().child("Wingman"))
         .child(div().text_size(11).text_color(t.muted).truncate().child(`${this.stores.map((st) => base(st.root)).join(", ")} · ${total} change${total === 1 ? "" : "s"} in ${vis.length} file${vis.length === 1 ? "" : "s"} · ${this.history.length} undoable${this.writing ? " · saving…" : ""}${agents().some((a) => a.space === this.spaceId && ACTIVE.has(a.status)) ? " · agent working" : ""}`))
         .child(div().flex_1())
         .when(!!this.lastReject, (e) => e.child(this.button("reason", "Comment last rejection  ctrl-r", t.raised, (cx) => this.askReason(cx))))

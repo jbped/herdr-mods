@@ -1,32 +1,32 @@
-# Review
+# Wingman
 
 A Herdr pane that shows the code changes coding agents make, Cursor-style: whole-file diffs with Accept and Reject on every change, per file, or for everything. Changes stay live on disk while you review. Accept keeps them. Reject restores the original lines. Ctrl+Z undoes either.
 
 ## How changes are found
 
 - **Any agent.** When an agent in a space starts working, the mod snapshots the repo the agent started in (`snapshot.ps1` / `snapshot.sh`). Files that change while it works become reviewable. Your real git index, stash and branch are never touched.
-- **Claude Code**, through its hooks (`hooks/review-hook.sh`). Every Edit/Write is reported with the file's exact content before the edit, so the review covers every repo Claude edits, not just the one it started in.
+- **Claude Code**, through its hooks (`hooks/wingman-hook.sh`). Every Edit/Write is reported with the file's exact content before the edit, so the review covers every repo Claude edits, not just the one it started in.
 
 When you reject a change, the agent that made it gets a short factual note on its next tool call or prompt: what was rejected and that the original lines are back. This keeps its picture of the file right. Turn it off with the header's **Auto note** toggle. **Comment last rejection** (`ctrl-r`) sends your own comment with it. **Comment** (`ctrl-p`) sends an instruction about a change or the selected lines, such as "refactor this into a helper". It's typed into the agent's terminal as your message, waiting until the agent isn't mid-turn.
 
 Syntax highlighting (Prism 1.30, MIT, vendored in `prism.js` and `grammars.js`) covers JavaScript, TypeScript (`.ts .mts .cts .d.ts`), React (`.jsx .tsx`, and JSX in `.js`), Vue (`.vue`), Angular (`.ts` and `.html` templates with `{{ }}`), HTML, C#, JSON, Markdown, Dockerfiles, YAML (including `docker-compose.yml`) and `.env` files. CSS (`.css`) and SCSS (`.scss`) are covered too. In HTML and Vue files, `<script>` blocks use the grammar their `lang` names and `<style>` blocks use CSS or SCSS. Vue and Angular template syntax is recognized: `v-if`, `v-for`, `:prop`, `@event`, `#slot`, `[prop]`, `(event)`, `[(ngModel)]`, `*ngFor`, `#ref`, `@if`/`@for`/`@switch`/`@defer` blocks and `{{ }}`, with the expressions inside highlighted as JavaScript. Other files show as plain text.
 
-Each repo's review lives in `<git-dir>/claude-review/`. Git never tracks or pushes that folder. Files outside any git repo are not reviewed.
+Each repo's review lives in `<git-dir>/wingman/`. Git never tracks or pushes that folder. Files outside any git repo are not reviewed.
 
 ## Install
 
-Copy this folder to `~/.config/herdr-app/mods/review/`, then run the installer once.
+Copy this folder to `~/.config/herdr-app/mods/wingman/`, then run the installer once.
 
 **Windows** (PowerShell):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.config\herdr-app\mods\review\install\install.ps1" install
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.config\herdr-app\mods\wingman\install\install.ps1" install
 ```
 
 This makes three changes:
 
-1. Sets the user variable `HERDR_REVIEW_DIR` to `%USERPROFILE%\.config\herdr-app\data\review`, where the hook saves edit events.
-2. Adds `HC_TERMINAL_ID:HERDR_REVIEW_DIR/p` to the user variable `WSLENV`, keeping existing entries. This lets a Claude running in WSL tell which Herdr terminal it is in, and see the folder as `/mnt/c/...`.
+1. Sets the user variable `HERDR_WINGMAN_DIR` to `%USERPROFILE%\.config\herdr-app\data\wingman`, where the hook saves edit events.
+2. Adds `HC_TERMINAL_ID:HERDR_WINGMAN_DIR/p` to the user variable `WSLENV`, keeping existing entries. This lets a Claude running in WSL tell which Herdr terminal it is in, and see the folder as `/mnt/c/...`.
 3. Runs `install.sh` inside WSL, which adds the hooks to WSL's `~/.claude/settings.json`.
 
 Restart Herdr afterwards. Terminals started before the restart don't get the new variables.
@@ -34,20 +34,20 @@ Restart Herdr afterwards. Terminals started before the restart don't get the new
 **macOS / Linux**:
 
 ```sh
-sh ~/.config/herdr-app/mods/review/install/install.sh install
+sh ~/.config/herdr-app/mods/wingman/install/install.sh install
 ```
 
-This adds the hooks to `~/.claude/settings.json` and creates `~/.config/herdr-app/data/review`. No environment setup is needed.
+This adds the hooks to `~/.claude/settings.json` and creates `~/.config/herdr-app/data/wingman`. No environment setup is needed.
 
-The installer keeps your other hooks and writes `settings.json.bak-herdr-review` first. Running it again changes nothing. It needs `python3` to edit the JSON. The hook itself is plain `sh`.
+The installer keeps your other hooks and writes `settings.json.bak-herdr-wingman` first. Running it again changes nothing. It needs `python3` to edit the JSON. The hook itself is plain `sh`.
 
 ## Uninstall
 
-Run the same installer with `uninstall`. It removes only what install added: its hook entries, `HERDR_REVIEW_DIR`, and its two `WSLENV` entries. Then delete this folder. To clear review data, delete `~/.config/herdr-app/data/review*` and any repo's `.git/claude-review/`.
+Run the same installer with `uninstall`. It removes only what install added: its hook entries, `HERDR_WINGMAN_DIR`, and its two `WSLENV` entries. Then delete this folder. To clear review data, delete `~/.config/herdr-app/data/wingman*` and any repo's `.git/wingman/`.
 
 ## Use
 
-Open a review pane beside an agent: run `pane.split` with `{"direction": "right", "mod": "review"}`, for example from the palette or a key in `keys.json`. Each pane shows the review for the space it's in.
+Open a Wingman pane beside an agent: run `pane.split` with `{"direction": "right", "mod": "wingman"}`, for example from the palette or a key in `keys.json`. Each pane shows the review for the space it's in.
 
 | Action | Key |
 |---|---|
@@ -81,6 +81,6 @@ Comment, Accept and Reject act on the lines a text selection covers. Clicking th
 
 | Where | What |
 |---|---|
-| `<git-dir>/claude-review/` | `index.json`, `baselines/`, `capture.json`, `snap.index` (per repo) |
-| `~/.config/herdr-app/data/review/` | `events/` (from the hook, removed once read), `feedback/` (notes for Claude), `outbox/` (comments waiting for an idle agent), `spaces.json`, `settings.json` |
-| `~/.config/herdr-app/data/review-leader.json`, `review-capture.log` | which pane copy runs capture, and its log |
+| `<git-dir>/wingman/` | `index.json`, `baselines/`, `capture.json`, `snap.index` (per repo) |
+| `~/.config/herdr-app/data/wingman/` | `events/` (from the hook, removed once read), `feedback/` (notes for Claude), `outbox/` (comments waiting for an idle agent), `spaces.json`, `settings.json` |
+| `~/.config/herdr-app/data/wingman-leader.json`, `wingman-capture.log` | which pane copy runs capture, and its log |

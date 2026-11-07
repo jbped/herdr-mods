@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs or removes the review mod's Claude Code hooks in ~/.claude/settings.json.
+# Installs or removes the Wingman mod's Claude Code hooks in ~/.claude/settings.json.
 # Run it where Claude Code runs: macOS, Linux, or WSL (install.ps1 calls it for WSL).
 #   sh install.sh install     add the hooks (existing hooks are kept; a backup is written)
 #   sh install.sh uninstall   remove only the hooks this script added
@@ -7,19 +7,19 @@
 set -eu
 action="${1:-install}"
 here="$(cd "$(dirname "$0")" && pwd)"
-hook="$(cd "$here/.." && pwd)/hooks/review-hook.sh"
+hook="$(cd "$here/.." && pwd)/hooks/wingman-hook.sh"
 settings="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-data="${HERDR_REVIEW_DIR:-$HOME/.config/herdr-app/data/review}"
+data="${HERDR_WINGMAN_DIR:-$HOME/.config/herdr-app/data/wingman}"
 
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required to edit $settings" >&2; exit 1; }
 [ "$action" = install ] && mkdir -p "$data"
 mkdir -p "$(dirname "$settings")"
-[ -f "$settings" ] && cp "$settings" "$settings.bak-herdr-review"
+[ -f "$settings" ] && cp "$settings" "$settings.bak-herdr-wingman"
 
 ACTION="$action" HOOK="$hook" SETTINGS="$settings" python3 - <<'PY'
 import json, os
 action, hook, path = os.environ["ACTION"], os.environ["HOOK"], os.environ["SETTINGS"]
-MARK = "herdr-review-hook"  # every command this script adds contains it
+MARK = "herdr-wingman-hook"  # every command this script adds contains it
 try:
     with open(path, encoding="utf-8") as f:
         settings = json.load(f)
@@ -47,5 +47,5 @@ with open(path + ".tmp", "w", encoding="utf-8") as f:
     json.dump(settings, f, indent=2)
     f.write("\n")
 os.replace(path + ".tmp", path)
-print(f"{action}ed review hooks in {path}")
+print(f"{action}ed Wingman hooks in {path}")
 PY
