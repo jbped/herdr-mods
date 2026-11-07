@@ -1,6 +1,6 @@
-# Herdr + skillshare
+# Herdr + skillshare (WSL)
 
-Herdr's default window with a skillshare button in the tab bar and a skillshare panel beside the work area. The panel shows what the focused space's project and your global skillshare source hold: which skills, agents, MCP servers, plugins and hooks need an update or a sync. From the panel you can update, sync, install from a URL, uninstall, ask the focused agent to audit something, and sync the source repository both ways.
+Herdr's default window with a skillshare button in the tab bar and a skillshare panel beside the work area. The panel shows what the focused space's project and your global skillshare source hold: which skills, agents, MCP servers, plugins and hooks need an update or a sync. From the panel you can update, sync, install from a URL, uninstall, ask the focused agent to audit something, and sync the source repository both ways. When Herdr runs on Windows, the panel works on the skillshare installed in WSL, where the agents run. Opened skill and agent rows show the skill's description.
 
 ![Herdr + skillshare](preview.png)
 
@@ -23,6 +23,7 @@ Left to right, everything as in Herdr's `main` layout, plus two blocks:
       - "Needs sync · n" in `blocked`, with Sync, or Sync project / Sync global when only one scope needs it;
       - "In sync · n" in `muted`, with a quiet Show disabled · n / Hide disabled · n toggle when the list has disabled rows. Disabled rows are hidden by default and the choice is kept in `shared`; disabled hooks with pending changes stay listed. For skills and agents it also has a List · By source switch, By source by default and kept in `shared`: rows sharing a repository (a tracked repo, or host/owner/repo of the source URL, with github.com left out) or the local source fold under a collapsed row with a chevron, a `git` or `folder` icon, the source and a count. Their rows are indented 16px; a source with one row stays a plain row. A filter opens every group.
     - Each row is 48px: a dot (filled `accent`, `blocked` or `ansi2`; hollow `ansi1` when never synced or `muted` when disabled), the name, one line of detail (hook rows name their agents or planned changes), and a chevron. A row opens in place on `raised`.
+    - Skill and agent rows expand to show the `description` from the skill's `SKILL.md` or the agent's `.md` frontmatter first (quotes removed, `>` and `|` blocks joined into one line), then the path when it differs from the name.
     - Hook rows expand to show agents, description, full root, planned changes and inactive reasons. Nested rows also show their full root before the status line; inactive rows use a warning dot even when native files are in sync. Nested-root and cleanup-only rows are read-only.
     - Hook notices appear once above the counted groups, follow the same filters, and show unnamed changes, plan warnings and preview failures even with zero entries. Unnamed native writes offer “Native hook files need sync”; warnings and conflicts are not pending native writes. If preview fails, named rows remain above the groups with “sync status unknown”, alongside the single scope error notice. Disabled rows retain their disabled label with diagnostics; pending summaries omit unchanged targets, which remain in details.
   - Machines: one card per Herdr machine, with its version, its source repository state, doctor errors and warnings when there are any, a Pull and sync button, and "Update to …" when a newer skillshare exists.
@@ -32,7 +33,7 @@ Left to right, everything as in Herdr's `main` layout, plus two blocks:
 
 ## How it behaves
 
-- The panel follows the space the window shows. It runs the CLI on that space's machine, in the focused terminal's folder or the space's folder. A folder with `.skillshare/config.yaml` or `skillshare/config.yaml` is a project. It refreshes every 20 s while shown and runs `skillshare check` every 10 minutes. It does no work while hidden.
+- The panel follows the space the window shows. It runs the CLI on that space's machine, in the focused terminal's folder or the space's folder. When Herdr runs on Windows and the space is on this computer, it runs the CLI in WSL instead, and shows the folder name from a Windows path such as `C:\Users\you\repo`. A folder with `.skillshare/config.yaml` or `skillshare/config.yaml` is a project. It refreshes every 20 s while shown and runs `skillshare check` every 10 minutes. It does no work while hidden.
 - The toggle and the close button run `layout.toggle` / `layout.hide {id: "skillshare-panel"}`. The node's hidden state is a layout click, so the panel stays open or closed across space switches and restarts.
 - Clicking a row opens it:
   - skills and agents that have an update offer Update, and skills also See changes;
@@ -55,12 +56,12 @@ Left to right, everything as in Herdr's `main` layout, plus two blocks:
 ## Built from
 
 - `layouts/herdr-skillshare.json`: a `layout.clone` of `main` (Herdr 0.1.12, `cloned_from` recorded) with two changes:
-  - the tab bar block becomes `{ "id": "tabs-row", "type": "row", "size": { "px": 42 }, "resizable": false, "children": [ the tabs block with "size": { "weight": 1 }, { "id": "skillshare-toggle", "type": "block", "content": { "mod": "skillshare", "props": { "role": "toggle" } }, "size": { "px": 118 } } ] }`;
-  - `work-body` gains `{ "id": "skillshare-panel", "type": "column", "size": { "px": 400 }, "min": 320, "max": 720, "children": [{ "id": "skillshare", "type": "block", "content": { "mod": "skillshare" } }] }`.
+  - the tab bar block becomes `{ "id": "tabs-row", "type": "row", "size": { "px": 42 }, "resizable": false, "children": [ the tabs block with "size": { "weight": 1 }, { "id": "skillshare-toggle", "type": "block", "content": { "mod": "skillshare-wsl", "props": { "role": "toggle" } }, "size": { "px": 118 } } ] }`;
+  - `work-body` gains `{ "id": "skillshare-panel", "type": "column", "size": { "px": 400 }, "min": 320, "max": 720, "children": [{ "id": "skillshare", "type": "block", "content": { "mod": "skillshare-wsl" } }] }`.
   - Root `"preview": "layouts/herdr-skillshare.png"` is the picture Settings shows.
-- `mods/skillshare/`:
-  - `main.js` holds the panel and its roles (`props.role`): the panel by default, `toggle`, and the dialogs.
-  - `model.js` holds the parsing and the shell scripts, with no Herdr imports.
+- `mods/skillshare-wsl/` (a `mod.clone` of upstream's `skillshare`, `cloned_from` recorded in `mod.json`; its own paths and overlays name `skillshare-wsl`):
+  - `main.js` holds the panel and its roles (`props.role`): the panel by default, `toggle`, and the dialogs. Its exec adapter decides where commands run: with `window().platform === "windows"` and no `on` (this computer), every script runs as `exec("wsl.exe", ["-d", WSL_DISTRO, "--exec", "sh", "-c", script, "skillshare-panel", ...args])`, with each `X:\…` argument turned into `/mnt/x/…`, and job files are read with `cat` through the same path. `WSL_DISTRO` is `"Ubuntu"`. Otherwise it runs `sh` with `on`, as upstream.
+  - `model.js` holds the parsing and the shell scripts, with no Herdr imports. Its snapshot script ends with a `descs` section: it reads the skills and agents source folders from `skillshare status --json`, runs `awk` over each `SKILL.md` and agent `.md` frontmatter, and prints `<kind>\t<rel>\t<description>` lines that `parseDescs` keys as `<kind>:<rel>`; `buildItems` gives each row its `description`.
   - `jobs.js` runs skillshare: short reads as one `exec`, longer work detached and polled.
   - `channel.js` passes requests from dialogs to the panel through `shared`, with one lock per machine and the notice line.
   - `operations.js` holds the commands each request runs and the conflict handling of a pull.
@@ -68,7 +69,8 @@ Left to right, everything as in Herdr's `main` layout, plus two blocks:
   - `mark.svg` is the 16px mark, and `icons/` holds the stroke icons.
 - Herdr functions:
   - `exec` with `on`;
-  - `readTextFile`;
+  - `readTextFile` (not on Windows for this computer);
+  - `window` for the platform;
   - `spaces`, `focused`, `machines`, `agents`, `layout`;
   - `shared` / `setShared`, `settings`, `theme`, `props`;
   - `openOverlay` / `closeOverlay`, `nextCommand`, `run`, `hc`.
@@ -78,8 +80,10 @@ Left to right, everything as in Herdr's `main` layout, plus two blocks:
   - `git`, which clones the install URL you type from the network;
   - `sh`, `mktemp`, `find` and `rm` for temp folders (`rm -rf` only on folders it made with `mktemp -d`, named `skillshare-panel.*`);
   - `setsid` where it exists, `sleep`, `cat`, `kill -0`, `ps` and `grep` to run long commands detached and check they still run;
-  - `hc send` for the audit hand-off.
-- Files read: only the temp folders it made, through `readTextFile`.
+  - `hc send` for the audit hand-off;
+  - `awk` and `sed` to read descriptions from skill and agent frontmatter;
+  - on Windows, `wsl.exe`, which runs all of the above in WSL.
+- Files read: the temp folders it made (through `readTextFile`, or `cat` in WSL on Windows), and the frontmatter of the `SKILL.md` and agent `.md` files in the skillshare source folders.
 - Its look is Herdr's: theme tokens only, no theme or fonts of its own.
 
 ## Watch out
@@ -91,12 +95,18 @@ Left to right, everything as in Herdr's `main` layout, plus two blocks:
 - Keep the panel out of the `panel` stack. Herdr's tabs mod restores that stack per space, so a panel there closes on every space switch.
 - `cx.notify()` throws during `render`, and `cx.spawn` runs its body up to its first `await` at once, so work started from `render` waits for the render to end first (`later`). Otherwise the error is swallowed and the button does nothing.
 - QuickJS rejects `??` mixed with `||` or `&&` without parentheses. `herdr-app check` catches it; `node --check` does not.
-- If a `skillshare` mod is already installed, rename this one and the `mod` names in the layout.
+- On Windows, Herdr's `exec` finds no `sh`, and Windows-native skillshare would manage `C:\Users\<you>\.claude` while WSL agents read WSL's `~/.claude`. That is why this computer's work goes through `wsl.exe`. Adding WSL as a Herdr machine is not an option here: `hc machine add --via` needs `sh` on Windows too, and the ssh route needs an sshd in WSL.
+- `wsl.exe` returns as soon as the job starts; the `setsid` job keeps running in WSL, and the panel polls it as usual.
+- `skillshare list --json` has no descriptions, so they come from the frontmatter. The source folders come from `status --json` by `sed` (no `jq`): the first `"path"` is the skills source and the first `"source"` the agents source.
+- Upstream's `skillshare` mod uses the same `shared` keys (`skillshare.request.v1`, `skillshare.busy.v1`, …). Don't show both panels at once, or both answer each request.
+- If a `skillshare-wsl` mod is already installed, rename this one and the `mod` names in the layout.
 - A layout clone is never updated: rebuild from this recipe on a new Herdr version.
 
 ## Done when
 
-- `herdr-app check ~/.config/herdr-app/mods/skillshare` passes.
+- `herdr-app check ~/.config/herdr-app/mods/skillshare-wsl` passes.
 - `layout.switch {name: "herdr-skillshare"}` shows the layout with no `herdr-skillshare.error`.
 - The tab bar shows Files, Changes and skillshare. The skillshare button shows the panel, and a second click hides it. Switching spaces keeps it as it was.
 - In a skillshare project the panel shows the All · Project · Global switch with real counts. Outside one, it says the folder is not a skillshare project and shows the global source.
+- On Windows, in a space on this computer, the panel shows the WSL skillshare's version and skill count, with no "cannot run sh" error.
+- Opening a skill row shows that skill's description from its `SKILL.md`.

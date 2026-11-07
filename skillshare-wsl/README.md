@@ -1,29 +1,45 @@
-# skillshare for Herdr
+# skillshare for Herdr (WSL)
 
 A Herdr panel for the skillshare CLI. It shows what the focused space's project and the
 global source hold—skills, agents, MCP servers, plugins and hooks—and what needs an update or a sync. It updates, syncs, installs from a
 URL, uninstalls, hands an audit to the focused agent, syncs the source repository both
 ways, and shows each Herdr machine's skillshare on a Machines tab.
 
+This is a fork of runkids/skillshare's [`herdr/skillshare`](https://github.com/runkids/skillshare/tree/main/herdr/skillshare) (MIT, see `LICENSE`), renamed to `skillshare-wsl`. It changes two things:
+
+- **Herdr on Windows, agents in WSL.** Upstream runs everything through `sh` on the space's
+  machine, and Windows has no `sh`. On Windows, this fork runs the panel's work for
+  "This computer" inside WSL (`wsl.exe -d Ubuntu --exec sh -c …`), so it manages the skills
+  your WSL agents read from WSL's `~/.claude`. Spaces on other Herdr machines work as upstream.
+- **Skill descriptions.** Expanded skill and agent rows show the `description` from the
+  skill's `SKILL.md` or the agent's `.md` frontmatter.
+
 ## Install
 
-From [Herdr layouts](https://herdr.dev/layouts/runkids/skillshare--herdr--skillshare/), paste this prompt into an agent in Herdr:
+Needs the skillshare CLI in WSL (`curl -fsSL https://raw.githubusercontent.com/runkids/skillshare/main/install.sh | sh`
+puts it in `~/.local/bin`), set up with `skillshare init`. For a distro other than `Ubuntu`,
+change `WSL_DISTRO` near the top of `mods/skillshare-wsl/main.js`.
+
+Paste this prompt into an agent in Herdr:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then add this layout: herdr.dev/layouts/runkids/skillshare--herdr--skillshare
+Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/jbped/herdr-mods/tree/main/skillshare-wsl
 ```
 
 By hand:
 
-1. Copy `mods/skillshare/` to `~/.config/herdr-app/mods/skillshare/`.
+1. Copy `mods/skillshare-wsl/` to `~/.config/herdr-app/mods/skillshare-wsl/`.
 2. Copy `layouts/herdr-skillshare.json` and `layouts/herdr-skillshare.png` to
    `~/.config/herdr-app/layouts/` and switch to it (`layout.switch {name: "herdr-skillshare"}`).
    `RECIPE.md` describes it in full and `preview.png` shows it. Or, in your own layout, add:
    - a toggle block to the tab bar row:
-     `{ "id": "skillshare-toggle", "type": "block", "content": { "mod": "skillshare", "props": { "role": "toggle" } }, "size": { "px": 118 } }`
+     `{ "id": "skillshare-toggle", "type": "block", "content": { "mod": "skillshare-wsl", "props": { "role": "toggle" } }, "size": { "px": 118 } }`
    - a column beside the work area:
-     `{ "id": "skillshare-panel", "type": "column", "children": [{ "id": "skillshare", "type": "block", "content": { "mod": "skillshare" } }], "size": { "px": 400 }, "min": 320, "max": 720 }`
-3. Run `herdr-app check ~/.config/herdr-app/mods/skillshare`.
+     `{ "id": "skillshare-panel", "type": "column", "children": [{ "id": "skillshare", "type": "block", "content": { "mod": "skillshare-wsl" } }], "size": { "px": 400 }, "min": 320, "max": 720 }`
+3. Run `herdr-app check ~/.config/herdr-app/mods/skillshare-wsl`.
+
+It can sit beside upstream's `skillshare` mod: the two use different mod names, but share
+the same `shared` keys, so show only one panel at a time.
 
 The panel lives in its own layout node instead of the per-space `panel` stack. Herdr's tabs mod
 restores that stack per space, so a panel there closes when you switch spaces. This node's
@@ -32,10 +48,15 @@ shown or hidden state is a layout click, which Herdr keeps across spaces and res
 ## How it reads
 
 - It runs on the shown space's machine (`exec` with `on`), in the focused terminal's folder.
+  When Herdr runs on Windows and the space is on this computer, it runs in WSL instead
+  (`wsl.exe -d Ubuntu --exec sh -c`), turns Windows path arguments such as `C:\dev\x` into
+  `/mnt/c/dev/x`, and reads job output with `cat` in WSL instead of `readTextFile`.
 - A folder with `.skillshare/config.yaml` or `skillshare/config.yaml` is a project; both
   scopes show and the All · Project · Global filter appears.
 - Per scope, one detached script runs `list --all`, `diff`, `mcp list`, `plugin list` and `hooks list`
-  with `--json`. `check` and `check agents` run every 10 minutes. Git state comes from `git status` in the
+  with `--json`, then reads each skill's and agent's frontmatter `description` from the
+  source folders `status --json` names, because `list --json` has no descriptions.
+  `check` and `check agents` run every 10 minutes. Git state comes from `git status` in the
   source repository, because the CLI has no JSON for it.
 - The CLI's install dry-run does not list a repository's skills, so the install dialog
   shallow-clones the repository to a temp folder to offer the pick list. It then runs
@@ -69,5 +90,7 @@ dashboard, then Sync again.
 
 ## Tests
 
-`make test-herdr` (`node --test herdr/tests/*.test.mjs`) covers `model.js`, `jobs.js`,
-`channel.js`, `operations.js` and `loader.js`, which have no Herdr imports. It runs in `make check` and CI. Check `main.js` with `herdr-app check`.
+Upstream's tests (`herdr/tests/*.test.mjs`, `make test-herdr`) live in the runkids/skillshare
+repository. They were not copied here and have not been run against this fork. `model.js`,
+`jobs.js`, `channel.js`, `operations.js` and `loader.js` still have no Herdr imports. Check
+`main.js` with `herdr-app check`.
