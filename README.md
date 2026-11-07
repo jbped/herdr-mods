@@ -21,6 +21,12 @@ Based on runkids/skillshare's `herdr/skillshare` (MIT, see `skillshare-wsl/LICEN
 
 A Cursor-style review pane for coding agents' changes: whole-file diffs with Accept and Reject per change, per file or for everything, undo, rejection notes and comments sent to the agent, syntax highlighting, and editing in the diff. Captures any agent's changes, and every edit Claude Code makes through its hooks. See [`review/mods/review/README.md`](review/mods/review/README.md) for install (it adds Claude Code hooks and, on Windows, two user environment variables) and keys.
 
+## agents-plus
+
+Herdr's Agents list with Claude Code's in-process subagents nested under the session that started them. Click a subagent to open its view in Claude Code, and click the parent to go back to `main`. See [`agents-plus/mods/agents-plus/README.md`](agents-plus/mods/agents-plus/README.md) for install (it adds Claude Code hooks) and how it works.
+
+Modified from Herdr's `agents` mod (Apache-2.0, see `agents-plus/LICENSE`).
+
 ## Install
 
 ### Tell your agent
