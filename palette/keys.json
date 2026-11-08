@@ -1,0 +1,5 @@
+{
+  "global": {
+    "ctrl-shift-p": { "command": "mod.open", "args": { "name": "palette" } }
+  }
+}
