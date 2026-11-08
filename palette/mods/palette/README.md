@@ -1,6 +1,6 @@
 # palette
 
-A command palette that mods can add entries to. It lists every mod's own entries first, then every Herdr app command, each with its key from `keys.json`.
+A command palette that mods can add entries to, styled after Herdr's own. It lists every mod's own entries first, under Mods, then every Herdr app command grouped as Herdr groups them (Tab, Pane, Space, …), each with its key from `keys.json`. A sidebar indexes the groups: click one to jump to it. Commands are labeled with the first clause of their description, since Herdr's own labels aren't available to mods.
 
 ## Install
 
@@ -15,7 +15,7 @@ A command palette that mods can add entries to. It lists every mod's own entries
 
 ## Use
 
-Type to filter (every word must match), `up` / `down`, `pageup` / `pagedown` or the wheel to move, `enter` to run, `escape` to close. A command with required arguments asks for them first: type a value for its first argument, or a JSON object such as `{"direction": "right", "mod": "wingman"}`. `escape` goes back to the list.
+Type to filter (every word must match), `up` / `down`, `pageup` / `pagedown` or the wheel to move, `shift-up` / `shift-down` to jump to the previous or next group, `enter` to run, `escape` to close. A command with required arguments asks for them first: type a value for its first argument, or a JSON object such as `{"direction": "right", "mod": "wingman"}`. `escape` goes back to the list.
 
 ## Adding a mod's entries
 
