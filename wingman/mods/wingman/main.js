@@ -15,6 +15,8 @@ import { Store, norm } from "./store.js";
 import { highlight, highlightLines, languageOf, color } from "./highlight.js";
 import { edit, body, cmp, linesOf, wordMove, wordAt, textBetween, indentUnit, visualCol, charAt, expandTabs } from "./edit.js";
 import { Capture, hostPath } from "./capture.js";
+import { merge3, diffHunks, changedRanges, mapLine } from "./merge.js";
+import { splitLines } from "./model.js";
 import { Journal, spaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings } from "./journal.js";
 
 const ROW = 20, GUTTER = 58, BTN_W = 110, BTN_GAP = 6, BUTTONS = 3; // Reject, Accept, Prompt
@@ -73,7 +75,8 @@ export default class Review extends View {
     // Opened as a popup (reason or follow-up prompt): a small form, none of the pane's work.
     if (props()?.form) return this.initForm(cx);
     this.id = Math.random().toString(36).slice(2);
-    this.settings = { autoNote: true, autosave: true, autosaveDelay: 0 };
+    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0 };
+    this.editNotes = new Map(); // file key -> the edit note last queued for it
     loadSettings().then((st) => { this.settings = st; });
     // The pane takes the keyboard back after its popup closes.
     // Commands: "focus" when a popup over the pane closes; the rest come from the right-click menu.
@@ -255,18 +258,58 @@ export default class Review extends View {
         texts[st.root] = await readTextFile(`${st.dir}/index.json`);
         for (const f of await st.files()) files.push(await this.withTokens(f, cx));
       }
-      this.files = files.map((nf) => this.keepEdits(nf)); this.indexTexts = texts; this.status = null;
+      const kept = [];
+      for (const nf of files) kept.push(await this.keepEdits(nf, cx));
+      this.files = kept; this.indexTexts = texts; this.status = null;
       this.settle(); cx.notify();
     } catch (e) { this.error = String(e.message ?? e); cx.notify(); }
   }
 
-  /** A reloaded file, unless this pane holds unsaved edits to it: those stay, and a disk change
-   *  under them is flagged (the banner offers Reload or Overwrite). */
-  keepEdits(nf) {
+  /** A reloaded file, unless this pane holds unsaved edits to it: a disk change under them
+   *  is merged into them (mergeInto). */
+  async keepEdits(nf, cx) {
     const old = this.files.find((x) => x.key === nf.key);
     if (!old || !this.dirty(old)) return nf;
-    const same = nf.Ctext === old.diskC && nf.Btext === old.diskB;
-    return same ? old : { ...old, conflict: { Ctext: nf.Ctext, Btext: nf.Btext } };
+    if ((nf.Ctext === old.diskC && nf.Btext === old.diskB) || this.sameConflict(old, nf.Ctext, nf.Btext)) return old;
+    const next = await this.mergeInto(old, nf, cx), now = this.files.find((x) => x.key === nf.key);
+    // Typed into while merging: keep the newer edits and merge again on the next pass.
+    if (now !== old) { this.deferred.add(norm(nf.path)); return now; }
+    this.adoptMerge(old, next);
+    return next;
+  }
+
+  /** The disk change behind an open conflict banner is already known. */
+  sameConflict(f, c, b) { return !!f.conflict && f.conflict.nf.Ctext === c && f.conflict.nf.Btext === b; }
+
+  /**
+   * Q44: a write to a file with unsaved edits merges into them, three-way from what was on disk.
+   * Overlapping lines go to the agent when autosave is on; with it off, both outcomes are kept
+   * and the banner picks one. A deleted file always asks.
+   */
+  async mergeInto(f, nf, cx) {
+    if (nf.Ctext === null || f.Ctext === null) return { ...f, conflict: { nf, ours: { Ctext: f.Ctext, Btext: f.Btext }, theirs: null } };
+    const both = (favor) => Promise.all([merge3(f.diskC, f.Ctext, nf.Ctext, favor), merge3(f.diskB, f.Btext, nf.Btext, favor)]);
+    const [c, b] = await both(this.settings.autosave ? "theirs" : null);
+    if (!c.conflicts && !b.conflicts) return this.merged(nf, c.text, b.text, cx);
+    const [[oc, ob], [tc, tb]] = await Promise.all([both("ours"), both("theirs")]);
+    return { ...f, conflict: { nf, ours: { Ctext: oc.text, Btext: ob.text }, theirs: { Ctext: tc.text, Btext: tb.text } } };
+  }
+
+  /** The state for merged texts over what's on disk now (`nf`); unsaved where they differ. */
+  async merged(nf, Ctext, Btext, cx) {
+    const B = splitLines(Btext), C = splitLines(Ctext ?? "");
+    return { ...nf, Btext, Ctext, B, C, hunks: await diffHunks(Btext, Ctext ?? ""), edited: true, conflict: null,
+      oldTok: await this.tok(Btext, nf.rel, cx), newTok: await this.tok(Ctext ?? "", nf.rel, cx), diskC: nf.Ctext, diskB: nf.Btext };
+  }
+
+  /** Puts a merge result in place: the cursor follows its line, and edit undo for the file is dropped
+   *  (it would put back text from before the agent's write). */
+  adoptMerge(f, next) {
+    if (next.Ctext !== f.Ctext || next.Btext !== f.Btext) {
+      if (this.sel === f.key) for (const k of ["cur", "anchor"]) if (this[k]) this[k] = { ...this[k], line: mapLine(this[k].line, f.Ctext ?? "", next.Ctext ?? "") };
+      this.history = this.history.filter((e) => !(e.edit && e.key === f.key)); this.redo = this.redo.filter((e) => e.key !== f.key);
+    }
+    this.replace(f, next); this.settle();
   }
 
   dirty(f) { return !!f && !f.error && (f.Ctext !== f.diskC || f.Btext !== f.diskB); }
@@ -301,9 +344,12 @@ export default class Review extends View {
           // Both sides: accepting only moves the baseline, so a baseline changed elsewhere
           // (another pane, capture, a reset) must be noticed even when the file itself is unchanged.
           const [c, b] = await Promise.all([readTextFile(f.path), readTextFile(f.basePath)]);
-          if (c === f.diskC && (b ?? "") === f.diskB) continue;
-          if (this.dirty(f)) { this.replace(f, { ...f, conflict: { Ctext: c, Btext: b ?? "" } }); cx.notify(); }
-          else await this.reloadOne(f, cx);
+          if ((c === f.diskC && (b ?? "") === f.diskB) || this.sameConflict(f, c, b ?? "")) continue;
+          if (!this.dirty(f)) { await this.reloadOne(f, cx); continue; }
+          const next = await this.mergeInto(f, { ...f, Ctext: c, Btext: b ?? "" }, cx);
+          // Typed into while merging: merge again from the newer edits.
+          if (!this.files.includes(f)) { this.deferred.add(norm(f.path)); continue; }
+          this.adoptMerge(f, next); cx.notify();
         }
       }
     } finally { this.draining = false; }
@@ -568,10 +614,12 @@ export default class Review extends View {
    */
   run(plan, cx, feedback = []) {
     if (!plan.length) return;
-    const entry = { snaps: [], writes: [], feedback }, jobs = [];
+    if (plan.some(([f]) => f.conflict)) { this.error = "Pick Keep mine or Take agent's first"; cx.notify(); return; }
+    const entry = { snaps: [], writes: [], feedback }, jobs = [], notes = [];
     for (const [f, action] of plan) {
       // Unsaved edits are saved first: the action's write expects memory and disk to agree.
-      const { state, write } = action(f), writes = [...this.saveWrites(f), write];
+      const saves = this.saveWrites(f), { state, write } = action(f), writes = [...saves, write];
+      notes.push(...saves.map((w) => this.editNote(f, w)).filter(Boolean));
       Object.assign(state, { diskC: f.Ctext, diskB: f.Btext, conflict: null });
       state[write.target === "baseline" ? "diskB" : "diskC"] = write.after;
       entry.snaps.push(f);
@@ -583,6 +631,7 @@ export default class Review extends View {
     this.enqueue(async () => {
       for (const [f, ws] of jobs) for (const w of ws) entry.writes.push(await f.store.apply(f, w));
       for (const m of feedback) await queueFeedback(m.terminal, m.text);
+      await this.sendEditNotes(notes);
     }, cx);
   }
 
@@ -779,7 +828,7 @@ export default class Review extends View {
   }
 
   openSettings() {
-    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 440, height: 300 });
+    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 360 });
   }
 
   /** Every 250 ms (Q46). Herdr has no blur event, so focus is polled: the pane losing the
@@ -1036,14 +1085,15 @@ export default class Review extends View {
 
   save(cx, f = this.file()) {
     if (!f) return;
-    if (f.conflict) { this.error = "The file changed on disk while you were editing: Reload or Overwrite first"; cx.notify(); return; }
+    if (f.conflict) { this.error = "The file changed on disk while you were editing: pick Keep mine or Take agent's first"; cx.notify(); return; }
     const writes = this.saveWrites(f);
     if (!writes.length) return;
+    const notes = writes.map((w) => this.editNote(f, w)).filter(Boolean);
     this.replace(f, { ...f, diskC: f.Ctext, diskB: f.Btext });
     cx.notify();
     this.enqueue(async () => {
       let done = 0;
-      try { for (const w of writes) { await f.store.apply(f, w); done++; } }
+      try { for (const w of writes) { await f.store.apply(f, w); done++; } await this.sendEditNotes(notes); }
       catch (e) {
         // Memory still holds the edits: whatever didn't reach disk counts as unsaved again.
         const g = this.files.find((x) => x.key === f.key);
@@ -1053,13 +1103,35 @@ export default class Review extends View {
     }, cx);
   }
 
-  /** Conflict banner: drop the edits and load what's on disk, or write the edits over it. */
+  /** Q45: a passive note to the agent that changed a file, naming the lines a save changed. */
+  editNote(f, w) {
+    if (!f.by || !this.settings.editNote || w.target !== "current" || w.before === null || w.after === null) return null;
+    const r = changedRanges(w.before, w.after);
+    if (!r.length) return null;
+    const at = r.slice(0, 6).map((h) => (!h.nc ? `lines removed at ${h.n + 1}` : h.nc === 1 ? `line ${h.n + 1}` : `lines ${h.n + 1}-${h.n + h.nc}`));
+    if (r.length > 6) at.push(`${r.length - 6} more places`);
+    return { key: f.key, terminal: f.by, path: f.as ?? agentPath(f.path, f.by), at: at.join(", ") };
+  }
+
+  /** Queues edit notes. A file's earlier note the agent hasn't read yet is replaced, not repeated. */
+  async sendEditNotes(notes) {
+    for (const n of notes) {
+      const prev = this.editNotes.get(n.key), earlier = !!prev && await withdrawFeedback(prev.terminal, prev.text);
+      const text = `Code review: the user edited ${n.path} (${n.at}${earlier ? ", plus earlier edits" : ""}). Read the file again before you change it.`;
+      await queueFeedback(n.terminal, text);
+      this.editNotes.set(n.key, { terminal: n.terminal, text });
+    }
+  }
+
+  /** Conflict banner: overlapping lines take mine or the agent's; the rest of both is kept. */
   resolve(how, cx) {
-    const f = this.file();
-    if (!f?.conflict) return;
-    if (how === "reload") { this.cur = this.anchor = null; cx.spawn(async (cx) => this.reloadOne({ ...f, conflict: null }, cx)); return; }
-    this.replace(f, { ...f, diskC: f.conflict.Ctext, diskB: f.conflict.Btext, conflict: null });
-    this.save(cx);
+    const f = this.file(), k = f?.conflict;
+    if (!k) return;
+    if (!k[how]) { this.cur = this.anchor = null; cx.spawn(async (cx) => this.reloadOne({ ...f, conflict: null }, cx)); return; }
+    cx.spawn(async (cx) => {
+      const next = await this.merged(k.nf, k[how].Ctext, k[how].Btext, cx);
+      if (this.files.includes(f)) { this.adoptMerge(f, next); cx.notify(); }
+    });
   }
 
   // ---- input ---------------------------------------------------------------
@@ -1225,13 +1297,14 @@ export default class Review extends View {
       .when(!st, (e) => e.child(div().text_size(12).text_color(t.dim).child("Loading…")))
       .when(!!st, (e) => e
         .child(toggle("set-note", "Auto note on rejections", "Tell the agent which of its changes you rejected.", st.autoNote, (cx) => this.setSetting({ autoNote: !st.autoNote }, cx)))
-        .child(toggle("set-autosave", "Autosave", "Save when Wingman loses focus, and when you switch files or spaces.", st.autosave, (cx) => this.setSetting({ autosave: !st.autosave }, cx)))
+        .child(toggle("set-editnote", "Note on my edits", "Tell the agent which lines of its files you changed.", st.editNote, (cx) => this.setSetting({ editNote: !st.editNote }, cx)))
+        .child(toggle("set-autosave", "Autosave", "Save on focus loss and file switch. Where you and the agent change the same lines, the agent's win.", st.autosave, (cx) => this.setSetting({ autosave: !st.autosave }, cx)))
         .child(v_flex().gap(6).when(!st.autosave, (e) => e.opacity(0.4))
           .child(div().text_size(12).text_color(t.muted).child("Also save after typing stops for"))
           .child(h_flex().gap(4).children([0, 1, 2, 3, 5, 10].map((n) => div().id(`delay-${n}`).h(24).px(10).flex().items_center().rounded(5).text_size(12).cursor_pointer()
             .bg(st.autosaveDelay === n ? t.accent + "77" : t.raised).hover((s) => s.opacity(0.85))
             .on_click((_e, cx) => { if (st.autosave) this.setSetting({ autosaveDelay: n }, cx); })
-            .child(n ? `${n}s` : "Off"))))));
+            .child(n ? `${n}s` : "Focus change"))))));
   }
 
   renderMenu() {
@@ -1324,9 +1397,9 @@ export default class Review extends View {
           .child(this.button("reject-file", "Reject file  ctrl-shift-⌫", t.ansi1 + "40", (cx) => this.wholeFile("reject", cx)).flex_none().whitespace_nowrap())
           .child(this.button("accept-file", "Accept file  ctrl-shift-⏎", t.ansi2 + "40", (cx) => this.wholeFile("accept", cx)).flex_none().whitespace_nowrap())))
       .when(!!f?.conflict, (e) => e.child(h_flex().px(12).py(6).gap(8).items_center().bg(t.ansi3 + "22").text_size(12)
-        .child(div().flex_1().child("This file changed on disk while you were editing it."))
-        .child(this.button("reload", "Reload (drop my edits)", t.raised, (cx) => this.resolve("reload", cx)))
-        .child(this.button("overwrite", "Overwrite with mine", t.ansi1 + "55", (cx) => this.resolve("overwrite", cx)))))
+        .child(div().flex_1().child(f?.conflict?.theirs ? "The agent changed the same lines you're editing." : "The file was deleted while you were editing it."))
+        .child(this.button("ours", "Keep mine", t.raised, (cx) => this.resolve("ours", cx)))
+        .child(this.button("theirs", f?.conflict?.theirs ? "Take agent's" : "Drop my edits", t.ansi1 + "55", (cx) => this.resolve("theirs", cx)))))
       .when(!!(this.error || this.status || !f), (e) => e.child(div().px(12).py(6).text_size(12)
         .text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : "No changes to review"))))
       .when(!!f, (e) => e.child(div().id("review-diff").flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(12)

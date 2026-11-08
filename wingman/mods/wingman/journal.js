@@ -124,13 +124,16 @@ export async function queueFeedback(terminal, text) {
   await writeTextFile(path, JSON.stringify(lines.join("\n")), before);
 }
 
-/** Withdraws a queued message (an undone rejection) if the hook hasn't delivered it yet. */
+/** Withdraws a queued message (an undone rejection) if the hook hasn't delivered it yet;
+ *  true when it was still queued. */
 export async function withdrawFeedback(terminal, text) {
   const path = `${reviewDir()}/feedback/${terminal}.ctx`, before = await readTextFile(path);
-  if (!before) return;
-  const lines = JSON.parse(before).split("\n").filter((l) => l !== text);
+  if (!before) return false;
+  const all = JSON.parse(before).split("\n"), lines = all.filter((l) => l !== text);
+  if (lines.length === all.length) return false;
   if (lines.length) await writeTextFile(path, JSON.stringify(lines.join("\n")), before);
   else await fs.unlink(path).catch(() => {});
+  return true;
 }
 
 // ---- follow-up prompts (O2) and settings (O3) ------------------------------
@@ -170,7 +173,7 @@ const SETTINGS = () => `${reviewDir()}/settings.json`;
 export async function loadSettings() {
   const t = await readTextFile(SETTINGS());
   // autosave: save on focus loss and file switch; autosaveDelay: also after typing stops (s, 0 = off).
-  return { autoNote: true, autosave: true, autosaveDelay: 0, ...(t ? JSON.parse(t) : {}) };
+  return { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, ...(t ? JSON.parse(t) : {}) };
 }
 export async function saveSettings(next) {
   await writeTextFile(SETTINGS(), JSON.stringify(next, null, 2) + "\n", await readTextFile(SETTINGS()));

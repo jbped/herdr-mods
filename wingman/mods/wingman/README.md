@@ -63,7 +63,7 @@ Open a Wingman pane beside an agent: run `pane.split` with `{"direction": "right
 
 ## Editing
 
-The diff is also an editor. Click in the text to place the cursor and type. Your own edits to unchanged lines are kept as accepted, so they never show up for review. Edits inside the agent's added lines stay part of its pending change. Removed lines are read-only. `ctrl-s` saves, and a dot on the tab marks unsaved edits. With autosave on (the default), edits are saved when Wingman loses focus and when you switch files or spaces. If the file changes on disk while you have unsaved edits, a banner offers Reload (drop your edits) or Overwrite.
+The diff is also an editor. Click in the text to place the cursor and type. Your own edits to unchanged lines are kept as accepted, so they never show up for review. Edits inside the agent's added lines stay part of its pending change. Removed lines are read-only. `ctrl-s` saves, and a dot on the tab marks unsaved edits. With autosave on (the default), edits are saved when Wingman loses focus and when you switch files or spaces. If the agent writes to a file while you have unsaved edits, its changes are merged into yours. Where you both changed the same lines, the agent's lines win with autosave on. With autosave off, a banner offers Keep mine or Take agent's, and the rest of both edits is kept either way. A merge clears undo for that file. If the agent deletes the file, the banner offers Keep mine or Drop my edits.
 
 | Action | Key |
 |---|---|
@@ -82,8 +82,9 @@ Comment, Accept and Reject act on the lines a text selection covers. Clicking th
 The header's **⚙ Settings** opens:
 
 - **Auto note on rejections**: tell the agent which of its changes you rejected. On by default.
+- **Note on my edits**: when you save, tell the agent that changed the file which lines you edited, so it reads the file again before its next change. On by default. The note is delivered with the agent's next tool call or prompt, and a newer save replaces a note it hasn't read yet.
 - **Autosave**: save when Wingman loses focus (another pane, or another window), and when you switch files or spaces. On by default. Herdr has no blur event for mods, so focus is checked 4 times a second.
-- **Also save after typing stops for**: Off, 1, 2, 3, 5 or 10 seconds. Off by default.
+- **Also save after typing stops for**: Focus change (no timer, save on focus change only), 1, 2, 3, 5 or 10 seconds. Focus change by default.
 
 Settings are kept in `~/.config/herdr-app/data/wingman/settings.json`.
 
