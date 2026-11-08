@@ -56,14 +56,23 @@ Open a Wingman pane beside an agent: run `pane.split` with `{"direction": "right
 | Next / previous change | `ctrl-down` / `ctrl-up` |
 | Next / previous file | `ctrl-shift-down` / `ctrl-shift-up` |
 | Undo last accept/reject | `ctrl-z` |
+| Review / Edit view | `ctrl-shift-r` |
+| File tree (Edit view) | `ctrl-b` |
 | Select lines | click a line, or click and drag; Shift+click or `shift-up` / `shift-down` to extend; click inside the selection or `escape` to clear. |
 | Menu for a line or change | right-click: Comment, Reject, Reject with comment, Accept (on the selected lines when there are any). Right-click never changes the selection. |
 | Comment on the selected lines, else the current change | `ctrl-p` (or the change's Comment button) |
 | Comment on the last rejection | `ctrl-r` (or the header's Comment last rejection) |
 
+## Views
+
+The header switches between two views (`ctrl-shift-r`):
+
+- **Review**: the tabs are the files with changes to review.
+- **Edit**: a file tree of the space's repos on the left (`ctrl-b` shows or hides it, and opens the Edit view from Review). It lists tracked and untracked files, without ignored ones, with each file's and folder's change count and a dot for unsaved edits. Click a file to open it in the same editor, with its diff when it has changes. The tabs are the changed files plus the files you opened. Opened files close with their ×, which saves them when autosave is on. Changed files stay until they're reviewed.
+
 ## Editing
 
-The diff is also an editor. Click in the text to place the cursor and type. Your own edits to unchanged lines are kept as accepted, so they never show up for review. Edits inside the agent's added lines stay part of its pending change. Removed lines are read-only. `ctrl-s` saves, and a dot on the tab marks unsaved edits. With autosave on (the default), edits are saved when Wingman loses focus and when you switch files or spaces. If the agent writes to a file while you have unsaved edits, its changes are merged into yours. Where you both changed the same lines, the agent's lines win with autosave on. With autosave off, a banner offers Keep mine or Take agent's, and the rest of both edits is kept either way. A merge clears undo for that file. If the agent deletes the file, the banner offers Keep mine or Drop my edits.
+The diff is also an editor. Click in the text to place the cursor and type. Your own edits to unchanged lines are kept as accepted, so they never show up for review. Edits inside the agent's added lines stay part of its pending change. Removed lines are read-only. `ctrl-s` saves, and a dot on the tab marks unsaved edits. With autosave on (the default), edits are saved when Wingman loses focus, when you switch files, spaces or views, and when you close a tab. If the agent writes to a file while you have unsaved edits, its changes are merged into yours. Where you both changed the same lines, the agent's lines win with autosave on. With autosave off, a banner offers Keep mine or Take agent's, and the rest of both edits is kept either way. A merge clears undo for that file. If the agent deletes the file, the banner offers Keep mine or Drop my edits.
 
 | Action | Key |
 |---|---|

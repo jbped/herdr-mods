@@ -16,6 +16,7 @@ import { highlight, highlightLines, languageOf, color } from "./highlight.js";
 import { edit, body, cmp, linesOf, wordMove, wordAt, textBetween, indentUnit, visualCol, charAt, expandTabs } from "./edit.js";
 import { Capture, hostPath } from "./capture.js";
 import { merge3, diffHunks, changedRanges, mapLine } from "./merge.js";
+import { buildTree, flatten, parents } from "./tree.js";
 import { splitLines } from "./model.js";
 import { Journal, spaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings } from "./journal.js";
 
@@ -77,6 +78,8 @@ export default class Review extends View {
     this.id = Math.random().toString(36).slice(2);
     this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0 };
     this.editNotes = new Map(); // file key -> the edit note last queued for it
+    // Q48: Review (tabs are changed files) or Edit (file tree, tabs for changed and opened files).
+    this.mode = "review"; this.treeOn = true; this.trees = new Map(); this.expanded = new Set();
     loadSettings().then((st) => { this.settings = st; });
     // The pane takes the keyboard back after its popup closes.
     // Commands: "focus" when a popup over the pane closes; the rest come from the right-click menu.
@@ -107,6 +110,7 @@ export default class Review extends View {
     cx.timer.every(250, (cx) => this.autosave(cx));
     cx.timer.every(500, (cx) => this.lead(cx));
     cx.timer.every(3000, (cx) => this.collectAll(cx));
+    cx.timer.every(5000, (cx) => this.mode === "edit" && this.treeOn && this.refreshTrees(cx));
     // Watch events would be the fast path, but they did not fire on Windows in testing,
     // so a 2 s content check is what catches outside edits. "#index" keeps the index
     // checked even when no files are listed (e.g. right after a reset).
@@ -118,7 +122,7 @@ export default class Review extends View {
   reset(stores) {
     this.stores = stores; this.files = []; this.sel = null; this.current = 0; this.history = [];
     this.deferred = new Set(); this.indexTexts = {}; this.error = null;
-    this.cur = null; this.anchor = null; this.redo = []; this.hx = 0;
+    this.cur = null; this.anchor = null; this.redo = []; this.hx = 0; this.opened = [];
     this.status = stores.length ? "Loading…" : "Waiting for an agent in a git repo in this space…";
   }
 
@@ -152,7 +156,7 @@ export default class Review extends View {
       }
       const fresh = found.filter((f) => !roots.has(f.root));
       if (fresh.length && this.spaceId === key) {
-        const files = this.files, keep = { sel: this.sel, current: this.current, history: this.history };
+        const files = this.files, keep = { sel: this.sel, current: this.current, history: this.history, opened: this.opened };
         this.reset([...this.stores, ...fresh]);
         Object.assign(this, keep); this.files = files;
         await this.reloadAll(cx);
@@ -161,8 +165,8 @@ export default class Review extends View {
   }
 
   snapshotView() {
-    const { stores, files, sel, current, history, indexTexts, error, status, redo } = this;
-    return { stores, files, sel, current, history, indexTexts, error, status, redo, cur: null, anchor: null, hx: 0, deferred: new Set() };
+    const { stores, files, sel, current, history, indexTexts, error, status, redo, opened } = this;
+    return { stores, files, sel, current, history, indexTexts, error, status, redo, opened, cur: null, anchor: null, hx: 0, deferred: new Set() };
   }
 
   // ---- capture (leader only) -----------------------------------------------
@@ -260,6 +264,11 @@ export default class Review extends View {
       }
       const kept = [];
       for (const nf of files) kept.push(await this.keepEdits(nf, cx));
+      // Opened files without changes stay open: plain ones as they are, others reread as plain.
+      for (const old of this.files) {
+        if (kept.some((k) => k.key === old.key) || !(old.plain || this.opened.includes(old.key))) continue;
+        kept.push(old.plain || this.dirty(old) ? old : await this.loadPlain(old.store, old.rel, cx));
+      }
       this.files = kept; this.indexTexts = texts; this.status = null;
       this.settle(); cx.notify();
     } catch (e) { this.error = String(e.message ?? e); cx.notify(); }
@@ -315,6 +324,10 @@ export default class Review extends View {
   dirty(f) { return !!f && !f.error && (f.Ctext !== f.diskC || f.Btext !== f.diskB); }
 
   async reloadOne(f, cx) {
+    if (f.plain) {
+      const next = await this.loadPlain(f.store, f.rel, cx);
+      this.replace(f, next); this.settle(); cx.notify(); return;
+    }
     const entry = (await f.store.index())[f.rel];
     const i = this.files.findIndex((x) => x.key === f.key);
     if (!entry || i < 0) return this.reloadAll(cx);
@@ -343,7 +356,8 @@ export default class Review extends View {
           if (f.error || !pending.has(norm(f.path))) continue;
           // Both sides: accepting only moves the baseline, so a baseline changed elsewhere
           // (another pane, capture, a reset) must be noticed even when the file itself is unchanged.
-          const [c, b] = await Promise.all([readTextFile(f.path), readTextFile(f.basePath)]);
+          // A plain (opened, unchanged) file has no baseline on disk: it is the file itself.
+          const [c, b0] = await Promise.all([readTextFile(f.path), f.plain ? null : readTextFile(f.basePath)]), b = f.plain ? c : b0;
           if ((c === f.diskC && (b ?? "") === f.diskB) || this.sameConflict(f, c, b ?? "")) continue;
           if (!this.dirty(f)) { await this.reloadOne(f, cx); continue; }
           const next = await this.mergeInto(f, { ...f, Ctext: c, Btext: b ?? "" }, cx);
@@ -369,8 +383,12 @@ export default class Review extends View {
 
   // A file stays in view while it's being edited, even once it has no changes left.
   shown(f) { return f.hunks.length || (f.edited && f.key === this.sel) || this.dirty(f); }
-  visible() { return this.files.filter((f) => f.error || this.shown(f)); }
-  file() { return this.files.find((f) => f.key === this.sel && !f.error && this.shown(f)); }
+  /** The tabs: changed files, plus in the Edit view the files opened from the tree. */
+  visible() {
+    const changed = (f) => !f.plain && (f.error || this.shown(f));
+    return this.files.filter((f) => changed(f) || (this.mode === "edit" && this.opened.includes(f.key)));
+  }
+  file() { return this.visible().find((f) => f.key === this.sel && !f.error); }
 
   replace(f, state) {
     const i = this.files.findIndex((x) => x.key === f.key);
@@ -415,10 +433,15 @@ export default class Review extends View {
 
   /** A tab's width, estimated from its text; the same widths place tabs and find them again. */
   tabWidth(x) {
-    const tag = x.error ? "error" : x.created ? "new" : x.Ctext === null ? "deleted" : String(x.hunks.length);
+    const tag = this.tabTag(x);
     const repo = this.stores.length > 1 ? base(x.store.root).length * 6.2 + 6 : 0;
-    return Math.ceil(26 + base(x.rel).length * 7.4 + repo + tag.length * 6.2 + 6 + (this.dirty(x) ? 12 : 0));
+    return Math.ceil(26 + base(x.rel).length * 7.4 + repo + tag.length * 6.2 + 6 + (this.dirty(x) ? 12 : 0) + (this.closable(x) ? 16 : 0));
   }
+
+  tabTag(x) { return x.error ? "error" : x.created ? "new" : x.Ctext === null ? "deleted" : x.hunks.length ? String(x.hunks.length) : ""; }
+
+  /** Opened files close; changed files stay until reviewed (Q48). */
+  closable(x) { return this.mode === "edit" && this.opened.includes(x.key) && !x.hunks.length; }
 
   tabMax() {
     const total = this.visible().reduce((w, x) => w + this.tabWidth(x), 0);
@@ -460,8 +483,137 @@ export default class Review extends View {
         .when(this.stores.length > 1, (e) => e.child(div().text_size(10).text_color(t.dim).whitespace_nowrap().child(base(x.store.root))))
         .child(div().text_size(12).whitespace_nowrap().child(base(x.rel)))
         .when(this.dirty(x), (e) => e.child(div().text_size(10).text_color(t.accent).child("●")))
-        .child(div().text_size(10).whitespace_nowrap().text_color(x.error ? t.ansi1 : t.muted)
-          .child(x.error ? "error" : x.created ? "new" : x.Ctext === null ? "deleted" : `${x.hunks.length}`)));
+        .child(div().text_size(10).whitespace_nowrap().text_color(x.error ? t.ansi1 : t.muted).child(this.tabTag(x)))
+        .when(this.closable(x), (e) => e.child(div().id(`close-${x.key}`).px(3).rounded(3).text_size(11).text_color(t.dim)
+          .hover((st) => st.bg(t.raised).text_color(t.foreground)).child("×")
+          .on_click((_e, cx) => { cx.stop_propagation(); this.closeTab(x.key, cx); }))));
+  }
+
+  // ---- Edit view: opened files and the file tree (Q48) ---------------------------
+
+  /** A file opened from the tree that has no changes: its own baseline, kept in memory only. */
+  async loadPlain(store, rel, cx) {
+    const path = `${store.root}/${rel}`, key = `${store.root}|${rel}`, f = { rel, path, basePath: null, store, key, plain: true, created: false, by: null, as: null, hunks: [] };
+    let text = null, error = null;
+    try { text = await readTextFile(path); } catch (e) { error = String(e.message ?? e); }
+    if (!error && text === null) error = "file not found";
+    if (!error && text.includes("\0")) error = "binary file";
+    if (error) return { ...f, error };
+    const C = splitLines(text);
+    return this.withTokens({ ...f, Btext: text, Ctext: text, B: C, C }, cx);
+  }
+
+  async openFile(store, rel, cx) {
+    const key = `${store.root}|${rel}`, space = this.spaceId;
+    if (!this.files.some((f) => f.key === key)) {
+      const f = await this.loadPlain(store, rel, cx);
+      if (this.spaceId !== space || this.files.some((x) => x.key === key)) return;
+      this.files.push(f);
+    }
+    if (!this.opened.includes(key)) this.opened.push(key);
+    this.pick(key, cx);
+  }
+
+  /** Closing saves unsaved edits when autosave is on (Q46); without it they must be saved first. */
+  closeTab(key, cx) {
+    const f = this.files.find((x) => x.key === key);
+    if (f && this.dirty(f)) {
+      if (!this.settings.autosave || f.conflict) { this.error = `${base(f.rel)} has unsaved edits: save them first (ctrl-s)`; cx.notify(); return; }
+      this.save(cx, f);
+    }
+    this.opened = this.opened.filter((k) => k !== key);
+    if (f?.plain) this.files = this.files.filter((x) => x.key !== key);
+    if (this.sel === key) { this.cur = this.anchor = null; this.hx = 0; }
+    this.error = null; this.settle(); cx.notify();
+  }
+
+  setMode(mode, cx) {
+    if (mode === this.mode) return;
+    if (this.settings.autosave) this.saveAll(cx); // leaving a view saves (Q46)
+    this.mode = mode;
+    if (mode === "edit" && this.treeOn) this.refreshTrees(cx);
+    this.settle(); this.handle.focus(); cx.notify();
+  }
+
+  /** ctrl-b: shows or hides the tree, switching to the Edit view first if needed. */
+  toggleTree(cx) {
+    if (this.mode !== "edit") { this.treeOn = true; return this.setMode("edit", cx); }
+    this.treeOn = !this.treeOn;
+    if (this.treeOn) this.refreshTrees(cx);
+    cx.notify();
+  }
+
+  toggleDir(k, cx) { if (!this.expanded.delete(k)) this.expanded.add(k); cx.notify(); }
+
+  revealInTree(key) {
+    const f = this.files.find((x) => x.key === key);
+    if (f) for (const p of parents(f.rel)) this.expanded.add(`${f.store.root}|${p}`);
+  }
+
+  /** Each repo's files: tracked and untracked, without ignored ones. */
+  refreshTrees(cx) {
+    if (this.treeBusy) return;
+    this.treeBusy = true;
+    cx.spawn(async (cx) => {
+      try {
+        for (const st of this.stores) {
+          const r = await exec("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: st.root });
+          if (r.code !== 0) { this.trees.set(st.root, { error: (r.stderr || r.stdout).trim() }); continue; }
+          if (this.trees.get(st.root)?.list === r.stdout) continue;
+          const paths = [...new Set(r.stdout.split("\0").filter(Boolean))];
+          this.trees.set(st.root, { list: r.stdout, paths, set: new Set(paths) });
+        }
+      } catch (e) { log(`tree: ${e.message ?? e}`); }
+      finally { this.treeBusy = false; cx.notify(); }
+    });
+  }
+
+  /** Change counts and unsaved marks per file and folder of one repo. */
+  treeCounts(st) {
+    const counts = new Map(), add = (rel, n, dirty) => {
+      const c = counts.get(rel) ?? { n: 0, dirty: false };
+      c.n += n; c.dirty ||= dirty; counts.set(rel, c);
+    };
+    for (const f of this.files) if (f.store === st && !f.error) {
+      const n = f.hunks.length, d = this.dirty(f);
+      if (!n && !d) continue;
+      add(f.rel, n, d);
+      for (const p of parents(f.rel)) add(p, n, d);
+    }
+    return counts;
+  }
+
+  /** A repo's folder tree; changed files the listing lacks (deleted ones) are added. */
+  treeOf(st) {
+    const tr = this.trees.get(st.root);
+    if (!tr?.paths) return null;
+    const extra = this.files.filter((f) => f.store === st && !f.plain && !tr.set.has(f.rel)).map((f) => f.rel).sort().join("\n");
+    if (tr.node && tr.extra === extra) return tr.node;
+    tr.extra = extra; tr.node = buildTree(extra ? [...tr.paths, ...extra.split("\n")] : tr.paths);
+    return tr.node;
+  }
+
+  renderTree(t) {
+    const multi = this.stores.length > 1, out = [];
+    const note = (id, text, color = t.dim) => div().id(id).px(10).py(4).text_size(11).text_color(color).child(text);
+    if (!this.stores.length) out.push(note("tree-none", "No repo in this space yet"));
+    for (const st of this.stores) {
+      const tr = this.trees.get(st.root), node = this.treeOf(st), counts = this.treeCounts(st);
+      if (multi) out.push(div().id(`tree-repo-${st.root}`).px(10).pt(8).pb(2).text_size(11).font_semibold().text_color(t.muted).child(base(st.root)));
+      if (tr?.error) { out.push(note(`tree-err-${st.root}`, tr.error, t.ansi1)); continue; }
+      if (!node) { out.push(note(`tree-load-${st.root}`, "Loading…")); continue; }
+      for (const row of flatten(node, (rel) => this.expanded.has(`${st.root}|${rel}`))) {
+        const k = `${st.root}|${row.rel}`, c = counts.get(row.rel), open = this.expanded.has(k);
+        out.push(h_flex().id(`tree-${k}`).h(22).flex_none().pl(8 + row.depth * 12).pr(8).gap(4).items_center().cursor_pointer()
+          .when(!row.dir && k === this.sel, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => (row.dir ? this.toggleDir(k, cx) : cx.spawn(async (cx) => this.openFile(st, row.rel, cx))))
+          .child(div().w(10).flex_none().text_size(10).text_color(t.dim).child(row.dir ? (open ? "▾" : "▸") : ""))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(row.dir ? t.muted : t.foreground).child(row.name))
+          .when(!!c?.dirty, (e) => e.child(div().flex_none().text_size(10).text_color(t.accent).child("●")))
+          .when(!!c?.n, (e) => e.child(div().flex_none().text_size(10).text_color(t.ansi3).child(String(c.n)))));
+      }
+    }
+    return v_flex().id("file-tree").w(240).flex_none().h_full().py(4).border_r(1).border_color(t.border).overflow_y_scrollbar().children(out);
   }
 
   // ---- scrolling -------------------------------------------------------------
@@ -598,6 +750,8 @@ export default class Review extends View {
   }
 
   pick(key, cx) {
+    if (!this.visible().some((f) => f.key === key)) return;
+    if (this.mode === "edit") this.revealInTree(key);
     if (key !== this.sel) {
       const old = this.file();
       if (old && this.settings.autosave && this.dirty(old) && !old.conflict) this.save(cx, old);
@@ -867,7 +1021,7 @@ export default class Review extends View {
 
   wholeFile(how, cx) {
     const f = this.file();
-    if (!f) return;
+    if (!f?.hunks.length) return;
     if (how === "reject") this.noteReject(f, "all your changes", this.rowsOf(f).filter((r) => r.kind === "+" || r.kind === "-"));
     this.run([[f, how === "accept" ? acceptAll : rejectAll]], cx, how === "reject" ? this.rejected(f, "all your changes") : []);
   }
@@ -1079,7 +1233,7 @@ export default class Review extends View {
     if (!this.dirty(f)) return [];
     const w = [];
     if (f.Ctext !== f.diskC) w.push({ target: "current", before: f.diskC, after: f.Ctext });
-    if (f.Btext !== f.diskB) w.push({ target: "baseline", before: f.diskB, after: f.Btext });
+    if (!f.plain && f.Btext !== f.diskB) w.push({ target: "baseline", before: f.diskB, after: f.Btext });
     return w;
   }
 
@@ -1141,6 +1295,8 @@ export default class Review extends View {
     if (this.cur && this.editable(f) && this.editKey(e, f, cx)) { cx.stop_propagation(); return; }
     const act = {
       "ctrl-s": () => this.save(cx),
+      "ctrl-b": () => this.toggleTree(cx),
+      "ctrl-shift-r": () => this.setMode(this.mode === "review" ? "edit" : "review", cx),
       "ctrl-shift-y": () => this.redoEdit(cx), // ctrl-shift-z is Herdr's pane.zoom
       "ctrl-y": () => this.decide("accept", cx),
       "ctrl-n": () => this.decide("reject", cx),
@@ -1372,6 +1528,10 @@ export default class Review extends View {
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .child(h_flex().h(40).flex_none().px(12).gap(10).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Wingman"))
+        .child(h_flex().flex_none().gap(2).p(2).rounded(6).bg(t.raised).children(["review", "edit"].map((m) =>
+          div().id(`mode-${m}`).h(22).px(8).flex().items_center().rounded(4).text_size(12).cursor_pointer()
+            .when(this.mode === m, (e) => e.bg(t.selected)).on_click((_e, cx) => this.setMode(m, cx))
+            .child(m === "review" ? "Review" : "Edit"))))
         .child(div().text_size(11).text_color(t.muted).truncate().child(`${this.stores.map((st) => base(st.root)).join(", ")} · ${total} change${total === 1 ? "" : "s"} in ${vis.length} file${vis.length === 1 ? "" : "s"} · ${this.history.length} undoable${this.writing ? " · saving…" : ""}${agents().some((a) => a.space === this.spaceId && ACTIVE.has(a.status)) ? " · agent working" : ""}`))
         .child(div().flex_1())
         .when(!!this.lastReject, (e) => e.child(this.button("reason", "Comment last rejection  ctrl-r", t.raised, (cx) => this.askReason(cx))))
@@ -1379,6 +1539,9 @@ export default class Review extends View {
         .when(total > 0, (e) => e
           .child(this.button("reject-all", "Reject all files", t.ansi1 + "55", (cx) => this.everything("reject", cx)))
           .child(this.button("accept-all", "Accept all files", t.ansi2 + "55", (cx) => this.everything("accept", cx)))))
+      .child(h_flex().flex_1().min_h(0)
+      .when(this.mode === "edit" && this.treeOn, (e) => e.child(this.renderTree(t)))
+      .child(v_flex().flex_1().min_w(0).h_full()
       // File tabs scroll sideways in their own area; the hint and file buttons stay pinned right.
       .child(h_flex().h(36).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
         .child(div().id("file-tabs").flex_1().min_w(0).h_full().relative().overflow_hidden()
@@ -1393,7 +1556,7 @@ export default class Review extends View {
           }))
         .when(vis.length > 1, (e) => e.child(div().flex_none().whitespace_nowrap().text_size(10).text_color(t.dim).px(6).child(`${vis.findIndex((x) => x.key === this.sel) + 1}/${vis.length} · ctrl-shift-↑/↓`)))
         .when(this.dirty(f), (e) => e.child(this.button("save", "Save  ctrl-s", t.accent + "55", (cx) => this.save(cx)).flex_none().whitespace_nowrap()))
-        .when(!!f, (e) => e
+        .when(!!f?.hunks.length, (e) => e
           .child(this.button("reject-file", "Reject file  ctrl-shift-⌫", t.ansi1 + "40", (cx) => this.wholeFile("reject", cx)).flex_none().whitespace_nowrap())
           .child(this.button("accept-file", "Accept file  ctrl-shift-⏎", t.ansi2 + "40", (cx) => this.wholeFile("accept", cx)).flex_none().whitespace_nowrap())))
       .when(!!f?.conflict, (e) => e.child(h_flex().px(12).py(6).gap(8).items_center().bg(t.ansi3 + "22").text_size(12)
@@ -1401,7 +1564,7 @@ export default class Review extends View {
         .child(this.button("ours", "Keep mine", t.raised, (cx) => this.resolve("ours", cx)))
         .child(this.button("theirs", f?.conflict?.theirs ? "Take agent's" : "Drop my edits", t.ansi1 + "55", (cx) => this.resolve("theirs", cx)))))
       .when(!!(this.error || this.status || !f), (e) => e.child(div().px(12).py(6).text_size(12)
-        .text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : "No changes to review"))))
+        .text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : this.mode === "edit" ? "No file open: pick one in the file tree (ctrl-b)" : "No changes to review"))))
       .when(!!f, (e) => e.child(div().id("review-diff").flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(12)
         .on_size_change((size, cx) => { this.viewH = size.height; this.viewW = size.width; cx.notify(); })
         // One character's width in the diff font, for cursor columns (the font is monospace).
@@ -1425,6 +1588,6 @@ export default class Review extends View {
           .on_mouse_down("right", (ev, cx) => this.openMenu(ev, cx))
           .on_scroll_wheel((ev, cx) => this.wheel(ev, cx)))
         .child(Scrollbar.vertical("review-rows").viewport_from_layout().absolute().inset_0())
-        .when(!!sel, (e) => e.child(this.selectionBar(f, sel, t)))));
+        .when(!!sel, (e) => e.child(this.selectionBar(f, sel, t)))))));
   }
 }
