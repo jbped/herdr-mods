@@ -19,6 +19,7 @@ import { merge3, diffHunks, changedRanges, mapLine } from "./merge.js";
 import { buildTree, flatten, parents } from "./tree.js";
 import { openInNvim } from "./nvim.js";
 import { PAIRS, typed, inEmptyPair, betweenBrackets } from "./pairs.js";
+import { lineSpan, moveLines, copyLines, deleteLines, joinLines, toggleComment, commentFor } from "./lineops.js";
 import { splitLines } from "./model.js";
 import { Journal, spaceRepos, addSpaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings } from "./journal.js";
 
@@ -98,6 +99,14 @@ export default class Review extends View {
           reason: () => this.askReason(cx),
           clear: () => this.clearSelection(cx),
           save: () => this.save(cx),
+          // E3 line operations, for keys.json's "mod:wingman" section (e.g. "alt-up": "wingman.moveLineUp").
+          moveLineUp: () => this.lineOp("moveUp", cx),
+          moveLineDown: () => this.lineOp("moveDown", cx),
+          copyLineUp: () => this.lineOp("copyUp", cx),
+          copyLineDown: () => this.lineOp("copyDown", cx),
+          deleteLine: () => this.lineOp("delete", cx),
+          joinLines: () => this.lineOp("join", cx),
+          toggleComment: () => this.lineOp("comment", cx),
           // The settings popup saved a change.
           settings: async () => { this.settings = await loadSettings(); },
         })[c]?.();
@@ -1210,6 +1219,9 @@ export default class Review extends View {
     const m = e.modifiers, ctrl = m.control || m.platform, shift = m.shift, lines = linesOf(f), c = this.cur;
     const sel = this.hasTextSel(), [sa, sb] = sel ? this.ordered() : [c, c];
     const lineEnd = (l) => ({ line: l, col: body(lines[l]).length });
+    const op = { "alt-up": "moveUp", "alt-down": "moveDown", "alt-shift-up": "copyUp", "alt-shift-down": "copyDown",
+      "ctrl-shift-k": "delete", "ctrl-j": "join", "ctrl-/": "comment" }[e.keystroke];
+    if (op) return this.lineOp(op, cx), true;
     if (m.alt && !ctrl) return false;
     switch (e.key) {
       case "left":
@@ -1286,6 +1298,28 @@ export default class Review extends View {
       return true;
     }
     return false;
+  }
+
+  /** E3: a line operation on the lines the cursor or selection covers, as one undo step. */
+  lineOp(name, cx) {
+    const f = this.file();
+    if (!this.editable(f) || !this.cur) return;
+    const lines = linesOf(f), anchor = this.hasTextSel() ? this.anchor : null, cur = this.cur;
+    const [l1, l2] = lineSpan(anchor, cur);
+    const op = {
+      moveUp: () => moveLines(lines, l1, l2, -1, anchor, cur),
+      moveDown: () => moveLines(lines, l1, l2, 1, anchor, cur),
+      copyUp: () => copyLines(lines, l1, l2, -1, anchor, cur),
+      copyDown: () => copyLines(lines, l1, l2, 1, anchor, cur),
+      delete: () => deleteLines(lines, l1, l2, cur),
+      join: () => joinLines(lines, l1, l2),
+      comment: () => toggleComment(lines, l1, l2, commentFor(f.rel), anchor, cur),
+    }[name]?.();
+    if (!op) { if (name === "comment" && !commentFor(f.rel)) { this.error = `No comment syntax known for ${base(f.rel)}`; cx.notify(); } return; }
+    this.type(op.text, cx, { from: op.from, to: op.to });
+    const g = this.file();
+    this.anchor = op.anchor && this.clampPos(g, op.anchor); this.cur = this.clampPos(g, op.cur);
+    this.showCursor(); cx.notify();
   }
 
   /**

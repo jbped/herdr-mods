@@ -83,9 +83,26 @@ The diff is also an editor. Click in the text to place the cursor and type. Your
 | Edit | type, `backspace` / `delete` (with `ctrl` by word), `enter` keeps the indent, `tab` / `shift-tab` indent and outdent |
 | Copy, cut, paste | `ctrl-c` / `ctrl-x` / `ctrl-v` (without a selection: the whole line) |
 | Brackets and quotes | typing `(` `[` `{` `"` `'` `` ` `` adds the closer (before whitespace, a line end or a closer; quotes not right after a letter). Typing the closer steps over it, Backspace in an empty pair removes both, Enter between brackets opens an indented line, and with text selected it wraps the selection. |
+| Move lines up / down | `alt-up` / `alt-down` (Herdr's agent keys by default, see below) |
+| Copy lines up / down | `alt-shift-up` / `alt-shift-down` |
+| Delete lines | `ctrl-shift-k` (Herdr's picker key by default, see below) |
+| Join lines | `ctrl-j` (with the next line, or all selected lines) |
+| Toggle comment | `ctrl-/` (line comments by file type; block comments for HTML, XML, Vue, Markdown and CSS) |
 | Save | `ctrl-s` |
 | Undo / redo | `ctrl-z` / `ctrl-shift-y` (one history with accept and reject; redo is for edits) |
 | Scroll sideways | Shift+wheel |
+
+Line operations act on the cursor's line or every line a text selection covers, and each is one undo step. Herdr's global keys reach Herdr before Wingman, so `alt-up`, `alt-down` and `ctrl-shift-k` need a `mod:wingman` section in `keys.json` to send them to Wingman while it has focus:
+
+```json
+"mod:wingman": {
+  "alt-up": "wingman.moveLineUp",
+  "alt-down": "wingman.moveLineDown",
+  "ctrl-shift-k": "wingman.deleteLine"
+}
+```
+
+Every line operation is also a command for other keys: `wingman.moveLineUp`, `wingman.moveLineDown`, `wingman.copyLineUp`, `wingman.copyLineDown`, `wingman.deleteLine`, `wingman.joinLines` and `wingman.toggleComment`.
 
 Comment, Accept and Reject act on the lines a text selection covers. Clicking the line numbers still selects whole lines. Not supported: input methods that compose characters (Chinese, Japanese, Korean), and wide characters or emoji, which put the cursor in the wrong column.
 
