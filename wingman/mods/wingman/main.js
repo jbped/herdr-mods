@@ -9,7 +9,7 @@
 // never overwrites someone else's edit: the view reports it and reloads.
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list, VirtualListScrollHandle, TextareaState, Textarea, InputState, Input } from "gpui-base";
-import { theme, settings, props, readTextFile, writeTextFile, panes, spaces, agents, terminals, appHome, exec, hc, pickFolder, openOverlay, closeOverlay, nextCommand, run } from "herdr";
+import { theme, settings, props, readTextFile, writeTextFile, panes, spaces, agents, terminals, appHome, exec, hc, pickFolder, openOverlay, closeOverlay, nextCommand, run, layout, shared, setShared } from "herdr";
 import { rows as buildRows, acceptAt, rejectAt, acceptAll, rejectAll, partialAt } from "./model.js";
 import { Store, norm } from "./store.js";
 import { highlight, highlightLines, languageOf, color } from "./highlight.js";
@@ -17,8 +17,9 @@ import { edit, body, cmp, linesOf, wordMove, wordAt, textBetween, indentUnit, vi
 import { Capture, hostPath } from "./capture.js";
 import { merge3, diffHunks, changedRanges, mapLine } from "./merge.js";
 import { buildTree, flatten, parents } from "./tree.js";
-import { openInNvim, openInVSCode } from "./nvim.js";
+import { openInNvim, openInEditor, EDITORS, editorName } from "./nvim.js";
 import { PAIRS, typed, inEmptyPair, betweenBrackets } from "./pairs.js";
+import { tagKind, closingTag, completeClose, betweenTags } from "./tags.js";
 import { compile, findAll, nextMatch, prevMatch, replacement, parseLine } from "./find.js";
 import { rank, parseQuery } from "./quickopen.js";
 import { ACTIONS, BY_ID, resolve, index, holders, bind, unbind, reset as resetKey, refused, keystrokeOf, keyLabel, withModSection, herdrGlobal } from "./keymap.js";
@@ -87,6 +88,31 @@ async function openFirst(folders) {
   return null;
 }
 
+// Panel split: a copy whose block has props {view: "review" | "edit"} shows only that view. The
+// copies talk through shared(): GOTO hands the current file to the other view, DIRTY lists each
+// copy's files with unsaved edits, SAVE asks the copies holding them to save (autosave on).
+const GOTO = "wingman.goto", DIRTY = "wingman.dirty", SAVE = "wingman.saveReq";
+const DIRTY_FRESH = 30000; // ms: an entry older than this is from a copy that's gone
+
+/** Shows the layout block of the Wingman copy for `view`: selects it in its stacks, shows hidden parents. */
+function showView(view) {
+  const path = [];
+  const walk = (n) => {
+    if (!n) return false;
+    path.push(n);
+    if (n.content?.mod === "wingman" && n.content.props?.view === view) return true;
+    for (const c of n.children ?? []) if (walk(c)) return true;
+    path.pop(); return false;
+  };
+  if (!walk(layout())) return false;
+  path.forEach((n, i) => {
+    const next = path[i + 1];
+    if (n.type === "stack" && next && n.active !== next.id) run("layout.select", { stack: n.id, child: next.id });
+    if (n.hidden) run("layout.show", { id: n.id });
+  });
+  return true;
+}
+
 export default class Review extends View {
   // A pane copy can't tell which pane it is (mod panes get no props, and every copy
   // restarts together on reload), so copies don't depend on it:
@@ -98,10 +124,12 @@ export default class Review extends View {
     // Opened as a popup (reason or follow-up prompt): a small form, none of the pane's work.
     if (props()?.form) return this.initForm(cx);
     this.id = Math.random().toString(36).slice(2);
-    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman", autoPairs: true };
+    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman", autoPairs: true, autoTags: true, externalEditor: "code", externalCommand: "" };
     this.editNotes = new Map(); // file key -> the edit note last queued for it
     // Q48: Review (tabs are changed files) or Edit (file tree, tabs for changed and opened files).
-    this.mode = "review"; this.treeOn = true; this.trees = new Map(); this.expanded = new Set();
+    this.view = ["review", "edit"].includes(props()?.view) ? props().view : null; // a panel copy for one view
+    this.gotoSeen = Date.now(); this.dirtySig = ""; this.dirtyAt = 0; this.saveSeen = Date.now();
+    this.mode = this.view ?? "review"; this.treeOn = true; this.trees = new Map(); this.expanded = new Set();
     loadSettings().then((st) => { this.settings = st; });
     this.setKeymap({});
     cx.spawn(async () => { this.setKeymap(await loadKeys()); await syncHerdrKeys(this.keymap); });
@@ -141,7 +169,7 @@ export default class Review extends View {
     this.reset([]);
     this.queue = Promise.resolve(); this.writing = 0;
     cx.timer.every(1000, (cx) => this.follow(cx));
-    cx.timer.every(250, (cx) => this.autosave(cx));
+    cx.timer.every(250, (cx) => { this.autosave(cx); this.publishDirty(); this.takeShared(cx); });
     cx.timer.every(500, (cx) => this.lead(cx));
     cx.timer.every(3000, (cx) => this.collectAll(cx));
     cx.timer.every(5000, (cx) => this.mode === "edit" && (this.treeOn || this.nvim()) && this.refreshTrees(cx));
@@ -618,6 +646,7 @@ export default class Review extends View {
     if (!it) return;
     this.closeQuick(cx);
     const changed = this.files.find((f) => f.key === it.key && !f.plain && f.hunks.length);
+    if (this.view === "review" && !changed) return this.handOff("edit", cx, q.at, it.key);
     if (this.mode === "review" && !changed) this.setMode("edit", cx);
     cx.spawn(async (cx) => this.openFile(it.store, it.rel, cx, q.at));
   }
@@ -652,14 +681,14 @@ export default class Review extends View {
 
   nvim() { return this.settings.editor === "nvim"; }
 
-  /** E9: the current file in VS Code, at the cursor, else at the current change. Unsaved edits are saved first. */
+  /** E9: the current file in the external editor chosen in Settings, at the cursor, else at the current change. Unsaved edits are saved first. */
   toVSCode(cx) {
     const f = this.file();
     if (!f || f.Ctext === null) return;
     if (this.dirty(f) && !f.conflict) this.save(cx, f);
     const at = this.cur ?? { line: f.hunks[this.current]?.n ?? 0, col: 0 };
     cx.spawn(async (cx) => {
-      try { await openInVSCode(f.path, at.line, at.col); }
+      try { await openInEditor(this.settings.externalEditor, f.path, at.line, at.col, this.settings.externalCommand); }
       catch (e) { this.error = String(e.message ?? e); cx.notify(); }
     });
   }
@@ -710,11 +739,64 @@ export default class Review extends View {
   }
 
   setMode(mode, cx) {
+    if (this.view && mode !== this.view) return this.handOff(mode, cx);
     if (mode === this.mode) return;
     if (this.settings.autosave) this.saveAll(cx); // leaving a view saves (Q46)
     this.mode = mode;
     if (mode === "edit" && (this.treeOn || this.nvim())) this.refreshTrees(cx);
     this.settle(); this.handle.focus(); cx.notify();
+  }
+
+  /** Panel split: shows the other view's copy and hands it the current file and line. */
+  handOff(view, cx, at = null, key = null) {
+    const f = key ? null : this.file();
+    if (this.settings.autosave) this.saveAll(cx);
+    at ??= f ? this.cur ?? (f.hunks[this.current] ? { line: f.hunks[this.current].n, col: 0 } : null) : null;
+    if (!showView(view)) { this.error = `This layout has no Wingman ${view === "edit" ? "Edit" : "Review"} panel`; cx.notify(); return; }
+    setShared(GOTO, { view, space: this.spaceId, key: key ?? f?.key ?? null, at, stamp: Date.now() });
+  }
+
+  /** Panel split: what the other copy handed over (GOTO) and save requests from Review (SAVE). */
+  takeShared(cx) {
+    const g = this.view && shared(GOTO);
+    if (g && g.view === this.view && g.stamp > this.gotoSeen) {
+      this.gotoSeen = g.stamp;
+      if (g.space === this.spaceId) {
+        this.handle.focus();
+        const i = g.key?.indexOf("|") ?? -1, store = i > 0 && this.stores.find((st) => st.root === g.key.slice(0, i));
+        if (store && this.view === "edit") cx.spawn(async (cx) => this.openFile(store, g.key.slice(i + 1), cx, g.at));
+        else if (store && this.visible().some((f) => f.key === g.key)) {
+          this.pick(g.key, cx);
+          const f = this.file(), line = g.at?.line ?? 0;
+          if (f?.hunks.length) { let h = 0; f.hunks.forEach((x, j) => { if (x.n <= line) h = j; }); this.current = h; this.reveal(); }
+        }
+        cx.notify();
+      }
+    }
+    const r = shared(SAVE);
+    if (r && r.stamp > this.saveSeen) {
+      this.saveSeen = r.stamp;
+      if (this.settings.autosave) for (const f of this.files) if (r.keys.includes(f.key) && this.dirty(f) && !f.conflict) this.save(cx, f);
+    }
+  }
+
+  /** Panel split: this copy's files with unsaved edits, for Review to check (renewed every 10 s while any). */
+  publishDirty() {
+    const keys = this.files.filter((f) => this.dirty(f)).map((f) => f.key).sort(), sig = keys.join("\n"), now = Date.now();
+    if (sig === this.dirtySig && (!keys.length || now - this.dirtyAt < 10000)) return;
+    this.dirtySig = sig; this.dirtyAt = now;
+    const all = { ...(shared(DIRTY) ?? {}) };
+    for (const [id, v] of Object.entries(all)) if (now - (v?.at ?? 0) > DIRTY_FRESH) delete all[id];
+    if (keys.length) all[this.id] = { keys, at: now }; else if (!(this.id in all)) return; else delete all[this.id];
+    setShared(DIRTY, all);
+  }
+
+  /** Files among `keys` that another copy holds unsaved edits to. */
+  heldElsewhere(keys) {
+    const now = Date.now(), held = new Set();
+    for (const [id, v] of Object.entries(shared(DIRTY) ?? {}))
+      if (id !== this.id && now - (v?.at ?? 0) <= DIRTY_FRESH) for (const k of v.keys ?? []) held.add(k);
+    return keys.filter((k) => held.has(k));
   }
 
   /** ctrl-b: shows or hides the tree, switching to the Edit view first if needed. */
@@ -955,6 +1037,19 @@ export default class Review extends View {
   run(plan, cx, feedback = []) {
     if (!plan.length) return;
     if (plan.some(([f]) => f.conflict)) { this.error = "Pick Keep mine or Take agent's first"; cx.notify(); return; }
+    // Panel split: another copy (Edit) holds unsaved edits to these files. Review acts on what's
+    // on disk, so they're saved first (autosave on) or left to the user (off).
+    const held = this.heldElsewhere(plan.map(([f]) => f.key));
+    if (held.length) {
+      const names = held.map((k) => base(k.slice(k.indexOf("|") + 1))).join(", ");
+      if (this.settings.autosave) {
+        setShared(SAVE, { keys: held, stamp: Date.now() });
+        const paths = new Set(plan.filter(([f]) => held.includes(f.key)).map(([f]) => norm(f.path ?? "")));
+        cx.timer.after(800, (cx) => this.onWatch(paths, cx));
+        this.error = `Saving your edits to ${names} in Edit first: try again in a moment`;
+      } else this.error = `${names} has unsaved edits in Edit: save or discard them there first`;
+      cx.notify(); return;
+    }
     const entry = { snaps: [], writes: [], feedback }, jobs = [], notes = [];
     for (const [f, action] of plan) {
       // Unsaved edits are saved first: the action's write expects memory and disk to agree.
@@ -1168,7 +1263,7 @@ export default class Review extends View {
   }
 
   openSettings() {
-    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 500 });
+    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 640 });
   }
 
   /** Every 250 ms (Q46). Herdr has no blur event, so focus is polled: the pane losing the
@@ -1224,6 +1319,11 @@ export default class Review extends View {
   // lines), removed lines are read-only. Edits change memory at once; ctrl-s writes them.
 
   editable(f) { return !!f && !f.error && f.Ctext !== null; }
+
+  /** Panel split: the Review copy keeps no unsaved text. */
+  readOnly(cx) {
+    this.error = `Review is read-only: double-click a line to edit it in Edit (${this.kl("toggleView")})`; cx.notify();
+  }
   cw() { return this.charW ?? 7.2; }
   hasTextSel() { return !!(this.anchor && this.cur && cmp(this.anchor, this.cur)); }
   ordered() { return cmp(this.anchor, this.cur) <= 0 ? [this.anchor, this.cur] : [this.cur, this.anchor]; }
@@ -1246,6 +1346,7 @@ export default class Review extends View {
     if (r.side !== "new") { cx.notify(); return; } // removed lines are read-only
     const p = this.posAt(f, r, x), lines = linesOf(f);
     this.selA = this.selB = null; this.goalX = null;
+    if (ev.click_count === 2 && this.view === "review") return this.handOff("edit", cx, p);
     if (ev.click_count === 2) { [this.anchor, this.cur] = wordAt(lines, p); cx.notify(); return; }
     if (ev.click_count >= 3) {
       this.anchor = { line: p.line, col: 0 };
@@ -1295,6 +1396,7 @@ export default class Review extends View {
   type(text, cx, { from, to, group = false, select = false } = {}) {
     const f = this.file();
     if (!this.editable(f) || !this.cur) return;
+    if (this.view === "review") return this.readOnly(cx);
     const sel = this.hasTextSel(), a = from ?? (sel ? this.anchor : this.cur), b = to ?? this.cur;
     const lang = languageOf(f.rel);
     const { state, cursor } = edit(f, a, b, text, (ls) => highlightLines(ls, lang));
@@ -1382,7 +1484,9 @@ export default class Review extends View {
         if (ctrl || shift) return false; // ctrl-shift-enter: accept file
         const indent = /^\s*/.exec(body(lines[sa.line]).slice(0, sa.col))[0];
         // Between brackets, "{|}": the closer goes to its own line and the cursor to an indented one.
-        if (!sel && this.settings.autoPairs && betweenBrackets(body(lines[c.line]), c.col)) {
+        const opens = (this.settings.autoPairs && betweenBrackets(body(lines[c.line]), c.col))
+          || (this.settings.autoTags && tagKind(f.rel) && betweenTags(body(lines[c.line]), c.col));
+        if (!sel && opens) {
           const inner = indent + indentUnit(lines);
           this.type("\n" + inner + "\n" + indent, cx);
           this.cur = { line: c.line + 1, col: inner.length }; this.showCursor(); cx.notify();
@@ -1404,6 +1508,7 @@ export default class Review extends View {
     if (ctrl && !m.alt) return false; // ctrl keys are actions (keymap.js)
     // Typed characters; Ctrl+Alt is AltGr on Windows keyboards.
     if (e.key_char && !m.platform && (!m.control || m.alt) && !/[\r\n]/.test(e.key_char)) {
+      if (!sel && this.settings.autoTags && this.autoTag(e.key_char, f, lines, cx)) return true;
       if (this.settings.autoPairs && this.autoPair(e.key_char, lines, sel, sa, sb, cx)) return true;
       this.type(e.key_char, cx, { group: true });
       return true;
@@ -1454,6 +1559,28 @@ export default class Review extends View {
     if (!d?.insert) return false;
     this.type(d.insert, cx, { group: true });
     this.cur = { line: this.cur.line, col: this.cur.col - 1 }; this.showCursor(); cx.notify();
+    return true;
+  }
+
+  /**
+   * E4: in a file with tags, ">" ending an opening tag adds its closing tag after the cursor, and
+   * "/" right after "<" completes the innermost open tag. True when handled.
+   */
+  autoTag(ch, f, lines, cx) {
+    const kind = (ch === ">" || ch === "/") && tagKind(f.rel);
+    if (!kind) return false;
+    const c = this.cur, lo = Math.max(0, c.line - 50);
+    const ls = lines.slice(lo, c.line + 1).map(body), at = c.line - lo;
+    if (ch === ">") {
+      const close = closingTag(ls, at, c.col, kind);
+      if (!close) return false;
+      this.type(">" + close, cx, { group: true });
+      this.cur = { line: this.cur.line, col: this.cur.col - close.length }; this.showCursor(); cx.notify();
+      return true;
+    }
+    const rest = completeClose(ls, at, c.col, kind);
+    if (!rest) return false;
+    this.type("/" + rest, cx, { group: true });
     return true;
   }
 
@@ -1544,6 +1671,7 @@ export default class Review extends View {
   replaceAll(cx) {
     const f = this.file(), { ms, re } = this.matches(f);
     if (!this.editable(f) || !re || !ms.length) return;
+    if (this.view === "review") return this.readOnly(cx);
     const lines = linesOf(f), repl = this.replaceInput.value(), regex = this.findOpts.regex;
     const subs = ms.map((m) => replacement(body(lines[m.line]).slice(m.from, m.to), re, repl, regex));
     this.cur ??= { line: 0, col: 0 };
@@ -1753,7 +1881,13 @@ export default class Review extends View {
     }
     if (this.form.form === "settings") {
       this.formHandle = cx.focus_handle(); this.formHandle.focus();
-      cx.spawn(async (cx) => { this.st = await loadSettings(); cx.notify(); });
+      // The custom editor command saves half a second after typing stops.
+      this.extInput = InputState.new({ placeholder: "Command, e.g. idea --line {line} {path}" });
+      this.extInput.on("change", (_e, cx) => {
+        const v = this.extInput.value(); this.extTyped = v;
+        cx.timer.after(500, (cx) => { if (this.extTyped === v && v !== (this.st?.externalCommand ?? "")) this.setSetting({ externalCommand: v }, cx); });
+      });
+      cx.spawn(async (cx) => { this.st = await loadSettings(); this.extInput.set_value?.(this.st.externalCommand ?? ""); cx.notify(); });
       return;
     }
     this.text = "";
@@ -1956,6 +2090,7 @@ export default class Review extends View {
         .child(toggle("set-note", "Auto note on rejections", "Tell the agent which of its changes you rejected.", st.autoNote, (cx) => this.setSetting({ autoNote: !st.autoNote }, cx)))
         .child(toggle("set-editnote", "Note on my edits", "Tell the agent which lines of its files you changed.", st.editNote, (cx) => this.setSetting({ editNote: !st.editNote }, cx)))
         .child(toggle("set-pairs", "Auto-close brackets and quotes", "Typing ( [ { \" ' ` adds the closer; Backspace in an empty pair removes both.", st.autoPairs ?? true, (cx) => this.setSetting({ autoPairs: !(st.autoPairs ?? true) }, cx)))
+        .child(toggle("set-tags", "Auto-close tags", "In HTML, XML, JSX and Vue files, typing > adds the closing tag and </ completes the open one.", st.autoTags ?? true, (cx) => this.setSetting({ autoTags: !(st.autoTags ?? true) }, cx)))
         .child(toggle("set-autosave", "Autosave", "Save on focus loss and file switch. Where you and the agent change the same lines, the agent's win.", st.autosave, (cx) => this.setSetting({ autosave: !st.autosave }, cx)))
         .child(v_flex().gap(6).when(!st.autosave, (e) => e.opacity(0.4))
           .child(div().text_size(12).text_color(t.muted).child("Also save after typing stops for"))
@@ -1968,7 +2103,15 @@ export default class Review extends View {
           .child(h_flex().gap(4).children([["wingman", "Wingman"], ["nvim", "Neovim"]].map(([v, label]) => div().id(`editor-${v}`).h(24).px(10).flex().items_center().rounded(5).text_size(12).cursor_pointer()
             .bg((st.editor ?? "wingman") === v ? t.accent + "77" : t.raised).hover((s) => s.opacity(0.85))
             .on_click((_e, cx) => this.setSetting({ editor: v }, cx)).child(label))))
-          .child(div().text_size(11).text_color(t.dim).child("Neovim: clicking a line, Open in Neovim, or a file in the tree opens it in a Neovim pane beside Wingman."))));
+          .child(div().text_size(11).text_color(t.dim).child("Neovim: clicking a line, Open in Neovim, or a file in the tree opens it in a Neovim pane beside Wingman.")))
+        .child(v_flex().gap(6).pt(4)
+          .child(div().text_size(12).text_color(t.muted).child("External editor (Open in external editor, and the file row's last button)"))
+          .child(h_flex().gap(4).flex_wrap().children(Object.entries(EDITORS).map(([v, ed]) => div().id(`ext-${v}`).h(24).px(10).flex().items_center().rounded(5).text_size(12).cursor_pointer()
+            .bg((st.externalEditor ?? "code") === v ? t.accent + "77" : t.raised).hover((s) => s.opacity(0.85))
+            .on_click((_e, cx) => this.setSetting({ externalEditor: v }, cx)).child(ed.name))))
+          .when(st.externalEditor === "custom", (e) => e
+            .child(Input.new(this.extInput))
+            .child(div().text_size(11).text_color(t.dim).child('{path}, {line} and {col} are filled in; "quotes" keep spaces. Example: idea --line {line} --column {col} {path}')))));
   }
 
   renderMenu() {
@@ -2041,17 +2184,18 @@ export default class Review extends View {
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .child(h_flex().h(40).flex_none().px(12).gap(10).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Wingman"))
-        .child(h_flex().flex_none().gap(2).p(2).rounded(6).bg(t.raised).children(["review", "edit"].map((m) =>
+        // A panel copy is one view: the panel's own Review and Edit buttons switch between them.
+        .when(!this.view, (e) => e.child(h_flex().flex_none().gap(2).p(2).rounded(6).bg(t.raised).children(["review", "edit"].map((m) =>
           div().id(`mode-${m}`).h(22).px(8).flex().items_center().rounded(4).text_size(12).cursor_pointer()
             .when(this.mode === m, (e) => e.bg(t.selected)).on_click((_e, cx) => this.setMode(m, cx))
-            .child(m === "review" ? "Review" : "Edit"))))
+            .child(m === "review" ? "Review" : "Edit")))))
         .child(div().text_size(11).text_color(t.muted).truncate().child(`${this.stores.map((st) => base(st.root)).join(", ")} · ${total} change${total === 1 ? "" : "s"} in ${vis.length} file${vis.length === 1 ? "" : "s"} · ${this.history.length} undoable${this.writing ? " · saving…" : ""}${agents().some((a) => a.space === this.spaceId && ACTIVE.has(a.status)) ? " · agent working" : ""}`))
         .child(div().flex_1())
         .when(!!this.lastReject, (e) => e.child(this.button("reason", `Comment last rejection  ${this.kl("reason")}`, t.raised, (cx) => this.askReason(cx))))
-        .child(this.button("settings", "⚙ Settings", t.raised, () => this.openSettings()))
-        .when(total > 0, (e) => e
+        .when(total > 0 && this.mode === "review", (e) => e
           .child(this.button("reject-all", "Reject all files", t.ansi1 + "55", (cx) => this.everything("reject", cx)))
-          .child(this.button("accept-all", "Accept all files", t.ansi2 + "55", (cx) => this.everything("accept", cx)))))
+          .child(this.button("accept-all", "Accept all files", t.ansi2 + "55", (cx) => this.everything("accept", cx))))
+        .child(this.button("settings", "⚙ Settings", t.raised, () => this.openSettings()).flex_none()))
       .child(h_flex().flex_1().min_h(0)
       .when(this.treeOnly(), (e) => e.child(this.renderTree(t, true)))
       .when(this.mode === "edit" && this.treeOn && !this.treeOnly(), (e) => e.child(this.renderTree(t)))
@@ -2069,12 +2213,13 @@ export default class Review extends View {
               .left(((this.tabOffset ?? 0) / total) * view).w(Math.max(24, (view / total) * view)));
           }))
         .when(vis.length > 1, (e) => e.child(div().flex_none().whitespace_nowrap().text_size(10).text_color(t.dim).px(6).child(`${vis.findIndex((x) => x.key === this.sel) + 1}/${vis.length} · ${this.kl("prevFile")}/${this.kl("nextFile")}`)))
-        .when(!!f, (e) => e.child(this.button("vscode", `VS Code  ${this.kl("openInVSCode")}`, t.raised, (cx) => this.toVSCode(cx)).flex_none().whitespace_nowrap()))
         .when(!!f && this.nvim(), (e) => e.child(this.button("nvim", `Neovim  ${this.kl("openInNvim")}`, t.raised, (cx) => this.toNvim(f, f.hunks[this.current]?.n ?? 0, cx)).flex_none().whitespace_nowrap()))
         .when(this.dirty(f), (e) => e.child(this.button("save", `Save  ${this.kl("save")}`, t.accent + "55", (cx) => this.save(cx)).flex_none().whitespace_nowrap()))
-        .when(!!f?.hunks.length, (e) => e
+        // Only a file with the agent's changes (an opened file's own edits aren't the agent's).
+        .when(!!f && !f.plain && f.hunks.length > 0, (e) => e
           .child(this.button("reject-file", `Reject file  ${this.kl("rejectFile")}`, t.ansi1 + "40", (cx) => this.wholeFile("reject", cx)).flex_none().whitespace_nowrap())
-          .child(this.button("accept-file", `Accept file  ${this.kl("acceptFile")}`, t.ansi2 + "40", (cx) => this.wholeFile("accept", cx)).flex_none().whitespace_nowrap())))
+          .child(this.button("accept-file", `Accept file  ${this.kl("acceptFile")}`, t.ansi2 + "40", (cx) => this.wholeFile("accept", cx)).flex_none().whitespace_nowrap()))
+        .when(!!f, (e) => e.child(this.button("vscode", `${editorName(this.settings.externalEditor)}  ${this.kl("openInVSCode")}`, t.raised, (cx) => this.toVSCode(cx)).flex_none().whitespace_nowrap())))
       .when(!!f && !!this.bar, (e) => e.child(this.findBar(f, t)))
       .when(!!f?.conflict, (e) => e.child(h_flex().px(12).py(6).gap(8).items_center().bg(t.ansi3 + "22").text_size(12)
         .child(div().flex_1().child(f?.conflict?.theirs ? "The agent changed the same lines you're editing." : "The file was deleted while you were editing it."))

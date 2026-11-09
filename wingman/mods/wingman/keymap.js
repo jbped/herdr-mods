@@ -20,7 +20,7 @@ export const ACTIONS = [
   { id: "quickOpen", label: "Quick Open", group: "Files and views", scope: "pane", keys: ["ctrl-p"] },
   { id: "toggleView", label: "Switch Review / Edit view", group: "Files and views", scope: "pane", keys: ["ctrl-shift-r"] },
   { id: "toggleTree", label: "Show or hide the file tree", group: "Files and views", scope: "pane", keys: ["ctrl-b"] },
-  { id: "openInVSCode", label: "Open in VS Code", group: "Files and views", scope: "pane", keys: ["ctrl-e"] },
+  { id: "openInVSCode", label: "Open in external editor", group: "Files and views", scope: "pane", keys: ["ctrl-e"] },
   { id: "openInNvim", label: "Open in Neovim", group: "Files and views", scope: "pane", keys: ["ctrl-o"] },
   // Editing
   { id: "save", label: "Save", group: "Editing", scope: "pane", keys: ["ctrl-s"] },

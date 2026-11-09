@@ -49,6 +49,12 @@ Run the same installer with `uninstall`. It removes only what install added: its
 
 Open a Wingman pane beside an agent: run `pane.split` with `{"direction": "right", "mod": "wingman"}`, for example from the palette or a key in `keys.json`. Each pane shows the review for the space it's in.
 
+Or put Wingman in the side panel beside Files and Changes, as two panel tabs, Review and Edit. In a layout of your own (a clone, since Herdr's shipped layouts are read-only), add two blocks to the `panel-body` stack: `{"id": "wingman-review", "type": "block", "content": {"mod": "wingman", "props": {"view": "review"}}}` and the same with `wingman-edit` and `"view": "edit"`. Raise the `panel` column's `max` (for example to 2400), and point the `tabs` block at a clone of the `tabs` mod that draws a button per Wingman block. The `tabs-plus` clone does that, and it keeps a width per panel tab: Review and Edit open at 960px the first time and then at whatever width you drag them to.
+
+Each block is its own copy of Wingman, fixed to its view:
+- Review is read-only. Accept and Reject still write to disk. `ctrl-shift-r`, a double-click on a line, and Quick Open of an unchanged file all switch to the Edit tab at that file and line. Switching from Edit goes back to Review at the change nearest the cursor.
+- Edit holds any unsaved edits. Before Review accepts or rejects in a file that has unsaved edits in Edit, those edits are saved (autosave on: try again a moment later), or, with autosave off, you're asked to save or discard them in Edit first.
+
 Wingman finds a space's repos from the folders its agents started in and from the files the Claude hook sees them edit. When it finds none, for example for a WSL agent started from a Windows folder, click **Open folder…** and pick a folder in the repo. The Edit view's file tree has the same button for adding more repos. Added repos are remembered for the space, and capture covers them too.
 
 | Action | Key |
@@ -59,7 +65,7 @@ Wingman finds a space's repos from the folders its agents started in and from th
 | Next / previous file | `ctrl-shift-down` / `ctrl-shift-up` |
 | Undo last accept/reject | `ctrl-z` |
 | Review / Edit view | `ctrl-shift-r` |
-| Open the file in VS Code | `ctrl-e` (or the VS Code button), at the cursor or the current change; unsaved edits are saved first |
+| Open the file in your external editor | `ctrl-e` (or the editor's button at the far right), at the cursor or the current change; unsaved edits are saved first. Pick the editor in Settings. |
 | File tree (Edit view) | `ctrl-b` |
 | Select lines | click a line, or click and drag; Shift+click or `shift-up` / `shift-down` to extend; click inside the selection or `escape` to clear. |
 | Menu for a line or change | right-click: Comment, Reject, Reject with comment, Accept (on the selected lines when there are any). Right-click never changes the selection. |
@@ -85,6 +91,7 @@ The diff is also an editor. Click in the text to place the cursor and type. Your
 | Edit | type, `backspace` / `delete` (with `ctrl` by word), `enter` keeps the indent, `tab` / `shift-tab` indent and outdent |
 | Copy, cut, paste | `ctrl-c` / `ctrl-x` / `ctrl-v` (without a selection: the whole line) |
 | Brackets and quotes | typing `(` `[` `{` `"` `'` `` ` `` adds the closer (before whitespace, a line end or a closer; quotes not right after a letter). Typing the closer steps over it, Backspace in an empty pair removes both, Enter between brackets opens an indented line, and with text selected it wraps the selection. |
+| Tags | in HTML, XML, SVG, Vue, Svelte, JSX and TSX files, typing `>` at the end of an opening tag adds its closing tag after the cursor (not for HTML void elements such as `<br>`, self-closing tags, or a generic like `Foo<T>`), and typing `/` right after `<` completes the innermost open tag. Enter between `<p>` and `</p>` opens an indented line. |
 | Move lines up / down | `alt-up` / `alt-down` (Herdr's agent keys by default, see below) |
 | Copy lines up / down | `alt-shift-up` / `alt-shift-down` |
 | Delete lines | `ctrl-shift-k` (Herdr's picker key by default, see below) |
@@ -132,6 +139,8 @@ The header's **⚙ Settings** opens:
 - **Auto note on rejections**: tell the agent which of its changes you rejected. On by default.
 - **Note on my edits**: when you save, tell the agent that changed the file which lines you edited, so it reads the file again before its next change. On by default. The note is delivered with the agent's next tool call or prompt, and a newer save replaces a note it hasn't read yet.
 - **Auto-close brackets and quotes**: the bracket and quote rules under Editing. On by default.
+- **Auto-close tags**: the tag rules under Editing. On by default.
+- **External editor**: VS Code (default), Cursor, Windsurf, Zed, Sublime Text, or a custom command with `{path}`, `{line}` and `{col}`. VS Code, Cursor and Windsurf open WSL files through Remote - WSL. On Windows a `.cmd` launcher runs through cmd.exe, which refuses paths containing `& | < > ^ % ! "`.
 - **Editor**: Wingman (the built-in editor, the default) or Neovim (see Neovim as the editor).
 - **Autosave**: save when Wingman loses focus (another pane, or another window), and when you switch files or spaces. On by default. Herdr has no blur event for mods, so focus is checked 4 times a second.
 - **Also save after typing stops for**: Focus change (no timer, save on focus change only), 1, 2, 3, 5 or 10 seconds. Focus change by default.
