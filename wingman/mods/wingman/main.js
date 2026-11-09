@@ -21,9 +21,10 @@ import { openInNvim, openInVSCode } from "./nvim.js";
 import { PAIRS, typed, inEmptyPair, betweenBrackets } from "./pairs.js";
 import { compile, findAll, nextMatch, prevMatch, replacement, parseLine } from "./find.js";
 import { rank, parseQuery } from "./quickopen.js";
+import { ACTIONS, BY_ID, resolve, index, holders, bind, unbind, reset as resetKey, refused, keystrokeOf, keyLabel, withModSection, herdrGlobal } from "./keymap.js";
 import { lineSpan, moveLines, copyLines, deleteLines, joinLines, toggleComment, commentFor } from "./lineops.js";
 import { splitLines } from "./model.js";
-import { Journal, spaceRepos, addSpaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings } from "./journal.js";
+import { Journal, spaceRepos, addSpaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings, loadKeys, saveKeys } from "./journal.js";
 
 const ROW = 20, GUTTER = 58, BTN_W = 110, BTN_GAP = 6, BUTTONS = 3; // Reject, Accept, Prompt
 // Agents count as working while they are in a turn, including while blocked on a question.
@@ -65,6 +66,22 @@ function reviewSpaces() {
 }
 
 /** The first folder that opens as a git repo, or null. */
+/**
+ * Herdr's global keys reach Herdr before Wingman. For each Wingman key that Herdr binds globally,
+ * the "mod:wingman" section of Herdr's keys.json sends it to Wingman while Wingman has focus
+ * (Q4). Only Wingman's own entries ("wingman.<action>") in that section are rewritten.
+ */
+async function syncHerdrKeys(keymap) {
+  const path = `${appHome()}/keys.json`, text = await readTextFile(path);
+  if (!text) return;
+  try {
+    const global = herdrGlobal(text), entries = {};
+    for (const a of ACTIONS) for (const k of keymap.get(a.id) ?? []) if (global[k] && !(k in entries)) entries[k] = `wingman.${a.id}`;
+    const next = withModSection(text, entries);
+    if (next) { await writeTextFile(path, next, text); log(`keys.json: mod:wingman now ${JSON.stringify(entries)}`); }
+  } catch (e) { log(`keys.json: ${e.message ?? e}`); } // another copy wrote it first, or the file isn't JSON
+}
+
 async function openFirst(folders) {
   for (const f of folders) { try { return await Store.open(f); } catch {} }
   return null;
@@ -86,6 +103,8 @@ export default class Review extends View {
     // Q48: Review (tabs are changed files) or Edit (file tree, tabs for changed and opened files).
     this.mode = "review"; this.treeOn = true; this.trees = new Map(); this.expanded = new Set();
     loadSettings().then((st) => { this.settings = st; });
+    this.setKeymap({});
+    cx.spawn(async () => { this.setKeymap(await loadKeys()); await syncHerdrKeys(this.keymap); });
     // The pane takes the keyboard back after its popup closes.
     // Commands: "focus" when a popup over the pane closes; the rest come from the right-click menu.
     cx.spawn(async (cx) => {
@@ -111,8 +130,8 @@ export default class Review extends View {
           toggleComment: () => this.lineOp("comment", cx),
           openInVSCode: () => this.toVSCode(cx),
           // The settings popup saved a change.
-          settings: async () => { this.settings = await loadSettings(); },
-        })[c]?.();
+          settings: async () => { this.settings = await loadSettings(); this.setKeymap(await loadKeys()); },
+        })[c]?.() ?? (BY_ID.has(c) ? this.runAction(c, cx) : undefined);
         cx.notify();
       }
     });
@@ -660,7 +679,7 @@ export default class Review extends View {
   closeTab(key, cx) {
     const f = this.files.find((x) => x.key === key);
     if (f && this.dirty(f)) {
-      if (!this.settings.autosave || f.conflict) { this.error = `${base(f.rel)} has unsaved edits: save them first (ctrl-s)`; cx.notify(); return; }
+      if (!this.settings.autosave || f.conflict) { this.error = `${base(f.rel)} has unsaved edits: save them first (${this.kl("save")})`; cx.notify(); return; }
       this.save(cx, f);
     }
     this.opened = this.opened.filter((k) => k !== key);
@@ -1327,9 +1346,6 @@ export default class Review extends View {
     const m = e.modifiers, ctrl = m.control || m.platform, shift = m.shift, lines = linesOf(f), c = this.cur;
     const sel = this.hasTextSel(), [sa, sb] = sel ? this.ordered() : [c, c];
     const lineEnd = (l) => ({ line: l, col: body(lines[l]).length });
-    const op = { "alt-up": "moveUp", "alt-down": "moveDown", "alt-shift-up": "copyUp", "alt-shift-down": "copyDown",
-      "ctrl-shift-k": "delete", "ctrl-j": "join", "ctrl-/": "comment" }[e.keystroke];
-    if (op) return this.lineOp(op, cx), true;
     if (m.alt && !ctrl) return false;
     switch (e.key) {
       case "left":
@@ -1385,20 +1401,7 @@ export default class Review extends View {
         if (!sel) return false;
         this.anchor = null; cx.notify(); return true;
     }
-    if (ctrl && !m.alt) {
-      switch (e.key) {
-        case "a": this.anchor = { line: 0, col: 0 }; this.cur = lineEnd(lines.length - 1); cx.notify(); return true;
-        case "c": cx.write_to_clipboard(this.copyText(f)); return true;
-        case "x":
-          cx.write_to_clipboard(this.copyText(f));
-          if (sel) this.type("", cx);
-          else if (c.line + 1 < lines.length) this.type("", cx, { from: { line: c.line, col: 0 }, to: { line: c.line + 1, col: 0 } });
-          else this.type("", cx, { from: c.line > 0 ? lineEnd(c.line - 1) : { line: 0, col: 0 }, to: lineEnd(c.line) });
-          return true;
-        case "v": { const t = cx.read_from_clipboard(); if (t) this.type(t, cx); return true; }
-      }
-      return false;
-    }
+    if (ctrl && !m.alt) return false; // ctrl keys are actions (keymap.js)
     // Typed characters; Ctrl+Alt is AltGr on Windows keyboards.
     if (e.key_char && !m.platform && (!m.control || m.alt) && !/[\r\n]/.test(e.key_char)) {
       if (this.settings.autoPairs && this.autoPair(e.key_char, lines, sel, sa, sb, cx)) return true;
@@ -1580,12 +1583,12 @@ export default class Review extends View {
         .child(this.button("find-prev", "↑", t.raised, (cx) => this.findStep(-1, cx)))
         .child(this.button("find-next", "↓", t.raised, (cx) => this.findStep(1, cx)))
         .child(div().flex_1())
-        .child(this.button("find-mode", mode === "replace" ? "Hide replace" : "Replace  ctrl-h", t.raised, (cx) => { this.bar = { mode: mode === "replace" ? "find" : "replace" }; cx.notify(); }))
+        .child(this.button("find-mode", mode === "replace" ? "Hide replace" : `Replace  ${this.kl("replace")}`, t.raised, (cx) => { this.bar = { mode: mode === "replace" ? "find" : "replace" }; cx.notify(); }))
         .child(this.button("find-close", "×", t.raised, (cx) => this.closeFind(cx))))
       .when(mode === "replace", (e) => e.child(h_flex().gap(6).items_center()
         .child(box(this.replaceInput, 240))
         .child(this.button("replace-one", "Replace", t.raised, (cx) => this.replaceOne(cx)))
-        .child(this.button("replace-all", "All  ctrl-alt-enter", t.raised, (cx) => this.replaceAll(cx)))
+        .child(this.button("replace-all", `All  ${this.kl("replaceAll")}`, t.raised, (cx) => this.replaceAll(cx)))
         .when(this.findOpts.regex, (e) => e.child(div().text_size(11).text_color(t.dim).child("$1, $2… insert groups")))));
   }
 
@@ -1653,54 +1656,84 @@ export default class Review extends View {
 
   // ---- input ---------------------------------------------------------------
 
-  key(e, cx) {
+  /** Each scope's key -> action lookup, rebuilt when the user's shortcuts change. */
+  setKeymap(overrides) {
+    this.keymap = resolve(overrides);
+    this.kIdx = { edit: index(this.keymap, "edit"), pane: index(this.keymap, "pane"), find: index(this.keymap, "find") };
+  }
+
+  /** The first key bound to an action, for buttons and menus ("" when it has none). */
+  kl(id) { return keyLabel(this.keymap.get(id)?.[0]); }
+
+  /** Runs one action by id (a key, a "mod:wingman" binding, or a command). */
+  runAction(id, cx) {
     const f = this.file();
-    // The find bar's inputs have the keyboard: only the bar's own keys act here.
+    const go = {
+      accept: () => this.decide("accept", cx), reject: () => this.decide("reject", cx),
+      acceptFile: () => this.wholeFile("accept", cx), rejectFile: () => this.wholeFile("reject", cx),
+      nextChange: () => this.step(1, cx), prevChange: () => this.step(-1, cx),
+      comment: () => this.askPrompt(this.current, cx), reason: () => this.askReason(cx),
+      nextFile: () => this.stepFile(1, cx), prevFile: () => this.stepFile(-1, cx),
+      quickOpen: () => this.openQuick(cx), toggleView: () => this.setMode(this.mode === "review" ? "edit" : "review", cx),
+      toggleTree: () => this.toggleTree(cx), openInVSCode: () => this.toVSCode(cx),
+      openInNvim: () => { if (f) this.toNvim(f, this.cur?.line ?? f.hunks[this.current]?.n ?? 0, cx); },
+      save: () => this.save(cx), undo: () => this.undo(cx), redo: () => this.redoEdit(cx),
+      selectAll: () => this.clip("all", cx), copy: () => this.clip("copy", cx), cut: () => this.clip("cut", cx), paste: () => this.clip("paste", cx),
+      moveLineUp: () => this.lineOp("moveUp", cx), moveLineDown: () => this.lineOp("moveDown", cx),
+      copyLineUp: () => this.lineOp("copyUp", cx), copyLineDown: () => this.lineOp("copyDown", cx),
+      deleteLine: () => this.lineOp("delete", cx), joinLines: () => this.lineOp("join", cx), toggleComment: () => this.lineOp("comment", cx),
+      find: () => this.openFind("find", cx), replace: () => this.openFind("replace", cx), goToLine: () => this.openFind("line", cx),
+      findNext: () => this.findStep(1, cx), findPrev: () => this.findStep(-1, cx),
+      findCase: () => this.findFlag("cased", cx), findWord: () => this.findFlag("word", cx), findRegex: () => this.findFlag("regex", cx),
+      replaceAll: () => this.replaceAll(cx),
+    }[id];
+    go?.();
+  }
+
+  /** Select all, copy, cut, paste: on the text cursor's file only. */
+  clip(how, cx) {
+    const f = this.file();
+    if (!this.cur || !this.editable(f)) return;
+    const lines = linesOf(f), c = this.cur, sel = this.hasTextSel(), lineEnd = (l) => ({ line: l, col: body(lines[l]).length });
+    if (how === "all") { this.anchor = { line: 0, col: 0 }; this.cur = lineEnd(lines.length - 1); cx.notify(); return; }
+    if (how === "paste") { const t = cx.read_from_clipboard(); if (t) this.type(t, cx); return; }
+    cx.write_to_clipboard(this.copyText(f));
+    if (how !== "cut") return;
+    // Cut without a selection takes the whole line.
+    if (sel) this.type("", cx);
+    else if (c.line + 1 < lines.length) this.type("", cx, { from: { line: c.line, col: 0 }, to: { line: c.line + 1, col: 0 } });
+    else this.type("", cx, { from: c.line > 0 ? lineEnd(c.line - 1) : { line: 0, col: 0 }, to: lineEnd(c.line) });
+  }
+
+  key(e, cx) {
+    const f = this.file(), k = e.keystroke, done = () => cx.stop_propagation();
+    // Quick Open has the keyboard: its own keys, and its key again moves down the list.
     if (this.inBar === this.quickInput) {
-      const qk = { escape: () => this.closeQuick(cx), up: () => this.moveQuick(-1, cx), down: () => this.moveQuick(1, cx),
-        "ctrl-p": () => this.moveQuick(1, cx), tab: () => this.completeQuick(cx) }[e.keystroke];
-      if (qk) { qk(); cx.stop_propagation(); }
+      const qk = { escape: () => this.closeQuick(cx), up: () => this.moveQuick(-1, cx), down: () => this.moveQuick(1, cx), tab: () => this.completeQuick(cx) }[k]
+        ?? (this.kIdx.pane.get(k) === "quickOpen" ? () => this.moveQuick(1, cx) : null);
+      if (qk) { qk(); done(); }
       return;
     }
+    // The find bar has the keyboard: Esc, the bar's own actions, and switching between find, replace and line.
     if (this.inBar) {
-      const bar = { escape: () => this.closeFind(cx), "ctrl-f": () => this.openFind("find", cx), "ctrl-h": () => this.openFind("replace", cx),
-        "ctrl-g": () => this.openFind("line", cx), "alt-c": () => this.findFlag("cased", cx), "alt-w": () => this.findFlag("word", cx),
-        "alt-r": () => this.findFlag("regex", cx), "ctrl-alt-enter": () => this.replaceAll(cx) }[e.keystroke];
-      if (bar) { bar(); cx.stop_propagation(); }
+      if (k === "escape") { this.closeFind(cx); return done(); }
+      const id = this.kIdx.find.get(k) ?? (["find", "replace", "goToLine"].includes(this.kIdx.pane.get(k)) ? this.kIdx.pane.get(k) : null);
+      if (id) { this.runAction(id, cx); done(); }
       return;
     }
-    if (this.cur && this.editable(f) && this.editKey(e, f, cx)) { cx.stop_propagation(); return; }
-    const act = {
-      "ctrl-s": () => this.save(cx),
-      "ctrl-b": () => this.toggleTree(cx),
-      "ctrl-f": () => this.openFind("find", cx),
-      "ctrl-h": () => this.openFind("replace", cx),
-      "ctrl-g": () => this.openFind("line", cx),
-      "f3": () => this.findStep(1, cx),
-      "shift-f3": () => this.findStep(-1, cx),
-      "ctrl-e": () => this.toVSCode(cx),
-      "ctrl-o": () => { const f = this.file(); if (f) this.toNvim(f, this.cur?.line ?? f.hunks[this.current]?.n ?? 0, cx); },
-      "ctrl-shift-r": () => this.setMode(this.mode === "review" ? "edit" : "review", cx),
-      "ctrl-shift-y": () => this.redoEdit(cx), // ctrl-shift-z is Herdr's pane.zoom
-      "ctrl-y": () => this.decide("accept", cx),
-      "ctrl-n": () => this.decide("reject", cx),
-      "ctrl-shift-enter": () => this.wholeFile("accept", cx),
-      "ctrl-shift-backspace": () => this.wholeFile("reject", cx),
-      "ctrl-down": () => this.step(1, cx),
-      "ctrl-up": () => this.step(-1, cx),
-      "ctrl-shift-down": () => this.stepFile(1, cx),
-      "ctrl-shift-up": () => this.stepFile(-1, cx),
-      "ctrl-z": () => this.undo(cx),
-      "ctrl-p": () => this.openQuick(cx),
-      "ctrl-m": () => this.askPrompt(this.current, cx),
-      "ctrl-r": () => this.askReason(cx),
+    if (this.cur && this.editable(f)) {
+      const id = this.kIdx.edit.get(k);
+      if (id) { this.runAction(id, cx); return done(); }
+      if (this.editKey(e, f, cx)) return done();
+    }
+    const id = this.kIdx.pane.get(k);
+    if (id) { this.runAction(id, cx); return done(); }
+    const fixed = {
       "shift-down": () => this.extend(1, cx),
       "shift-up": () => this.extend(-1, cx),
       "escape": () => (this.selA == null && !this.anchor ? null : this.clearSelection(cx)),
-    }[e.keystroke];
-    if (!act) return;
-    act();
-    cx.stop_propagation();
+    }[k];
+    if (fixed) { fixed(); done(); }
   }
 
   // ---- popup form (O1 reason, O2 prompt) ----------------------------------
@@ -1708,6 +1741,16 @@ export default class Review extends View {
   initForm(cx) {
     this.form = props();
     if (this.form.form === "menu") return; // the right-click menu has no input
+    if (this.form.form === "keys") {
+      this.formHandle = cx.focus_handle(); this.formHandle.focus();
+      this.keySearch = InputState.new({ placeholder: "Search shortcuts by action or key" });
+      this.keySearch.on("change", (_e, cx) => cx.notify());
+      cx.spawn(async (cx) => {
+        this.overrides = await loadKeys(); this.km = resolve(this.overrides);
+        this.herdr = herdrGlobal((await readTextFile(`${appHome()}/keys.json`)) ?? "{}"); cx.notify();
+      });
+      return;
+    }
     if (this.form.form === "settings") {
       this.formHandle = cx.focus_handle(); this.formHandle.focus();
       cx.spawn(async (cx) => { this.st = await loadSettings(); cx.notify(); });
@@ -1779,9 +1822,9 @@ export default class Review extends View {
       .child(h_flex().gap(8).px(10).py(5).items_center().rounded(8).bg(t.popover).border_1().border_color(t.accent).shadow_md().text_size(11.5)
         .child(div().text_color(t.muted).child(`${n} line${n === 1 ? "" : "s"} selected`))
         .when(this.picks(f, sel).any, (e) => e
-          .child(this.button("sel-reject", "Reject  ctrl-n", t.ansi1 + "55", (cx) => this.selectionAction("reject", cx)))
-          .child(this.button("sel-accept", "Accept  ctrl-y", t.ansi2 + "55", (cx) => this.selectionAction("accept", cx))))
-        .child(this.button("sel-prompt", "Comment  ctrl-m", t.ansi4 + "55", (cx) => this.askPrompt(this.current, cx)))
+          .child(this.button("sel-reject", `Reject  ${this.kl("reject")}`, t.ansi1 + "55", (cx) => this.selectionAction("reject", cx)))
+          .child(this.button("sel-accept", `Accept  ${this.kl("accept")}`, t.ansi2 + "55", (cx) => this.selectionAction("accept", cx))))
+        .child(this.button("sel-prompt", `Comment  ${this.kl("comment")}`, t.ansi4 + "55", (cx) => this.askPrompt(this.current, cx)))
         .child(this.button("sel-clear", "Clear  Esc", t.raised, (cx) => this.clearSelection(cx))));
   }
 
@@ -1799,13 +1842,13 @@ export default class Review extends View {
     // The labels stay short; the selection bar shows when they act on selected lines.
     const selChanges = hasSel && this.picks(f, sel).any;
     const items = [
-      { cmd: "prompt", label: "Comment", key: "ctrl-m" },
+      { cmd: "prompt", label: "Comment", key: this.kl("comment") },
       ...(inHunk || selChanges ? [
-        { cmd: "reject", label: "Reject", key: "ctrl-n" },
+        { cmd: "reject", label: "Reject", key: this.kl("reject") },
         { cmd: "rejectReason", label: "Reject with comment…", key: "" },
-        { cmd: "accept", label: "Accept", key: "ctrl-y" },
+        { cmd: "accept", label: "Accept", key: this.kl("accept") },
       ] : []),
-      ...(this.lastReject ? [{ cmd: "reason", label: "Comment last rejection", key: "ctrl-r" }] : []),
+      ...(this.lastReject ? [{ cmd: "reason", label: "Comment last rejection", key: this.kl("reason") }] : []),
       ...(hasSel ? [{ cmd: "clear", label: "Clear selection", key: "Esc" }] : []),
     ];
     openOverlay({ mod: "wingman", props: { form: "menu", items }, kind: "popup", at: "pointer", width: 260, height: items.length * 30 + 12 });
@@ -1824,6 +1867,77 @@ export default class Review extends View {
     });
   }
 
+  // ---- keyboard shortcuts dialog (form "keys") ------------------------------------
+
+  /** Saves the shortcut overrides, updates Herdr's mod:wingman section, and tells the pane. */
+  setKeys(next, cx) {
+    this.overrides = next; this.km = resolve(next); this.rec = null; this.pending = null;
+    cx.notify();
+    const km = this.km;
+    cx.spawn(async () => {
+      try { await saveKeys(next); await syncHerdrKeys(km); run("wingman.settings"); } catch (e) { log(`keys: ${e.message ?? e}`); }
+    });
+  }
+
+  /** A key pressed while recording: refused, a conflict to confirm, or bound. */
+  recordKey(e, cx) {
+    const k = keystrokeOf(e);
+    if (!k) return;
+    cx.stop_propagation();
+    if (k === "escape") { this.rec = null; this.keyMsg = null; cx.notify(); return; }
+    const why = refused(k);
+    if (why) { this.keyMsg = `${keyLabel(k)} can't be bound: it's ${why}.`; cx.notify(); return; }
+    const others = holders(this.km, k, this.rec);
+    if (others.length) { this.pending = { id: this.rec, key: k, others }; this.rec = null; this.keyMsg = null; cx.notify(); return; }
+    this.keyMsg = null;
+    this.setKeys(bind(this.overrides, this.km, this.rec, k), cx);
+  }
+
+  renderKeys() {
+    const t = theme(), { overlay } = this.form, km = this.km, q = (this.keySearch?.value() ?? "").trim().toLowerCase();
+    const chip = (id, k) => h_flex().id(`key-${id}-${k}`).h(22).px(6).gap(4).items_center().rounded(4).bg(t.raised).text_size(11)
+      .child(div().child(keyLabel(k)))
+      .when(!!this.herdr?.[k], (e) => e.child(div().text_size(10).text_color(t.ansi3).child(`hides Herdr ${this.herdr[k]}`)))
+      .child(div().id(`unkey-${id}-${k}`).px(2).rounded(2).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => this.setKeys(unbind(this.overrides, this.km, id, k), cx)).child("×"));
+    const rows = [];
+    let group = null;
+    for (const a of ACTIONS) {
+      const keys = km?.get(a.id) ?? [];
+      if (q && !a.label.toLowerCase().includes(q) && !keys.some((k) => k.includes(q))) continue;
+      if (a.group !== group) { group = a.group; rows.push(div().id(`group-${group}`).pt(10).pb(2).text_size(11).font_semibold().text_color(t.muted).child(group)); }
+      const changed = !!this.overrides?.[a.id], recording = this.rec === a.id;
+      rows.push(h_flex().id(`act-${a.id}`).min_h(30).py(2).gap(8).items_center().rounded(4).hover((s) => s.bg(t.hover)).px(6)
+        .child(div().flex_1().min_w(0).text_size(12).child(a.label))
+        .child(h_flex().flex_none().gap(4).items_center().flex_wrap()
+          .children(keys.map((k) => chip(a.id, k)))
+          .when(recording, (e) => e.child(div().h(22).px(8).flex().items_center().rounded(4).bg(t.accent + "55").text_size(11).child("Press a key… (Esc cancels)")))
+          .when(!recording, (e) => e.child(div().id(`add-${a.id}`).h(22).px(6).flex().items_center().rounded(4).text_size(11).text_color(t.dim).cursor_pointer()
+            .hover((s) => s.bg(t.raised).text_color(t.foreground)).on_click((_e, cx) => { this.rec = a.id; this.pending = null; this.keyMsg = null; this.formHandle.focus(); cx.notify(); }).child("+ key")))
+          .when(changed, (e) => e.child(div().id(`reset-${a.id}`).h(22).px(6).flex().items_center().rounded(4).text_size(11).text_color(t.dim).cursor_pointer()
+            .hover((s) => s.bg(t.raised).text_color(t.foreground)).on_click((_e, cx) => this.setKeys(resetKey(this.overrides, a.id), cx)).child("Reset")))));
+    }
+    const p = this.pending;
+    return v_flex().id("wingman-keys").track_focus(this.formHandle)
+      .on_key_down((e, cx) => {
+        if (this.rec) return this.recordKey(e, cx);
+        if (e.key === "escape") { if (this.pending) { this.pending = null; cx.notify(); } else closeOverlay(overlay); cx.stop_propagation(); }
+      })
+      .size_full().p(16).gap(8).bg(t.popover).text_color(t.foreground)
+      .child(h_flex().items_center().gap(8)
+        .child(div().flex_1().text_size(15).font_semibold().child("Keyboard shortcuts"))
+        .child(this.button("keys-reset-all", "Reset all", t.raised, (cx) => this.setKeys({}, cx)))
+        .child(div().text_size(11).text_color(t.dim).child("Esc")))
+      .child(div().text_size(11).text_color(t.dim).child("Click + key and press the shortcut. Keys Herdr uses globally are sent to Wingman while it has focus. Arrows, Home/End, Page Up/Down, Backspace, Delete, Enter, Tab and plain typing stay fixed."))
+      .when(!!this.keySearch, (e) => e.child(Input.new(this.keySearch)))
+      .when(!!this.keyMsg, (e) => e.child(div().text_size(12).text_color(t.ansi1).child(this.keyMsg)))
+      .when(!!p, (e) => e.child(h_flex().gap(8).items_center().p(8).rounded(6).bg(t.ansi3 + "22").text_size(12)
+        .child(div().flex_1().child(`${keyLabel(p.key)} is bound to ${p.others.map((o) => BY_ID.get(o).label).join(", ")}. Move it to ${BY_ID.get(p.id).label}?`))
+        .child(this.button("keys-move", "Move it", t.accent + "55", (cx) => this.setKeys(bind(this.overrides, this.km, p.id, p.key), cx)))
+        .child(this.button("keys-cancel", "Cancel", t.raised, (cx) => { this.pending = null; cx.notify(); }))))
+      .child(v_flex().id("keys-list").flex_1().min_h(0).overflow_y_scrollbar().children(km ? rows : [div().id("keys-loading").text_size(12).text_color(t.dim).child("Loading…")]));
+  }
+
   renderSettings() {
     const t = theme(), st = this.st, { overlay } = this.form;
     const toggle = (id, label, hint, on, flip) => h_flex().id(id).gap(10).py(6).items_center().cursor_pointer()
@@ -1834,7 +1948,9 @@ export default class Review extends View {
     return v_flex().id("wingman-settings").track_focus(this.formHandle)
       .on_key_down((e, cx) => { if (e.key === "escape") { closeOverlay(overlay); cx.stop_propagation(); } })
       .size_full().p(18).gap(10).bg(t.popover).text_color(t.foreground)
-      .child(h_flex().items_center().child(div().flex_1().text_size(15).font_semibold().child("Settings")).child(div().text_size(11).text_color(t.dim).child("Esc")))
+      .child(h_flex().items_center().gap(8).child(div().flex_1().text_size(15).font_semibold().child("Settings"))
+        .child(this.button("open-keys", "Keyboard shortcuts…", t.raised, () => { closeOverlay(overlay); openOverlay({ mod: "wingman", props: { form: "keys" }, kind: "dialog", width: 700, height: 620 }); }))
+        .child(div().text_size(11).text_color(t.dim).child("Esc")))
       .when(!st, (e) => e.child(div().text_size(12).text_color(t.dim).child("Loading…")))
       .when(!!st, (e) => e
         .child(toggle("set-note", "Auto note on rejections", "Tell the agent which of its changes you rejected.", st.autoNote, (cx) => this.setSetting({ autoNote: !st.autoNote }, cx)))
@@ -1852,7 +1968,7 @@ export default class Review extends View {
           .child(h_flex().gap(4).children([["wingman", "Wingman"], ["nvim", "Neovim"]].map(([v, label]) => div().id(`editor-${v}`).h(24).px(10).flex().items_center().rounded(5).text_size(12).cursor_pointer()
             .bg((st.editor ?? "wingman") === v ? t.accent + "77" : t.raised).hover((s) => s.opacity(0.85))
             .on_click((_e, cx) => this.setSetting({ editor: v }, cx)).child(label))))
-          .child(div().text_size(11).text_color(t.dim).child("Neovim: clicking a line, ctrl-o, or a file in the tree opens it in a Neovim pane beside Wingman."))));
+          .child(div().text_size(11).text_color(t.dim).child("Neovim: clicking a line, Open in Neovim, or a file in the tree opens it in a Neovim pane beside Wingman."))));
   }
 
   renderMenu() {
@@ -1869,7 +1985,7 @@ export default class Review extends View {
 
   button(id, label, bg, onClick) {
     return div().id(id).h(22).px(10).flex().items_center().rounded(5).cursor_pointer().bg(bg).text_size(11)
-      .hover((s) => s.opacity(0.85)).on_click((_e, cx) => { this.handle.focus(); onClick(cx); }).child(label);
+      .hover((s) => s.opacity(0.85)).on_click((_e, cx) => { this.handle?.focus(); onClick(cx); }).child(label);
   }
 
   row(r, f, t, selected = false) {
@@ -1878,9 +1994,9 @@ export default class Review extends View {
       const current = r.hunk === this.current;
       return h_flex().w_full().h(ROW).flex_none().gap(BTN_GAP).items_center().bg(current ? t.selected : t.raised)
         .child(div().w(GUTTER).flex_none())
-        .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi1 + (current ? "99" : "55")).text_size(11).child("Reject  ctrl-n"))
-        .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi2 + (current ? "99" : "55")).text_size(11).child("Accept  ctrl-y"))
-        .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi4 + (current ? "77" : "40")).text_size(11).child("Comment  ctrl-m"))
+        .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi1 + (current ? "99" : "55")).text_size(11).child(`Reject  ${this.kl("reject")}`))
+        .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi2 + (current ? "99" : "55")).text_size(11).child(`Accept  ${this.kl("accept")}`))
+        .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi4 + (current ? "77" : "40")).text_size(11).child(`Comment  ${this.kl("comment")}`))
         .child(div().flex_1().pl(8).text_color(t.dim).text_size(11).child(`change ${r.hunk + 1} of ${f.hunks.length}`));
     }
     const spans = expandTabs((r.side === "old" ? f.oldTok : f.newTok)?.[r.line] ?? []);
@@ -1915,6 +2031,7 @@ export default class Review extends View {
   render() {
     if (this.form?.form === "menu") return this.renderMenu();
     if (this.form?.form === "settings") return this.renderSettings();
+    if (this.form?.form === "keys") return this.renderKeys();
     if (this.form) return this.renderForm();
     const t = theme(), f = this.file(), vis = this.visible(), total = vis.reduce((n, x) => n + x.hunks.length, 0);
     const tag = (x) => x.created ? "new" : x.Ctext === null ? "deleted" : `${x.hunks.length}`;
@@ -1930,7 +2047,7 @@ export default class Review extends View {
             .child(m === "review" ? "Review" : "Edit"))))
         .child(div().text_size(11).text_color(t.muted).truncate().child(`${this.stores.map((st) => base(st.root)).join(", ")} · ${total} change${total === 1 ? "" : "s"} in ${vis.length} file${vis.length === 1 ? "" : "s"} · ${this.history.length} undoable${this.writing ? " · saving…" : ""}${agents().some((a) => a.space === this.spaceId && ACTIVE.has(a.status)) ? " · agent working" : ""}`))
         .child(div().flex_1())
-        .when(!!this.lastReject, (e) => e.child(this.button("reason", "Comment last rejection  ctrl-r", t.raised, (cx) => this.askReason(cx))))
+        .when(!!this.lastReject, (e) => e.child(this.button("reason", `Comment last rejection  ${this.kl("reason")}`, t.raised, (cx) => this.askReason(cx))))
         .child(this.button("settings", "⚙ Settings", t.raised, () => this.openSettings()))
         .when(total > 0, (e) => e
           .child(this.button("reject-all", "Reject all files", t.ansi1 + "55", (cx) => this.everything("reject", cx)))
@@ -1951,20 +2068,20 @@ export default class Review extends View {
             return e.child(div().absolute().bottom(1).h(2).rounded(1).bg(t.dim)
               .left(((this.tabOffset ?? 0) / total) * view).w(Math.max(24, (view / total) * view)));
           }))
-        .when(vis.length > 1, (e) => e.child(div().flex_none().whitespace_nowrap().text_size(10).text_color(t.dim).px(6).child(`${vis.findIndex((x) => x.key === this.sel) + 1}/${vis.length} · ctrl-shift-↑/↓`)))
-        .when(!!f, (e) => e.child(this.button("vscode", "VS Code  ctrl-e", t.raised, (cx) => this.toVSCode(cx)).flex_none().whitespace_nowrap()))
-        .when(!!f && this.nvim(), (e) => e.child(this.button("nvim", "Neovim  ctrl-o", t.raised, (cx) => this.toNvim(f, f.hunks[this.current]?.n ?? 0, cx)).flex_none().whitespace_nowrap()))
-        .when(this.dirty(f), (e) => e.child(this.button("save", "Save  ctrl-s", t.accent + "55", (cx) => this.save(cx)).flex_none().whitespace_nowrap()))
+        .when(vis.length > 1, (e) => e.child(div().flex_none().whitespace_nowrap().text_size(10).text_color(t.dim).px(6).child(`${vis.findIndex((x) => x.key === this.sel) + 1}/${vis.length} · ${this.kl("prevFile")}/${this.kl("nextFile")}`)))
+        .when(!!f, (e) => e.child(this.button("vscode", `VS Code  ${this.kl("openInVSCode")}`, t.raised, (cx) => this.toVSCode(cx)).flex_none().whitespace_nowrap()))
+        .when(!!f && this.nvim(), (e) => e.child(this.button("nvim", `Neovim  ${this.kl("openInNvim")}`, t.raised, (cx) => this.toNvim(f, f.hunks[this.current]?.n ?? 0, cx)).flex_none().whitespace_nowrap()))
+        .when(this.dirty(f), (e) => e.child(this.button("save", `Save  ${this.kl("save")}`, t.accent + "55", (cx) => this.save(cx)).flex_none().whitespace_nowrap()))
         .when(!!f?.hunks.length, (e) => e
-          .child(this.button("reject-file", "Reject file  ctrl-shift-⌫", t.ansi1 + "40", (cx) => this.wholeFile("reject", cx)).flex_none().whitespace_nowrap())
-          .child(this.button("accept-file", "Accept file  ctrl-shift-⏎", t.ansi2 + "40", (cx) => this.wholeFile("accept", cx)).flex_none().whitespace_nowrap())))
+          .child(this.button("reject-file", `Reject file  ${this.kl("rejectFile")}`, t.ansi1 + "40", (cx) => this.wholeFile("reject", cx)).flex_none().whitespace_nowrap())
+          .child(this.button("accept-file", `Accept file  ${this.kl("acceptFile")}`, t.ansi2 + "40", (cx) => this.wholeFile("accept", cx)).flex_none().whitespace_nowrap())))
       .when(!!f && !!this.bar, (e) => e.child(this.findBar(f, t)))
       .when(!!f?.conflict, (e) => e.child(h_flex().px(12).py(6).gap(8).items_center().bg(t.ansi3 + "22").text_size(12)
         .child(div().flex_1().child(f?.conflict?.theirs ? "The agent changed the same lines you're editing." : "The file was deleted while you were editing it."))
         .child(this.button("ours", "Keep mine", t.raised, (cx) => this.resolve("ours", cx)))
         .child(this.button("theirs", f?.conflict?.theirs ? "Take agent's" : "Drop my edits", t.ansi1 + "55", (cx) => this.resolve("theirs", cx)))))
       .when(!!(this.error || this.status || !f), (e) => e.child(h_flex().px(12).py(6).gap(10).items_center().text_size(12)
-        .child(div().flex_1().min_w(0).text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : this.mode === "edit" ? "No file open: pick one in the file tree (ctrl-b)" : "No changes to review")))
+        .child(div().flex_1().min_w(0).text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : this.mode === "edit" ? `No file open: pick one in the file tree (${this.kl("toggleTree")}) or Quick Open (${this.kl("quickOpen")})` : "No changes to review")))
         .when(!this.stores.length && !!this.spaceId, (e) => e.child(this.button("open-folder", "Open folder…", t.raised, (cx) => this.openFolder(cx)).flex_none()))))
       .when(!!f, (e) => e.child(div().id("review-diff").flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(12)
         .on_size_change((size, cx) => { this.viewH = size.height; this.viewW = size.width; cx.notify(); })

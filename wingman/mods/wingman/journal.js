@@ -176,6 +176,17 @@ export async function loadSettings() {
   // autosave: save on focus loss and file switch; autosaveDelay: also after typing stops (s, 0 = off).
   return { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman", autoPairs: true, ...(t ? JSON.parse(t) : {}) };
 }
+/** The user's keyboard shortcuts: { "<action>": ["key", ...] }, only the ones changed from the defaults. */
+const KEYS = () => `${reviewDir()}/keys.json`;
+export async function loadKeys() {
+  const t = await readTextFile(KEYS());
+  try { return t ? JSON.parse(t) : {}; } catch { return {}; }
+}
+export async function saveKeys(next) {
+  await fs.mkdir(reviewDir(), { recursive: true }).catch(() => {});
+  await writeTextFile(KEYS(), JSON.stringify(next, null, 2) + "\n", await readTextFile(KEYS()));
+}
+
 export async function saveSettings(next) {
   await writeTextFile(SETTINGS(), JSON.stringify(next, null, 2) + "\n", await readTextFile(SETTINGS()));
 }

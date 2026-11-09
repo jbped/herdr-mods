@@ -117,6 +117,14 @@ Set **Editor** to **Neovim** in Settings to edit in Neovim instead of Wingman's 
 
 On Windows, Wingman uses `nvim.exe` when it's on PATH, otherwise WSL's `nvim`. Your own Neovim config applies, including its plugins for autopairs, tags and line moves. Herdr's global keys (for example `alt-up` / `alt-down`) still apply inside the Neovim pane unless `keys.json` sends them to the terminal.
 
+## Keyboard shortcuts
+
+Every key in the tables above can be changed in **Settings → Keyboard shortcuts…**. Click **+ key** on an action and press the new shortcut. An action can have several keys, × removes one, and **Reset** puts an action back to its defaults (**Reset all** does every action). If the key belongs to another Wingman action, you're asked whether to move it. Plain typing keys and the keys for moving and deleting text (arrows, Home/End, Page Up/Down, Backspace, Delete, Enter, Tab) can't be rebound.
+
+Herdr's global shortcuts reach Herdr before Wingman. When a Wingman key is one of them (by default `alt-up`, `alt-down` and `ctrl-shift-k`), Wingman adds it to the `mod:wingman` section of Herdr's `keys.json`. Herdr then sends it to Wingman while Wingman has focus, and the shortcuts page shows which Herdr action it hides there. Wingman only changes its own entries in that section (`wingman.<action>`).
+
+Your changes are saved in `~/.config/herdr-app/data/wingman/keys.json` as `{ "<action>": ["key", ...] }`, holding only the actions you changed. Each action is also a command, `wingman.<action>` (for example `wingman.joinLines`), that you can bind anywhere in Herdr's `keys.json`.
+
 ## Settings
 
 The header's **⚙ Settings** opens:
