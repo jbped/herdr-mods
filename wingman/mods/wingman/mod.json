@@ -1,1 +1,1 @@
-{ "place": "none", "title": "Wingman", "focusable": true, "palette": [{ "title": "Open Wingman", "command": "pane.split", "args": { "direction": "right", "mod": "wingman" }, "about": "Review and edit agent changes beside the focused pane" }] }
+{"place": "none", "title": "Wingman", "focusable": true, "palette": [{"title": "Wingman: Review", "command": "tabs-plus.wingmanReview", "about": "Show Wingman's Review tab in the side panel"}, {"title": "Wingman: Edit", "command": "tabs-plus.wingmanEdit", "about": "Show Wingman's Edit tab in the side panel"}]}
