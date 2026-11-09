@@ -92,6 +92,7 @@ The diff is also an editor. Click in the text to place the cursor and type. Your
 | Copy, cut, paste | `ctrl-c` / `ctrl-x` / `ctrl-v` (without a selection: the whole line) |
 | Brackets and quotes | typing `(` `[` `{` `"` `'` `` ` `` adds the closer (before whitespace, a line end or a closer; quotes not right after a letter). Typing the closer steps over it, Backspace in an empty pair removes both, Enter between brackets opens an indented line, and with text selected it wraps the selection. |
 | Tags | in HTML, XML, SVG, Vue, Svelte, JSX and TSX files, typing `>` at the end of an opening tag adds its closing tag after the cursor (not for HTML void elements such as `<br>`, self-closing tags, or a generic like `Foo<T>`), and typing `/` right after `<` completes the innermost open tag. Enter between `<p>` and `</p>` opens an indented line. |
+| Line wrap | `alt-z` or Settings → Wrap long lines (off by default). Long lines continue on the next screen row, broken after a space when there is one, with continuation rows indented like the line. Up and Down move by screen row; sideways scrolling is off while wrapped. |
 | Move lines up / down | `alt-up` / `alt-down` (Herdr's agent keys by default, see below) |
 | Copy lines up / down | `alt-shift-up` / `alt-shift-down` |
 | Delete lines | `ctrl-shift-k` (Herdr's picker key by default, see below) |

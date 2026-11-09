@@ -20,6 +20,7 @@ import { buildTree, flatten, parents } from "./tree.js";
 import { openInNvim, openInEditor, EDITORS, editorName } from "./nvim.js";
 import { PAIRS, typed, inEmptyPair, betweenBrackets } from "./pairs.js";
 import { tagKind, closingTag, completeClose, betweenTags } from "./tags.js";
+import { segments, segmentOf } from "./wrap.js";
 import { compile, findAll, nextMatch, prevMatch, replacement, parseLine } from "./find.js";
 import { rank, parseQuery } from "./quickopen.js";
 import { ACTIONS, BY_ID, resolve, index, holders, bind, unbind, reset as resetKey, refused, keystrokeOf, keyLabel, withModSection, herdrGlobal } from "./keymap.js";
@@ -124,7 +125,7 @@ export default class Review extends View {
     // Opened as a popup (reason or follow-up prompt): a small form, none of the pane's work.
     if (props()?.form) return this.initForm(cx);
     this.id = Math.random().toString(36).slice(2);
-    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman", autoPairs: true, autoTags: true, externalEditor: "code", externalCommand: "" };
+    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman", autoPairs: true, autoTags: true, externalEditor: "code", externalCommand: "", wordWrap: false };
     this.editNotes = new Map(); // file key -> the edit note last queued for it
     // Q48: Review (tabs are changed files) or Edit (file tree, tabs for changed and opened files).
     this.view = ["review", "edit"].includes(props()?.view) ? props().view : null; // a panel copy for one view
@@ -473,12 +474,48 @@ export default class Review extends View {
   }
 
   rowsOf(f) {
-    if (f._rowsFor !== f.hunks || f._rowsC !== f.C) {
-      f._rows = buildRows(f.B, f.C, f.hunks); f._rowsFor = f.hunks; f._rowsC = f.C;
+    const w = this.wrapCols();
+    if (f._rowsFor !== f.hunks || f._rowsC !== f.C || f._rowsW !== w) {
+      const rows = buildRows(f.B, f.C, f.hunks);
+      f._rows = w ? this.wrapRows(f, rows, w) : rows; f._rowsFor = f.hunks; f._rowsC = f.C; f._rowsW = w;
       f._lineRow = [];
-      f._rows.forEach((r, i) => { if (r.side === "new") f._lineRow[r.line] = i; });
+      f._rows.forEach((r, i) => { if (r.side === "new" && !r.cont) f._lineRow[r.line] = i; });
     }
     return f._rows;
+  }
+
+  /** E5: with line wrap on, the text columns a row holds (0: wrap off). */
+  wrapCols() {
+    return this.settings.wordWrap ? Math.max(20, Math.floor(((this.viewW ?? 600) - GUTTER - 16) / this.cw())) : 0;
+  }
+
+  /** E5: a long line's row becomes one row per segment ({ seg, segs }; later ones have `cont`). */
+  wrapRows(f, rows, w) {
+    const out = [];
+    for (const r of rows) {
+      if (r.kind === "@") { out.push(r); continue; }
+      const segs = segments(body((r.side === "old" ? f.B : f.C)[r.line]), w);
+      if (segs.length === 1) out.push(r);
+      else segs.forEach((seg, i) => out.push({ ...r, seg, segs, cont: i > 0 }));
+    }
+    return out;
+  }
+
+  /** The row showing position p of the current file (its segment's row when wrapped). */
+  rowOfPos(f, p) {
+    this.rowsOf(f);
+    const i = f._lineRow[p.line];
+    if (i == null) return null;
+    const r = f._rows[i];
+    return r.segs ? i + segmentOf(r.segs, p.col) : i;
+  }
+
+  toggleWrap(cx) {
+    this.settings = { ...this.settings, wordWrap: !this.settings.wordWrap };
+    this.hx = 0; this.selA = this.selB = null;
+    const next = this.settings;
+    cx.spawn(async () => { try { await saveSettings({ ...(await loadSettings()), wordWrap: next.wordWrap }); } catch (e) { this.error = String(e.message ?? e); } });
+    this.showCursor(); cx.notify();
   }
 
   reveal() {
@@ -927,6 +964,7 @@ export default class Review extends View {
     const dx = ev.delta_lines ? ev.delta_lines.x * 3 * this.cw() : ev.delta.x;
     const sideways = ev.modifiers?.shift ? (ev.delta_lines ? ev.delta_lines.y * 3 * this.cw() : ev.delta.y) : dx;
     if (ev.modifiers?.shift || Math.abs(dx) > Math.abs(ev.delta_lines?.y ?? ev.delta.y)) {
+      if (this.wrapCols()) return; // wrapped lines don't scroll sideways
       this.hx = Math.max(0, this.hx - sideways); cx.notify(); cx.stop_propagation(); return;
     }
     const lines = ev.delta_lines?.y ?? ev.delta.y / ROW;
@@ -1247,7 +1285,7 @@ export default class Review extends View {
   quote(f, [a, b]) { return this.quoteRows(f, this.rowsOf(f).slice(a, b + 1)); }
 
   quoteRows(f, picked) {
-    const rows = picked.filter((r) => r.kind !== "@");
+    const rows = picked.filter((r) => r.kind !== "@" && !r.cont);
     const text = (r) => ((r.side === "old" ? f.B : f.C)[r.line] ?? "").replace(/\r?\n$/, "");
     const nums = rows.filter((r) => r.side === "new").map((r) => r.num);
     const removed = rows.filter((r) => r.kind === "-").length;
@@ -1263,7 +1301,7 @@ export default class Review extends View {
   }
 
   openSettings() {
-    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 640 });
+    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 690 });
   }
 
   /** Every 250 ms (Q46). Herdr has no blur event, so focus is polled: the pane losing the
@@ -1335,8 +1373,11 @@ export default class Review extends View {
 
   /** The position under x on row `r` (a line of the current file). */
   posAt(f, r, x) {
-    const text = body(linesOf(f)[r.line]);
-    return { line: r.line, col: charAt(text, (x - GUTTER + this.hx) / this.cw()) };
+    const text = body(linesOf(f)[r.line]), seg = r.seg;
+    if (!seg) return { line: r.line, col: charAt(text, (x - GUTTER + this.hx) / this.cw()) };
+    // A wrapped segment: its own columns; past its end stays on it (the last segment takes the line end).
+    const v = (x - GUTTER) / this.cw() - seg.ind + visualCol(text, seg.from);
+    return { line: r.line, col: Math.max(seg.from, Math.min(charAt(text, Math.max(0, v)), seg.to === text.length ? seg.to : seg.to - 1)) };
   }
 
   textDown(f, r, x, y, ev, cx) {
@@ -1363,9 +1404,9 @@ export default class Review extends View {
   showCursor() {
     const f = this.file();
     if (!f || !this.cur) return;
-    this.rowsOf(f);
-    const row = f._lineRow[this.cur.line];
+    const row = this.rowOfPos(f, this.cur);
     if (row != null) this.ensureVisible(row);
+    if (this.wrapCols()) { this.hx = 0; return; }
     const x = visualCol(body(linesOf(f)[this.cur.line]), this.cur.col) * this.cw();
     const view = Math.max(60, (this.viewW ?? 600) - GUTTER - 40);
     if (x < this.hx) this.hx = Math.max(0, x - 60);
@@ -1383,9 +1424,30 @@ export default class Review extends View {
   /** Up/Down and PageUp/PageDown keep the column the cursor started from. */
   vertical(by, extend, cx) {
     const f = this.file(), lines = linesOf(f);
+    if (this.wrapCols()) return this.verticalWrapped(f, lines, by, extend, cx);
     const goal = this.goalX ?? visualCol(body(lines[this.cur.line]), this.cur.col);
     const line = Math.max(0, Math.min(lines.length - 1, this.cur.line + by));
     this.move({ line, col: charAt(body(lines[line]), goal) }, extend, cx);
+    this.goalX = goal;
+  }
+
+  /** E5: Up/Down move by screen row through wrapped lines, keeping the screen column. */
+  verticalWrapped(f, lines, by, extend, cx) {
+    const rows = this.rowsOf(f), i = this.rowOfPos(f, this.cur);
+    if (i == null) return;
+    const shown = (r, text) => (r.seg ? visualCol(text, r.seg.from) - r.seg.ind : 0); // display column at the row's left edge
+    const goal = this.goalX ?? visualCol(body(lines[this.cur.line]), this.cur.col) - shown(rows[i], body(lines[this.cur.line]));
+    let j = i;
+    for (let n = Math.abs(by), d = Math.sign(by); n > 0; n--) {
+      let k = j + d;
+      while (k >= 0 && k < rows.length && rows[k].side !== "new") k += d;
+      if (k < 0 || k >= rows.length) break;
+      j = k;
+    }
+    const r = rows[j], text = body(lines[r.line]);
+    let col = charAt(text, Math.max(0, goal + shown(r, text)));
+    if (r.seg) col = Math.max(r.seg.from, Math.min(col, r.seg.to === text.length ? r.seg.to : r.seg.to - 1));
+    this.move({ line: r.line, col }, extend, cx);
     this.goalX = goal;
   }
 
@@ -1438,7 +1500,7 @@ export default class Review extends View {
     const lines = linesOf(f);
     if (this.hasTextSel()) return textBetween(lines, this.anchor, this.cur);
     const ls = this.lineSel(f);
-    if (ls) return this.rowsOf(f).slice(ls[0], ls[1] + 1).filter((r) => r.kind !== "@")
+    if (ls) return this.rowsOf(f).slice(ls[0], ls[1] + 1).filter((r) => r.kind !== "@" && !r.cont)
       .map((r) => body((r.side === "old" ? f.B : f.C)[r.line]) + "\n").join("");
     return this.cur ? body(lines[this.cur.line]) + "\n" : "";
   }
@@ -1803,7 +1865,7 @@ export default class Review extends View {
       comment: () => this.askPrompt(this.current, cx), reason: () => this.askReason(cx),
       nextFile: () => this.stepFile(1, cx), prevFile: () => this.stepFile(-1, cx),
       quickOpen: () => this.openQuick(cx), toggleView: () => this.setMode(this.mode === "review" ? "edit" : "review", cx),
-      toggleTree: () => this.toggleTree(cx), openInVSCode: () => this.toVSCode(cx),
+      toggleTree: () => this.toggleTree(cx), openInVSCode: () => this.toVSCode(cx), toggleWrap: () => this.toggleWrap(cx),
       openInNvim: () => { if (f) this.toNvim(f, this.cur?.line ?? f.hunks[this.current]?.n ?? 0, cx); },
       save: () => this.save(cx), undo: () => this.undo(cx), redo: () => this.redoEdit(cx),
       selectAll: () => this.clip("all", cx), copy: () => this.clip("copy", cx), cut: () => this.clip("cut", cx), paste: () => this.clip("paste", cx),
@@ -1951,7 +2013,7 @@ export default class Review extends View {
 
   /** Floats over the diff while lines are selected, saying what can be done with them. */
   selectionBar(f, sel, t) {
-    const n = this.rowsOf(f).slice(sel[0], sel[1] + 1).filter((r) => r.kind !== "@").length;
+    const n = this.rowsOf(f).slice(sel[0], sel[1] + 1).filter((r) => r.kind !== "@" && !r.cont).length;
     return h_flex().absolute().bottom(12).left(0).right(0).justify_center()
       .child(h_flex().gap(8).px(10).py(5).items_center().rounded(8).bg(t.popover).border_1().border_color(t.accent).shadow_md().text_size(11.5)
         .child(div().text_color(t.muted).child(`${n} line${n === 1 ? "" : "s"} selected`))
@@ -2091,6 +2153,7 @@ export default class Review extends View {
         .child(toggle("set-editnote", "Note on my edits", "Tell the agent which lines of its files you changed.", st.editNote, (cx) => this.setSetting({ editNote: !st.editNote }, cx)))
         .child(toggle("set-pairs", "Auto-close brackets and quotes", "Typing ( [ { \" ' ` adds the closer; Backspace in an empty pair removes both.", st.autoPairs ?? true, (cx) => this.setSetting({ autoPairs: !(st.autoPairs ?? true) }, cx)))
         .child(toggle("set-tags", "Auto-close tags", "In HTML, XML, JSX and Vue files, typing > adds the closing tag and </ completes the open one.", st.autoTags ?? true, (cx) => this.setSetting({ autoTags: !(st.autoTags ?? true) }, cx)))
+        .child(toggle("set-wrap", "Wrap long lines", "Long lines continue on the next screen row instead of scrolling sideways. Alt+Z by default.", st.wordWrap ?? false, (cx) => this.setSetting({ wordWrap: !(st.wordWrap ?? false) }, cx)))
         .child(toggle("set-autosave", "Autosave", "Save on focus loss and file switch. Where you and the agent change the same lines, the agent's win.", st.autosave, (cx) => this.setSetting({ autosave: !st.autosave }, cx)))
         .child(v_flex().gap(6).when(!st.autosave, (e) => e.opacity(0.4))
           .child(div().text_size(12).text_color(t.muted).child("Also save after typing stops for"))
@@ -2143,31 +2206,39 @@ export default class Review extends View {
         .child(div().flex_1().pl(8).text_color(t.dim).text_size(11).child(`change ${r.hunk + 1} of ${f.hunks.length}`));
     }
     const spans = expandTabs((r.side === "old" ? f.oldTok : f.newTok)?.[r.line] ?? []);
-    const cw = this.cw(), hx = this.hx, x = (col) => visualCol(text, col) * cw - hx;
-    const text = r.side === "new" ? body(linesOf(f)[r.line]) : "";
+    const text = r.side === "new" ? body(linesOf(f)[r.line]) : r.seg ? body(f.B[r.line]) : "";
+    // E5: a wrapped segment shows its own columns, after the wrapping indent.
+    const seg = r.seg, v0 = seg ? visualCol(text, seg.from) : 0, ind = seg?.ind ?? 0, last = !seg || seg.to === text.length;
+    const cw = this.cw(), hx = this.hx, x = (col) => (visualCol(text, col) - v0 + ind) * cw - hx;
+    const clip = (a, b) => (seg ? [Math.max(a, seg.from), Math.min(b, seg.to)] : [a, b]);
     // Text selection on this line: [from, to) in characters; a line selected through its end
     // shows one more cell for the line break.
     let mark = null;
     if (r.side === "new" && this.hasTextSel()) {
       const [a, b] = this.ordered();
       if (r.line >= a.line && r.line <= b.line) {
-        const from = r.line === a.line ? a.col : 0, to = r.line === b.line ? b.col : text.length;
-        mark = { left: x(from), w: Math.max(0, x(to) - x(from)) + (r.line < b.line ? cw : 0) };
+        const [from, to] = clip(r.line === a.line ? a.col : 0, r.line === b.line ? b.col : text.length);
+        if (from <= to) mark = { left: x(from), w: Math.max(0, x(to) - x(from)) + (r.line < b.line && last ? cw : 0) };
       }
     }
-    const caret = r.side === "new" && this.cur?.line === r.line;
-    const found = r.side === "new" && this.bar ? this.matches(f) : null, hits = found?.byLine?.get(r.line) ?? [];
+    const onLine = r.side === "new" && this.cur?.line === r.line;
+    const caret = onLine && (!r.segs || r.segs[segmentOf(r.segs, this.cur.col)] === seg);
+    const found = r.side === "new" && this.bar ? this.matches(f) : null;
+    const hits = (found?.byLine?.get(r.line) ?? []).filter((k) => { const [a, b] = clip(found.ms[k].from, found.ms[k].to); return a < b; });
     const onHit = hits.length ? this.onMatch(found.ms) : -1;
     return h_flex().w_full().h(ROW).flex_none().whitespace_nowrap()
       .when(r.kind === "+", (e) => e.bg(t.ansi2 + "22")).when(r.kind === "-", (e) => e.bg(t.ansi1 + "22"))
       .when(selected, (e) => e.bg(t.selection).border_l(2).border_color(t.accent))
-      .child(div().w(44).flex_none().pr(8).text_right().text_color(caret ? t.foreground : t.dim).child(String(r.num)))
-      .child(div().w(14).flex_none().text_color(r.kind === "+" ? t.ansi2 : r.kind === "-" ? t.ansi1 : t.dim).child(r.kind === " " ? "" : r.kind))
+      .child(div().w(44).flex_none().pr(8).text_right().text_color(onLine ? t.foreground : t.dim).child(r.cont ? "" : String(r.num)))
+      .child(div().w(14).flex_none().text_color(r.kind === "+" ? t.ansi2 : r.kind === "-" ? t.ansi1 : t.dim).child(r.kind === " " || r.cont ? "" : r.kind))
       .child(div().flex_1().h_full().relative().overflow_hidden()
-        .children(hits.map((k) => { const m = found.ms[k]; return div().absolute().top(1).h(ROW - 2).rounded(2).left(x(m.from)).w(Math.max(2, x(m.to) - x(m.from)))
+        .children(hits.map((k) => { const [a, b] = clip(found.ms[k].from, found.ms[k].to); return div().absolute().top(1).h(ROW - 2).rounded(2).left(x(a)).w(Math.max(2, x(b) - x(a)))
           .bg(k === onHit ? t.ansi3 + "88" : t.ansi3 + "38"); }))
         .when(!!mark, (e) => e.child(div().absolute().top(0).h(ROW).left(mark.left).w(mark.w).bg(t.selection)))
-        .child(h_flex().absolute().top(0).h(ROW).left(-hx).children(spans.map((s) => div().text_color(color(s.type, t)).child(s.text))))
+        .child(seg
+          ? div().absolute().top(0).h(ROW).left(ind * cw).w((visualCol(text, seg.to) - v0) * cw).overflow_hidden()
+            .child(h_flex().absolute().top(0).h(ROW).left(-v0 * cw).children(spans.map((s) => div().text_color(color(s.type, t)).child(s.text))))
+          : h_flex().absolute().top(0).h(ROW).left(-hx).children(spans.map((s) => div().text_color(color(s.type, t)).child(s.text))))
         .when(caret, (e) => e.child(div().absolute().top(3).h(ROW - 6).w(2).left(x(this.cur.col)).bg(this.handle.is_focused() ? t.accent : t.dim))));
   }
 
