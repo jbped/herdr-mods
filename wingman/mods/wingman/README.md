@@ -59,6 +59,7 @@ Wingman finds a space's repos from the folders its agents started in and from th
 | Next / previous file | `ctrl-shift-down` / `ctrl-shift-up` |
 | Undo last accept/reject | `ctrl-z` |
 | Review / Edit view | `ctrl-shift-r` |
+| Open the file in VS Code | `ctrl-e` (or the VS Code button), at the cursor or the current change; unsaved edits are saved first |
 | File tree (Edit view) | `ctrl-b` |
 | Select lines | click a line, or click and drag; Shift+click or `shift-up` / `shift-down` to extend; click inside the selection or `escape` to clear. |
 | Menu for a line or change | right-click: Comment, Reject, Reject with comment, Accept (on the selected lines when there are any). Right-click never changes the selection. |

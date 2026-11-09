@@ -57,3 +57,17 @@ export async function openInNvim(space, root, path, line) {
   const argv = how === "wsl" ? ["wsl.exe", "--cd", wslPath(root), "-e", ...nv] : nv;
   run("terminal.open", { argv, folder: root, place: "right", name: "Neovim" });
 }
+
+// ---- E9: Open in VS Code ------------------------------------------------------
+
+/**
+ * Opens `path` at `line`/`col` (0-based) in VS Code with `code -g`. On Windows `code` is a .cmd,
+ * so it runs through cmd. A file inside WSL (a \\wsl.localhost path) opens through Remote - WSL.
+ */
+export async function openInVSCode(path, line, col = 0) {
+  const p = path.replace(/\\/g, "/"), at = `:${line + 1}:${col + 1}`;
+  const unc = /^\/\/(?:wsl\.localhost|wsl\$)\/([^/]+)(\/.*)$/i.exec(p);
+  const args = unc ? ["--remote", `wsl+${unc[1]}`, "-g", unc[2] + at] : ["-g", p + at];
+  const r = onWindows() ? await exec("cmd", ["/d", "/c", "code", ...args]) : await exec("code", args);
+  if (r.code !== 0) throw new Error(`code: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`);
+}

@@ -17,7 +17,7 @@ import { edit, body, cmp, linesOf, wordMove, wordAt, textBetween, indentUnit, vi
 import { Capture, hostPath } from "./capture.js";
 import { merge3, diffHunks, changedRanges, mapLine } from "./merge.js";
 import { buildTree, flatten, parents } from "./tree.js";
-import { openInNvim } from "./nvim.js";
+import { openInNvim, openInVSCode } from "./nvim.js";
 import { PAIRS, typed, inEmptyPair, betweenBrackets } from "./pairs.js";
 import { lineSpan, moveLines, copyLines, deleteLines, joinLines, toggleComment, commentFor } from "./lineops.js";
 import { splitLines } from "./model.js";
@@ -107,6 +107,7 @@ export default class Review extends View {
           deleteLine: () => this.lineOp("delete", cx),
           joinLines: () => this.lineOp("join", cx),
           toggleComment: () => this.lineOp("comment", cx),
+          openInVSCode: () => this.toVSCode(cx),
           // The settings popup saved a change.
           settings: async () => { this.settings = await loadSettings(); },
         })[c]?.();
@@ -536,6 +537,18 @@ export default class Review extends View {
   }
 
   nvim() { return this.settings.editor === "nvim"; }
+
+  /** E9: the current file in VS Code, at the cursor, else at the current change. Unsaved edits are saved first. */
+  toVSCode(cx) {
+    const f = this.file();
+    if (!f || f.Ctext === null) return;
+    if (this.dirty(f) && !f.conflict) this.save(cx, f);
+    const at = this.cur ?? { line: f.hunks[this.current]?.n ?? 0, col: 0 };
+    cx.spawn(async (cx) => {
+      try { await openInVSCode(f.path, at.line, at.col); }
+      catch (e) { this.error = String(e.message ?? e); cx.notify(); }
+    });
+  }
   treeOnly() { return this.mode === "edit" && this.nvim(); }
 
   /** Opens `f` at `line` in the space's Neovim (N1). */
@@ -1416,6 +1429,7 @@ export default class Review extends View {
     const act = {
       "ctrl-s": () => this.save(cx),
       "ctrl-b": () => this.toggleTree(cx),
+      "ctrl-e": () => this.toVSCode(cx),
       "ctrl-o": () => { const f = this.file(); if (f) this.toNvim(f, this.cur?.line ?? f.hunks[this.current]?.n ?? 0, cx); },
       "ctrl-shift-r": () => this.setMode(this.mode === "review" ? "edit" : "review", cx),
       "ctrl-shift-y": () => this.redoEdit(cx), // ctrl-shift-z is Herdr's pane.zoom
@@ -1684,6 +1698,7 @@ export default class Review extends View {
               .left(((this.tabOffset ?? 0) / total) * view).w(Math.max(24, (view / total) * view)));
           }))
         .when(vis.length > 1, (e) => e.child(div().flex_none().whitespace_nowrap().text_size(10).text_color(t.dim).px(6).child(`${vis.findIndex((x) => x.key === this.sel) + 1}/${vis.length} · ctrl-shift-↑/↓`)))
+        .when(!!f, (e) => e.child(this.button("vscode", "VS Code  ctrl-e", t.raised, (cx) => this.toVSCode(cx)).flex_none().whitespace_nowrap()))
         .when(!!f && this.nvim(), (e) => e.child(this.button("nvim", "Neovim  ctrl-o", t.raised, (cx) => this.toNvim(f, f.hunks[this.current]?.n ?? 0, cx)).flex_none().whitespace_nowrap()))
         .when(this.dirty(f), (e) => e.child(this.button("save", "Save  ctrl-s", t.accent + "55", (cx) => this.save(cx)).flex_none().whitespace_nowrap()))
         .when(!!f?.hunks.length, (e) => e
