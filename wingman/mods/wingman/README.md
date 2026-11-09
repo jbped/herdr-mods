@@ -7,7 +7,7 @@ A Herdr pane that shows the code changes coding agents make, Cursor-style: whole
 - **Any agent.** When an agent in a space starts working, the mod snapshots the repo the agent started in (`snapshot.ps1` / `snapshot.sh`). Files that change while it works become reviewable. Your real git index, stash and branch are never touched.
 - **Claude Code**, through its hooks (`hooks/wingman-hook.sh`). Every Edit/Write is reported with the file's exact content before the edit, so the review covers every repo Claude edits, not just the one it started in.
 
-When you reject a change, the agent that made it gets a short factual note on its next tool call or prompt: what was rejected and that the original lines are back. This keeps its picture of the file right. Turn it off in **Settings**. **Comment last rejection** (`ctrl-r`) sends your own comment with it. **Comment** (`ctrl-p`) sends an instruction about a change or the selected lines, such as "refactor this into a helper". It's typed into the agent's terminal as your message, waiting until the agent isn't mid-turn.
+When you reject a change, the agent that made it gets a short factual note on its next tool call or prompt: what was rejected and that the original lines are back. This keeps its picture of the file right. Turn it off in **Settings**. **Comment last rejection** (`ctrl-r`) sends your own comment with it. **Comment** (`ctrl-m`) sends an instruction about a change or the selected lines, such as "refactor this into a helper". It's typed into the agent's terminal as your message, waiting until the agent isn't mid-turn.
 
 Syntax highlighting (Prism 1.30, MIT, vendored in `prism.js` and `grammars.js`) covers JavaScript, TypeScript (`.ts .mts .cts .d.ts`), React (`.jsx .tsx`, and JSX in `.js`), Vue (`.vue`), Angular (`.ts` and `.html` templates with `{{ }}`), HTML, C#, JSON, Markdown, Dockerfiles, YAML (including `docker-compose.yml`) and `.env` files. CSS (`.css`) and SCSS (`.scss`) are covered too. In HTML and Vue files, `<script>` blocks use the grammar their `lang` names and `<style>` blocks use CSS or SCSS. Vue and Angular template syntax is recognized: `v-if`, `v-for`, `:prop`, `@event`, `#slot`, `[prop]`, `(event)`, `[(ngModel)]`, `*ngFor`, `#ref`, `@if`/`@for`/`@switch`/`@defer` blocks and `{{ }}`, with the expressions inside highlighted as JavaScript. Other files show as plain text.
 
@@ -63,7 +63,8 @@ Wingman finds a space's repos from the folders its agents started in and from th
 | File tree (Edit view) | `ctrl-b` |
 | Select lines | click a line, or click and drag; Shift+click or `shift-up` / `shift-down` to extend; click inside the selection or `escape` to clear. |
 | Menu for a line or change | right-click: Comment, Reject, Reject with comment, Accept (on the selected lines when there are any). Right-click never changes the selection. |
-| Comment on the selected lines, else the current change | `ctrl-p` (or the change's Comment button) |
+| Comment on the selected lines, else the current change | `ctrl-m` (or the change's Comment button) |
+| Quick Open | `ctrl-p`: find a file by name across the space's repos (fuzzy, as in VS Code). `name:12` or `name:12:5` opens it at that line; `:12` goes to a line in the current file. With no query it lists recent and changed files. Up and down choose, Tab fills in the chosen path (then add `:line`), Enter opens, Esc closes. |
 | Comment on the last rejection | `ctrl-r` (or the header's Comment last rejection) |
 
 ## Views
@@ -89,6 +90,9 @@ The diff is also an editor. Click in the text to place the cursor and type. Your
 | Delete lines | `ctrl-shift-k` (Herdr's picker key by default, see below) |
 | Join lines | `ctrl-j` (with the next line, or all selected lines) |
 | Toggle comment | `ctrl-/` (line comments by file type; block comments for HTML, XML, Vue, Markdown and CSS) |
+| Find | `ctrl-f` (a one-line selection becomes the query). Enter / Shift+Enter or `f3` / `shift-f3` for the next and previous match. `alt-c` case, `alt-w` whole word, `alt-r` regular expression. Esc closes. |
+| Replace | `ctrl-h`. Enter replaces the current match and moves on; `ctrl-enter` in the replace box, `ctrl-alt-enter` or All replaces every match as one undo step. With regular expressions, `$1` and the like insert groups. |
+| Go to line | `ctrl-g`, then a line or `line:column` |
 | Save | `ctrl-s` |
 | Undo / redo | `ctrl-z` / `ctrl-shift-y` (one history with accept and reject; redo is for edits) |
 | Scroll sideways | Shift+wheel |

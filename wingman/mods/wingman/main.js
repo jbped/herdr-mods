@@ -8,7 +8,7 @@
 // after, in order, on a queue. Every write is compare-and-swap, so a failure
 // never overwrites someone else's edit: the view reports it and reloads.
 import { View, div } from "gpui-kit";
-import { v_flex, h_flex, Scrollbar, v_virtual_list, VirtualListScrollHandle, TextareaState, Textarea } from "gpui-base";
+import { v_flex, h_flex, Scrollbar, v_virtual_list, VirtualListScrollHandle, TextareaState, Textarea, InputState, Input } from "gpui-base";
 import { theme, settings, props, readTextFile, writeTextFile, panes, spaces, agents, terminals, appHome, exec, hc, pickFolder, openOverlay, closeOverlay, nextCommand, run } from "herdr";
 import { rows as buildRows, acceptAt, rejectAt, acceptAll, rejectAll, partialAt } from "./model.js";
 import { Store, norm } from "./store.js";
@@ -19,6 +19,8 @@ import { merge3, diffHunks, changedRanges, mapLine } from "./merge.js";
 import { buildTree, flatten, parents } from "./tree.js";
 import { openInNvim, openInVSCode } from "./nvim.js";
 import { PAIRS, typed, inEmptyPair, betweenBrackets } from "./pairs.js";
+import { compile, findAll, nextMatch, prevMatch, replacement, parseLine } from "./find.js";
+import { rank, parseQuery } from "./quickopen.js";
 import { lineSpan, moveLines, copyLines, deleteLines, joinLines, toggleComment, commentFor } from "./lineops.js";
 import { splitLines } from "./model.js";
 import { Journal, spaceRepos, addSpaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings } from "./journal.js";
@@ -115,6 +117,7 @@ export default class Review extends View {
       }
     });
     this.handle = cx.focus_handle(); this.scroll = VirtualListScrollHandle.new();
+    this.initFind();
     this.views = new Map(); this.captures = new Map(); this.tokens = new Map();
     this.reset([]);
     this.queue = Promise.resolve(); this.writing = 0;
@@ -253,7 +256,7 @@ export default class Review extends View {
     finally { c.busy = false; }
   }
 
-  close() { this.scroll?.release(); }
+  close() { this.scroll?.release(); for (const i of [this.findInput, this.replaceInput, this.lineInput, this.quickInput]) i?.release(); }
 
   // ---- loading -------------------------------------------------------------
 
@@ -515,13 +518,14 @@ export default class Review extends View {
     return this.withTokens({ ...f, Btext: text, Ctext: text, B: C, C }, cx);
   }
 
-  async openFile(store, rel, cx) {
+  async openFile(store, rel, cx, at = null) {
     const key = `${store.root}|${rel}`, space = this.spaceId;
+    this.recent = [key, ...this.recent.filter((k) => k !== key)].slice(0, 30);
     // Neovim's Edit view is the tree alone: the file goes straight to Neovim, at its first change.
     if (this.treeOnly()) {
       const f = this.files.find((x) => x.key === key);
       this.treeSel = key; this.revealInTree(key); cx.notify();
-      try { await openInNvim(space, store.root, `${store.root}/${rel}`, f?.hunks[0]?.n ?? 0); }
+      try { await openInNvim(space, store.root, `${store.root}/${rel}`, at?.line ?? f?.hunks[0]?.n ?? 0); }
       catch (e) { this.error = String(e.message ?? e); cx.notify(); }
       return;
     }
@@ -533,7 +537,98 @@ export default class Review extends View {
     if (!this.opened.includes(key)) this.opened.push(key);
     this.pick(key, cx);
     const f = this.file();
-    if (f && this.nvim()) this.toNvim(f, f.hunks[0]?.n ?? 0, cx);
+    if (f && at && f.key === key) { this.cur = this.clampPos(f, at); this.anchor = null; this.showCursor(); cx.notify(); }
+    if (f && this.nvim()) this.toNvim(f, at?.line ?? f.hunks[0]?.n ?? 0, cx);
+  }
+
+  // ---- Quick Open (ctrl-p) ------------------------------------------------------
+
+  openQuick(cx) {
+    if (!this.stores.length) return;
+    this.refreshTrees(cx);
+    this.qo = { sel: 0, items: [] };
+    this.quickInput.set_value(""); this.rankQuick();
+    this.quickInput.focus(); cx.notify();
+  }
+
+  closeQuick(cx) { this.qo = null; this.inBar = null; this.handle.focus(); cx.notify(); }
+
+  moveQuick(by, cx) {
+    if (!this.qo?.items.length) return;
+    const n = this.qo.items.length;
+    this.qo.sel = (this.qo.sel + by + n) % n; cx.notify();
+  }
+
+  /** Every file of the space's repos, recent and changed ones first (the order an empty query shows). */
+  quickItems() {
+    const seen = new Set(), out = [];
+    const add = (store, rel) => { const k = `${store.root}|${rel}`; if (!seen.has(k)) { seen.add(k); out.push({ key: k, store, rel }); } };
+    const byKey = new Map(this.files.map((f) => [f.key, f]));
+    for (const k of this.recent) { const f = byKey.get(k); if (f) add(f.store, f.rel); else { const st = this.stores.find((s) => k.startsWith(s.root + "|")); if (st) add(st, k.slice(st.root.length + 1)); } }
+    for (const f of this.files) if (!f.plain && !f.error && f.hunks.length) add(f.store, f.rel);
+    const head = out.length;
+    for (const st of this.stores) for (const rel of this.trees.get(st.root)?.paths ?? []) add(st, rel);
+    return { all: out, head };
+  }
+
+  /** Tab: the box takes the highlighted file's path, keeping any :line already typed. */
+  completeQuick(cx) {
+    const it = this.qo?.items[this.qo.sel];
+    if (!it) return;
+    const at = /(:\d*(?::\d*)?)\s*$/.exec(this.quickInput.value())?.[1] ?? "";
+    this.quickInput.set_value(it.rel + at);
+    this.rankQuick(); cx.notify();
+  }
+
+  rankQuick() {
+    if (!this.qo) return;
+    const { name } = parseQuery(this.quickInput.value()), { all, head } = this.quickItems();
+    this.qo.items = name ? rank(all, name) : all.slice(0, Math.max(head, 15)).map((it) => ({ ...it, pos: [] }));
+    this.qo.sel = 0;
+  }
+
+  chooseQuick(i, cx) {
+    const q = parseQuery(this.quickInput.value()), it = this.qo?.items[i];
+    // ":12" alone: a line in the current file.
+    if (!q.name && q.at) {
+      const f = this.file();
+      this.closeQuick(cx);
+      if (f) { this.cur = this.clampPos(f, q.at); this.anchor = null; this.showCursor(); if (this.nvim()) this.toNvim(f, q.at.line, cx); cx.notify(); }
+      return;
+    }
+    if (!it) return;
+    this.closeQuick(cx);
+    const changed = this.files.find((f) => f.key === it.key && !f.plain && f.hunks.length);
+    if (this.mode === "review" && !changed) this.setMode("edit", cx);
+    cx.spawn(async (cx) => this.openFile(it.store, it.rel, cx, q.at));
+  }
+
+  quickOpen(t) {
+    const items = this.qo.items, multi = this.stores.length > 1, counts = new Map(this.files.map((f) => [f.key, f.hunks.length]));
+    const label = (it) => {
+      const cut = it.rel.lastIndexOf("/") + 1, name = it.rel.slice(cut), dir = it.rel.slice(0, Math.max(0, cut - 1)), hit = new Set(it.pos);
+      // The file name with its matched letters in the accent color.
+      const parts = [];
+      for (let i = 0; i < name.length; ) {
+        const on = hit.has(cut + i); let j = i;
+        while (j < name.length && hit.has(cut + j) === on) j++;
+        parts.push(div().when(on, (e) => e.text_color(t.accent).font_semibold()).child(name.slice(i, j)));
+        i = j;
+      }
+      return h_flex().min_w(0).gap(8).items_center()
+        .child(h_flex().flex_none().text_size(13).children(parts))
+        .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child((multi ? base(it.store.root) + (dir ? "/" : "") : "") + dir));
+    };
+    return div().absolute().top(44).left(0).right(0).flex().justify_center().child(
+      v_flex().w(620).max_w_full().max_h(440).p(6).gap(4).rounded(8).border_1().border_color(t.border).bg(t.popover).shadow_lg()
+        .child(Input.new(this.quickInput))
+        .child(v_flex().id("quick-list").overflow_y_scrollbar().children(items.map((it, i) =>
+          h_flex().id(`quick-${it.key}`).h(26).flex_none().px(8).gap(8).items_center().rounded(4).cursor_pointer()
+            .when(i === this.qo.sel, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover))
+            .on_click((_e, cx) => this.chooseQuick(i, cx))
+            .child(div().flex_1().min_w(0).child(label(it)))
+            .when(!!counts.get(it.key), (e) => e.child(div().flex_none().text_size(10).text_color(t.ansi3).child(String(counts.get(it.key))))))))
+        .when(!items.length, (e) => e.child(div().px(8).py(6).text_size(12).text_color(t.dim).child(this.trees.size ? "No matching files" : "Loading files…"))));
   }
 
   nvim() { return this.settings.editor === "nvim"; }
@@ -632,7 +727,7 @@ export default class Review extends View {
           this.trees.set(st.root, { list: r.stdout, paths, set: new Set(paths) });
         }
       } catch (e) { log(`tree: ${e.message ?? e}`); }
-      finally { this.treeBusy = false; cx.notify(); }
+      finally { this.treeBusy = false; if (this.qo) this.rankQuick(); cx.notify(); }
     });
   }
 
@@ -1064,7 +1159,7 @@ export default class Review extends View {
     if (!this.handle || !this.settings.autosave) return;
     let active = true;
     try { active = window.is_window_active(); } catch {}
-    const focused = this.handle.is_focused() && active, lost = this.wasFocused && !focused;
+    const focused = (this.handle.is_focused() || !!this.inBar) && active, lost = this.wasFocused && !focused;
     this.wasFocused = focused;
     const delay = this.settings.autosaveDelay, idle = delay > 0 && this.typedAt && Date.now() - this.typedAt >= delay * 1000;
     if (lost || idle) this.saveAll(cx);
@@ -1359,6 +1454,141 @@ export default class Review extends View {
     return true;
   }
 
+  // ---- find, replace, go to line (E6) ----------------------------------------
+
+  initFind() {
+    this.bar = null; // null, or { mode: "find" | "replace" | "line" }
+    this.findOpts = { cased: false, word: false, regex: false };
+    this.findInput = InputState.new({ placeholder: "Find" });
+    this.replaceInput = InputState.new({ placeholder: "Replace" });
+    this.lineInput = InputState.new({ placeholder: "Line, or line:column" });
+    this.quickInput = InputState.new({ placeholder: "Search files by name (add :line to go to a line, or start with : for this file)" });
+    this.qo = null; this.recent = []; // Quick Open: null, or { sel, items }; recent: file keys, newest first
+    this.quickInput.on("change", (_e, cx) => { this.rankQuick(); cx.notify(); });
+    this.quickInput.on("submit", (_e, cx) => this.chooseQuick(this.qo?.sel ?? 0, cx));
+    for (const i of [this.findInput, this.replaceInput, this.lineInput, this.quickInput]) {
+      i.on("focus", () => { this.inBar = i; });
+      i.on("blur", () => { if (this.inBar === i) this.inBar = null; });
+    }
+    // Typing a query jumps to the first match from where the search started (VS Code's incremental find).
+    this.findInput.on("change", (_e, cx) => { this.findFrom ??= this.cur; this.findStep(0, cx); });
+    this.findInput.on("submit", (e, cx) => this.findStep(e?.shift ? -1 : 1, cx));
+    this.replaceInput.on("submit", (e, cx) => (e?.secondary ? this.replaceAll(cx) : this.replaceOne(cx)));
+    this.lineInput.on("submit", (_e, cx) => this.goToLine(cx));
+  }
+
+  openFind(mode, cx) {
+    const f = this.file();
+    if (!f) return;
+    this.bar = { mode };
+    if (mode === "line") { this.lineInput.set_value(""); this.lineInput.focus(); cx.notify(); return; }
+    // A selection on one line becomes the query.
+    if (this.hasTextSel()) {
+      const [a, b] = this.ordered();
+      if (a.line === b.line) this.findInput.set_value(textBetween(linesOf(f), a, b));
+    }
+    this.findFrom = null;
+    (mode === "replace" && this.findInput.value() ? this.replaceInput : this.findInput).focus();
+    cx.notify();
+  }
+
+  closeFind(cx) { this.bar = null; this.inBar = null; this.handle.focus(); cx.notify(); }
+
+  findFlag(k, cx) { this.findOpts = { ...this.findOpts, [k]: !this.findOpts[k] }; this.findStep(0, cx); }
+
+  /** The current file's matches, cached until the text, query or options change. */
+  matches(f) {
+    if (!this.bar || this.bar.mode === "line" || !f || f.Ctext === null) return { ms: [] };
+    const q = this.findInput.value(), o = this.findOpts, key = `${q}\0${o.cased}${o.word}${o.regex}`;
+    if (f._findC === f.C && f._findKey === key) return f._find;
+    const c = compile(q, o), ms = c?.re ? findAll(linesOf(f).map(body), c.re) : [];
+    const byLine = new Map();
+    ms.forEach((m, i) => { if (!byLine.has(m.line)) byLine.set(m.line, []); byLine.get(m.line).push(i); });
+    f._find = { ms, byLine, re: c?.re ?? null, error: c?.error ?? null }; f._findC = f.C; f._findKey = key;
+    return f._find;
+  }
+
+  /** The match the text selection is exactly on, or -1. */
+  onMatch(ms) {
+    if (!this.hasTextSel()) return -1;
+    const [a, b] = this.ordered();
+    return ms.findIndex((m) => m.line === a.line && m.from === a.col && b.line === a.line && m.to === b.col);
+  }
+
+  /** Selects the next (1) or previous (-1) match, or for 0 the first one from where typing started. */
+  findStep(dir, cx) {
+    const f = this.file(), { ms } = this.matches(f);
+    if (this.bar) this.bar.note = null;
+    if (!f || !ms.length) { cx.notify(); return; }
+    const p = this.hasTextSel() ? this.ordered()[0] : this.cur ?? { line: 0, col: 0 };
+    const i = dir === 0 ? nextMatch(ms, this.findFrom ?? { line: 0, col: 0 }, true) : dir > 0 ? nextMatch(ms, p) : prevMatch(ms, p);
+    const m = ms[i];
+    this.anchor = { line: m.line, col: m.from }; this.cur = { line: m.line, col: m.to };
+    this.showCursor(); cx.notify();
+  }
+
+  replaceOne(cx) {
+    const f = this.file(), { ms, re } = this.matches(f);
+    if (!this.editable(f) || !re) return;
+    const i = this.onMatch(ms);
+    if (i < 0) return this.findStep(1, cx);
+    const m = ms[i], text = body(linesOf(f)[m.line]).slice(m.from, m.to);
+    this.type(replacement(text, re, this.replaceInput.value(), this.findOpts.regex), cx, { from: { line: m.line, col: m.from }, to: { line: m.line, col: m.to } });
+    this.findStep(1, cx);
+  }
+
+  /** Every match, last to first so earlier positions stay right, as one undo step. */
+  replaceAll(cx) {
+    const f = this.file(), { ms, re } = this.matches(f);
+    if (!this.editable(f) || !re || !ms.length) return;
+    const lines = linesOf(f), repl = this.replaceInput.value(), regex = this.findOpts.regex;
+    const subs = ms.map((m) => replacement(body(lines[m.line]).slice(m.from, m.to), re, repl, regex));
+    this.cur ??= { line: 0, col: 0 };
+    for (let i = ms.length - 1; i >= 0; i--) {
+      const m = ms[i];
+      this.type(subs[i], cx, { from: { line: m.line, col: m.from }, to: { line: m.line, col: m.to }, group: true });
+    }
+    this.history[this.history.length - 1].at = 0; // later typing starts its own undo step
+    if (this.bar) this.bar.note = `Replaced ${ms.length}`;
+    cx.notify();
+  }
+
+  goToLine(cx) {
+    const f = this.file(), p = parseLine(this.lineInput.value());
+    if (!f || !p) return;
+    this.cur = this.clampPos(f, p); this.anchor = null;
+    this.closeFind(cx); this.showCursor(); cx.notify();
+  }
+
+  findBar(f, t) {
+    const mode = this.bar.mode, chip = (id, label, on, flip) => div().id(id).h(22).px(6).flex().items_center().rounded(4).text_size(11).cursor_pointer()
+      .bg(on ? t.accent + "77" : t.raised).hover((s) => s.opacity(0.85)).on_click((_e, cx) => flip(cx)).child(label);
+    const box = (state, w) => div().w(w).flex_none().child(Input.new(state));
+    if (mode === "line") return h_flex().px(8).py(4).gap(6).items_center().border_b(1).border_color(t.border).text_size(12)
+      .child(div().text_color(t.muted).child("Go to line")).child(box(this.lineInput, 180))
+      .child(div().text_size(11).text_color(t.dim).child(`1-${linesOf(f).length} · Enter · Esc`))
+      .child(div().flex_1()).child(this.button("find-close", "×", t.raised, (cx) => this.closeFind(cx)));
+    const { ms, error } = this.matches(f), i = this.onMatch(ms), q = this.findInput.value();
+    const count = error ? "Bad pattern" : this.bar.note ?? (!q ? "" : !ms.length ? "No results" : i >= 0 ? `${i + 1} of ${ms.length}` : `${ms.length} result${ms.length === 1 ? "" : "s"}`);
+    return v_flex().px(8).py(4).gap(4).border_b(1).border_color(t.border).text_size(12)
+      .child(h_flex().gap(6).items_center()
+        .child(box(this.findInput, 240))
+        .child(chip("find-cased", "Aa", this.findOpts.cased, (cx) => this.findFlag("cased", cx)))
+        .child(chip("find-word", "W", this.findOpts.word, (cx) => this.findFlag("word", cx)))
+        .child(chip("find-regex", ".*", this.findOpts.regex, (cx) => this.findFlag("regex", cx)))
+        .child(div().min_w(70).text_size(11).text_color(error || (q && !ms.length) ? t.ansi1 : t.muted).child(count))
+        .child(this.button("find-prev", "↑", t.raised, (cx) => this.findStep(-1, cx)))
+        .child(this.button("find-next", "↓", t.raised, (cx) => this.findStep(1, cx)))
+        .child(div().flex_1())
+        .child(this.button("find-mode", mode === "replace" ? "Hide replace" : "Replace  ctrl-h", t.raised, (cx) => { this.bar = { mode: mode === "replace" ? "find" : "replace" }; cx.notify(); }))
+        .child(this.button("find-close", "×", t.raised, (cx) => this.closeFind(cx))))
+      .when(mode === "replace", (e) => e.child(h_flex().gap(6).items_center()
+        .child(box(this.replaceInput, 240))
+        .child(this.button("replace-one", "Replace", t.raised, (cx) => this.replaceOne(cx)))
+        .child(this.button("replace-all", "All  ctrl-alt-enter", t.raised, (cx) => this.replaceAll(cx)))
+        .when(this.findOpts.regex, (e) => e.child(div().text_size(11).text_color(t.dim).child("$1, $2… insert groups")))));
+  }
+
   // ---- saving ---------------------------------------------------------------
 
   /** The writes that bring disk up to memory for `f`. */
@@ -1425,10 +1655,29 @@ export default class Review extends View {
 
   key(e, cx) {
     const f = this.file();
+    // The find bar's inputs have the keyboard: only the bar's own keys act here.
+    if (this.inBar === this.quickInput) {
+      const qk = { escape: () => this.closeQuick(cx), up: () => this.moveQuick(-1, cx), down: () => this.moveQuick(1, cx),
+        "ctrl-p": () => this.moveQuick(1, cx), tab: () => this.completeQuick(cx) }[e.keystroke];
+      if (qk) { qk(); cx.stop_propagation(); }
+      return;
+    }
+    if (this.inBar) {
+      const bar = { escape: () => this.closeFind(cx), "ctrl-f": () => this.openFind("find", cx), "ctrl-h": () => this.openFind("replace", cx),
+        "ctrl-g": () => this.openFind("line", cx), "alt-c": () => this.findFlag("cased", cx), "alt-w": () => this.findFlag("word", cx),
+        "alt-r": () => this.findFlag("regex", cx), "ctrl-alt-enter": () => this.replaceAll(cx) }[e.keystroke];
+      if (bar) { bar(); cx.stop_propagation(); }
+      return;
+    }
     if (this.cur && this.editable(f) && this.editKey(e, f, cx)) { cx.stop_propagation(); return; }
     const act = {
       "ctrl-s": () => this.save(cx),
       "ctrl-b": () => this.toggleTree(cx),
+      "ctrl-f": () => this.openFind("find", cx),
+      "ctrl-h": () => this.openFind("replace", cx),
+      "ctrl-g": () => this.openFind("line", cx),
+      "f3": () => this.findStep(1, cx),
+      "shift-f3": () => this.findStep(-1, cx),
       "ctrl-e": () => this.toVSCode(cx),
       "ctrl-o": () => { const f = this.file(); if (f) this.toNvim(f, this.cur?.line ?? f.hunks[this.current]?.n ?? 0, cx); },
       "ctrl-shift-r": () => this.setMode(this.mode === "review" ? "edit" : "review", cx),
@@ -1442,7 +1691,8 @@ export default class Review extends View {
       "ctrl-shift-down": () => this.stepFile(1, cx),
       "ctrl-shift-up": () => this.stepFile(-1, cx),
       "ctrl-z": () => this.undo(cx),
-      "ctrl-p": () => this.askPrompt(this.current, cx),
+      "ctrl-p": () => this.openQuick(cx),
+      "ctrl-m": () => this.askPrompt(this.current, cx),
       "ctrl-r": () => this.askReason(cx),
       "shift-down": () => this.extend(1, cx),
       "shift-up": () => this.extend(-1, cx),
@@ -1531,7 +1781,7 @@ export default class Review extends View {
         .when(this.picks(f, sel).any, (e) => e
           .child(this.button("sel-reject", "Reject  ctrl-n", t.ansi1 + "55", (cx) => this.selectionAction("reject", cx)))
           .child(this.button("sel-accept", "Accept  ctrl-y", t.ansi2 + "55", (cx) => this.selectionAction("accept", cx))))
-        .child(this.button("sel-prompt", "Comment  ctrl-p", t.ansi4 + "55", (cx) => this.askPrompt(this.current, cx)))
+        .child(this.button("sel-prompt", "Comment  ctrl-m", t.ansi4 + "55", (cx) => this.askPrompt(this.current, cx)))
         .child(this.button("sel-clear", "Clear  Esc", t.raised, (cx) => this.clearSelection(cx))));
   }
 
@@ -1549,7 +1799,7 @@ export default class Review extends View {
     // The labels stay short; the selection bar shows when they act on selected lines.
     const selChanges = hasSel && this.picks(f, sel).any;
     const items = [
-      { cmd: "prompt", label: "Comment", key: "ctrl-p" },
+      { cmd: "prompt", label: "Comment", key: "ctrl-m" },
       ...(inHunk || selChanges ? [
         { cmd: "reject", label: "Reject", key: "ctrl-n" },
         { cmd: "rejectReason", label: "Reject with comment…", key: "" },
@@ -1630,7 +1880,7 @@ export default class Review extends View {
         .child(div().w(GUTTER).flex_none())
         .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi1 + (current ? "99" : "55")).text_size(11).child("Reject  ctrl-n"))
         .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi2 + (current ? "99" : "55")).text_size(11).child("Accept  ctrl-y"))
-        .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi4 + (current ? "77" : "40")).text_size(11).child("Comment  ctrl-p"))
+        .child(div().w(BTN_W).flex_none().h(16).rounded(4).flex().items_center().justify_center().bg(t.ansi4 + (current ? "77" : "40")).text_size(11).child("Comment  ctrl-m"))
         .child(div().flex_1().pl(8).text_color(t.dim).text_size(11).child(`change ${r.hunk + 1} of ${f.hunks.length}`));
     }
     const spans = expandTabs((r.side === "old" ? f.oldTok : f.newTok)?.[r.line] ?? []);
@@ -1647,12 +1897,16 @@ export default class Review extends View {
       }
     }
     const caret = r.side === "new" && this.cur?.line === r.line;
+    const found = r.side === "new" && this.bar ? this.matches(f) : null, hits = found?.byLine?.get(r.line) ?? [];
+    const onHit = hits.length ? this.onMatch(found.ms) : -1;
     return h_flex().w_full().h(ROW).flex_none().whitespace_nowrap()
       .when(r.kind === "+", (e) => e.bg(t.ansi2 + "22")).when(r.kind === "-", (e) => e.bg(t.ansi1 + "22"))
       .when(selected, (e) => e.bg(t.selection).border_l(2).border_color(t.accent))
       .child(div().w(44).flex_none().pr(8).text_right().text_color(caret ? t.foreground : t.dim).child(String(r.num)))
       .child(div().w(14).flex_none().text_color(r.kind === "+" ? t.ansi2 : r.kind === "-" ? t.ansi1 : t.dim).child(r.kind === " " ? "" : r.kind))
       .child(div().flex_1().h_full().relative().overflow_hidden()
+        .children(hits.map((k) => { const m = found.ms[k]; return div().absolute().top(1).h(ROW - 2).rounded(2).left(x(m.from)).w(Math.max(2, x(m.to) - x(m.from)))
+          .bg(k === onHit ? t.ansi3 + "88" : t.ansi3 + "38"); }))
         .when(!!mark, (e) => e.child(div().absolute().top(0).h(ROW).left(mark.left).w(mark.w).bg(t.selection)))
         .child(h_flex().absolute().top(0).h(ROW).left(-hx).children(spans.map((s) => div().text_color(color(s.type, t)).child(s.text))))
         .when(caret, (e) => e.child(div().absolute().top(3).h(ROW - 6).w(2).left(x(this.cur.col)).bg(this.handle.is_focused() ? t.accent : t.dim))));
@@ -1666,7 +1920,7 @@ export default class Review extends View {
     const tag = (x) => x.created ? "new" : x.Ctext === null ? "deleted" : `${x.hunks.length}`;
     const rows = f ? this.rowsOf(f) : [], sel = f ? this.selection(f) : null, lsel = f ? this.lineSel(f) : null;
     const picked = this.files.find((x) => x.key === this.sel); // an error tab shows its error
-    return v_flex().id("review").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
+    return v_flex().id("review").relative().size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .child(h_flex().h(40).flex_none().px(12).gap(10).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Wingman"))
@@ -1704,6 +1958,7 @@ export default class Review extends View {
         .when(!!f?.hunks.length, (e) => e
           .child(this.button("reject-file", "Reject file  ctrl-shift-⌫", t.ansi1 + "40", (cx) => this.wholeFile("reject", cx)).flex_none().whitespace_nowrap())
           .child(this.button("accept-file", "Accept file  ctrl-shift-⏎", t.ansi2 + "40", (cx) => this.wholeFile("accept", cx)).flex_none().whitespace_nowrap())))
+      .when(!!f && !!this.bar, (e) => e.child(this.findBar(f, t)))
       .when(!!f?.conflict, (e) => e.child(h_flex().px(12).py(6).gap(8).items_center().bg(t.ansi3 + "22").text_size(12)
         .child(div().flex_1().child(f?.conflict?.theirs ? "The agent changed the same lines you're editing." : "The file was deleted while you were editing it."))
         .child(this.button("ours", "Keep mine", t.raised, (cx) => this.resolve("ours", cx)))
@@ -1734,6 +1989,8 @@ export default class Review extends View {
           .on_mouse_down("right", (ev, cx) => this.openMenu(ev, cx))
           .on_scroll_wheel((ev, cx) => this.wheel(ev, cx)))
         .child(Scrollbar.vertical("review-rows").viewport_from_layout().absolute().inset_0())
-        .when(!!sel, (e) => e.child(this.selectionBar(f, sel, t))))))));
+        .when(!!sel, (e) => e.child(this.selectionBar(f, sel, t))))))))
+      // Quick Open floats over everything, so it's the root's last child.
+      .when(!!this.qo, (e) => e.child(this.quickOpen(t)));
   }
 }
