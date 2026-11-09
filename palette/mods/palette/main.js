@@ -1,4 +1,5 @@
-// Command palette with mod entries. Lists what mods declare in their mod.json ("palette":
+// Command palette with user and mod entries. Lists the user's entries from
+// ~/.config/herdr-app/palette.json, then what mods declare in their mod.json ("palette":
 // [{ "title", "command", "args" }]), then every app command from commands(), each with its
 // key from keys.json. Type to filter, ↑/↓ and Enter to run, Esc to leave. A command with
 // required arguments asks for them first: one value fills the first argument, or a JSON object.
@@ -12,7 +13,7 @@ const ROW_H = 32, HEAD_H = 26, LIST_H = 360;
 // Groups in the order Herdr's own palette shows them; mod entries come first.
 const GROUPS = ["tab", "pane", "space", "terminal", "agent", "app", "layout", "mod", "overlay", "window"];
 const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
-const groupOf = (r) => (r.kind === "mod" ? "Mods" : cap(r.group));
+const groupOf = (r) => (r.kind === "mod" ? r.group : cap(r.group));
 /** A command's label: the first clause of its description, as Herdr's labels read. */
 const labelOf = (c) => {
   const l = (c.about.split(/ \(|: |; |\. /)[0] ?? "").replace(/\.$/, "").trim();
@@ -37,6 +38,18 @@ function keysBySig(keys) {
   return out;
 }
 
+/** Valid entries of a palette list, as rows of group `group`. */
+const entriesOf = (list, group, mod) =>
+  Array.isArray(list) ? list.filter((e) => e?.title && e?.command).map((e) => ({ kind: "mod", group, mod, title: e.title, name: e.command, args: e.args ?? {}, about: e.about ?? "" })) : [];
+
+/** The user's own entries: a JSON list in ~/.config/herdr-app/palette.json. */
+async function userEntries() {
+  let text = null;
+  try { text = await readTextFile(`${appHome()}/palette.json`); } catch {} // no file, no entries
+  if (!text) return [];
+  try { return entriesOf(JSON.parse(text), "Custom", ""); } catch (e) { console.log(`palette: palette.json: ${e.message ?? e}`); return []; }
+}
+
 /** Entries mods declare in their mod.json. */
 async function modEntries() {
   const dir = `${appHome()}/mods`, out = [];
@@ -46,7 +59,7 @@ async function modEntries() {
     try {
       const text = await readTextFile(`${dir}/${name}/mod.json`);
       const list = text ? JSON.parse(text).palette : null;
-      if (Array.isArray(list)) for (const e of list) if (e?.title && e?.command) out.push({ mod: name, title: e.title, name: e.command, args: e.args ?? {}, about: e.about ?? "" });
+      out.push(...entriesOf(list, "Mods", name));
     } catch {} // a broken mod.json leaves that mod out
   }
   return out;
@@ -67,7 +80,7 @@ export default class Palette extends View {
     cx.timer.after(600, () => this.input.focus());
     this.handle = cx.focus_handle();
     cx.spawn(async (cx) => {
-      this.mods = await modEntries();
+      this.mods = [...(await userEntries()), ...(await modEntries())];
       try { this.keys = keysBySig(JSON.parse((await readTextFile(`${appHome()}/keys.json`)) ?? "{}")); } catch {}
       cx.notify();
     });
@@ -81,7 +94,7 @@ export default class Palette extends View {
     const rank = (g) => { const i = GROUPS.indexOf(g); return i < 0 ? GROUPS.length : i; };
     const app = commands().map((c, i) => ({ kind: "app", group: c.name.split(".")[0], i, title: labelOf(c), name: c.name, args: null, spec: c.args, about: c.about }))
       .sort((a, b) => rank(a.group) - rank(b.group) || a.group.localeCompare(b.group) || a.i - b.i);
-    const all = [...this.mods.map((e) => ({ ...e, kind: "mod", group: "Mods" })), ...app];
+    const all = [...this.mods, ...app];
     return all.filter((r) => { const hay = `${r.title} ${r.name} ${r.mod ?? ""} ${r.about}`.toLowerCase(); return words.every((w) => hay.includes(w)); });
   }
 
@@ -169,7 +182,7 @@ export default class Palette extends View {
           .when(on, (e) => e.bg(t.hover)).hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => { this.at = it.i; this.submit(); cx.notify(); })
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(on ? t.foreground : t.muted).child(r.title))
-          .when(r.kind === "mod", (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(r.mod)))
+          .when(r.kind === "mod" && !!r.mod, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(r.mod)))
           .when(!!key, (e) => e.child(this.keycaps(key, t)))), it.y, ROW_H);
     };
     const visible = items.filter((it) => it.y + (it.head ? HEAD_H : ROW_H) > this.top && it.y < this.top + height);
