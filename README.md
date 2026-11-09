@@ -31,6 +31,12 @@ Herdr's Agents list with Claude Code's in-process subagents nested under the ses
 
 Modified from Herdr's `agents` mod (Apache-2.0, see `agents-plus/LICENSE`).
 
+## tabs-plus
+
+Herdr's tab bar with a side panel that mods can join: Review and Edit buttons for Wingman and a Wayfinder button next to Files and Changes, a remembered width per panel tab, and commands that palette entries use to open a panel tab. Wingman's and Wayfinder's palette entries need it. See [`tabs-plus/mods/tabs-plus/README.md`](tabs-plus/mods/tabs-plus/README.md).
+
+Modified from Herdr's `tabs` mod (Apache-2.0, see `tabs-plus/LICENSE`).
+
 ## Install
 
 ### Tell your agent
