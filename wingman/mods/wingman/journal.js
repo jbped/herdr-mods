@@ -17,7 +17,8 @@ export async function spaceRepos() {
   return t ? JSON.parse(t) : {};
 }
 
-async function addSpaceRepos(add) {
+/** Adds [space, root] pairs to the space -> repos map (also used by Open folder). */
+export async function addSpaceRepos(add) {
   const before = await readTextFile(SPACES()), map = before ? JSON.parse(before) : {};
   let changed = false;
   for (const [space, root] of add) {
@@ -173,7 +174,7 @@ const SETTINGS = () => `${reviewDir()}/settings.json`;
 export async function loadSettings() {
   const t = await readTextFile(SETTINGS());
   // autosave: save on focus loss and file switch; autosaveDelay: also after typing stops (s, 0 = off).
-  return { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, ...(t ? JSON.parse(t) : {}) };
+  return { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman", ...(t ? JSON.parse(t) : {}) };
 }
 export async function saveSettings(next) {
   await writeTextFile(SETTINGS(), JSON.stringify(next, null, 2) + "\n", await readTextFile(SETTINGS()));

@@ -9,7 +9,7 @@
 // never overwrites someone else's edit: the view reports it and reloads.
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list, VirtualListScrollHandle, TextareaState, Textarea } from "gpui-base";
-import { theme, settings, props, readTextFile, writeTextFile, panes, spaces, agents, terminals, appHome, exec, hc, openOverlay, closeOverlay, nextCommand, run } from "herdr";
+import { theme, settings, props, readTextFile, writeTextFile, panes, spaces, agents, terminals, appHome, exec, hc, pickFolder, openOverlay, closeOverlay, nextCommand, run } from "herdr";
 import { rows as buildRows, acceptAt, rejectAt, acceptAll, rejectAll, partialAt } from "./model.js";
 import { Store, norm } from "./store.js";
 import { highlight, highlightLines, languageOf, color } from "./highlight.js";
@@ -17,8 +17,9 @@ import { edit, body, cmp, linesOf, wordMove, wordAt, textBetween, indentUnit, vi
 import { Capture, hostPath } from "./capture.js";
 import { merge3, diffHunks, changedRanges, mapLine } from "./merge.js";
 import { buildTree, flatten, parents } from "./tree.js";
+import { openInNvim } from "./nvim.js";
 import { splitLines } from "./model.js";
-import { Journal, spaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings } from "./journal.js";
+import { Journal, spaceRepos, addSpaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings } from "./journal.js";
 
 const ROW = 20, GUTTER = 58, BTN_W = 110, BTN_GAP = 6, BUTTONS = 3; // Reject, Accept, Prompt
 // Agents count as working while they are in a turn, including while blocked on a question.
@@ -76,7 +77,7 @@ export default class Review extends View {
     // Opened as a popup (reason or follow-up prompt): a small form, none of the pane's work.
     if (props()?.form) return this.initForm(cx);
     this.id = Math.random().toString(36).slice(2);
-    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0 };
+    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman" };
     this.editNotes = new Map(); // file key -> the edit note last queued for it
     // Q48: Review (tabs are changed files) or Edit (file tree, tabs for changed and opened files).
     this.mode = "review"; this.treeOn = true; this.trees = new Map(); this.expanded = new Set();
@@ -123,7 +124,7 @@ export default class Review extends View {
     this.stores = stores; this.files = []; this.sel = null; this.current = 0; this.history = [];
     this.deferred = new Set(); this.indexTexts = {}; this.error = null;
     this.cur = null; this.anchor = null; this.redo = []; this.hx = 0; this.opened = [];
-    this.status = stores.length ? "Loading…" : "Waiting for an agent in a git repo in this space…";
+    this.status = stores.length ? "Loading…" : "Waiting for an agent in a git repo in this space, or open a folder.";
   }
 
   // ---- which space ---------------------------------------------------------
@@ -512,6 +513,20 @@ export default class Review extends View {
     }
     if (!this.opened.includes(key)) this.opened.push(key);
     this.pick(key, cx);
+    const f = this.file();
+    if (f && this.nvim()) this.toNvim(f, f.hunks[0]?.n ?? 0, cx);
+  }
+
+  nvim() { return this.settings.editor === "nvim"; }
+
+  /** Opens `f` at `line` in the space's Neovim (N1). */
+  toNvim(f, line, cx) {
+    if (!f || f.Ctext === null) return;
+    const space = this.spaceId;
+    cx.spawn(async (cx) => {
+      try { await openInNvim(space, f.store.root, f.path, line); }
+      catch (e) { this.error = String(e.message ?? e); cx.notify(); }
+    });
   }
 
   /** Closing saves unsaved edits when autosave is on (Q46); without it they must be saved first. */
@@ -525,6 +540,27 @@ export default class Review extends View {
     if (f?.plain) this.files = this.files.filter((x) => x.key !== key);
     if (this.sel === key) { this.cur = this.anchor = null; this.hx = 0; }
     this.error = null; this.settle(); cx.notify();
+  }
+
+  /** Adds a repo to this space by hand: for agents Wingman can't place (a WSL agent started in a
+   *  Windows folder, or one the hook hasn't seen edit). Kept in the space -> repos map. */
+  openFolder(cx) {
+    const space = this.spaceId;
+    if (!space) return;
+    cx.spawn(async (cx) => {
+      try {
+        const dir = await pickFolder({ prompt: "Open in Wingman" });
+        if (!dir) return;
+        const st = await Store.open(dir).catch(() => null);
+        if (!st) { this.error = `${dir} is not in a git repository`; cx.notify(); return; }
+        // The capture leader writes the same file: retry when it wrote first.
+        for (let i = 0; ; i++) {
+          try { await addSpaceRepos([[space, st.root]]); break; } catch (e) { if (i >= 2) throw e; }
+        }
+        this.error = null; cx.notify();
+        await this.follow(cx);
+      } catch (e) { this.error = String(e.message ?? e); cx.notify(); }
+    });
   }
 
   setMode(mode, cx) {
@@ -613,6 +649,8 @@ export default class Review extends View {
           .when(!!c?.n, (e) => e.child(div().flex_none().text_size(10).text_color(t.ansi3).child(String(c.n)))));
       }
     }
+    out.push(div().id("tree-open-folder").mx(8).mt(6).px(6).h(22).flex().items_center().rounded(4).text_size(11).text_color(t.dim).cursor_pointer()
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.openFolder(cx)).child("+ Open folder…"));
     return v_flex().id("file-tree").w(240).flex_none().h_full().py(4).border_r(1).border_color(t.border).overflow_y_scrollbar().children(out);
   }
 
@@ -982,7 +1020,7 @@ export default class Review extends View {
   }
 
   openSettings() {
-    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 360 });
+    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 450 });
   }
 
   /** Every 250 ms (Q46). Herdr has no blur event, so focus is polled: the pane losing the
@@ -1055,6 +1093,8 @@ export default class Review extends View {
 
   textDown(f, r, x, y, ev, cx) {
     if (r.hunk != null) this.current = r.hunk;
+    // Editor "nvim": a click opens Neovim at that line; Wingman stays the review.
+    if (this.nvim()) return this.toNvim(f, r.side === "new" ? r.line : r.hunk != null ? f.hunks[r.hunk].n : 0, cx);
     if (r.side !== "new") { cx.notify(); return; } // removed lines are read-only
     const p = this.posAt(f, r, x), lines = linesOf(f);
     this.selA = this.selB = null; this.goalX = null;
@@ -1296,6 +1336,7 @@ export default class Review extends View {
     const act = {
       "ctrl-s": () => this.save(cx),
       "ctrl-b": () => this.toggleTree(cx),
+      "ctrl-o": () => { const f = this.file(); if (f) this.toNvim(f, this.cur?.line ?? f.hunks[this.current]?.n ?? 0, cx); },
       "ctrl-shift-r": () => this.setMode(this.mode === "review" ? "edit" : "review", cx),
       "ctrl-shift-y": () => this.redoEdit(cx), // ctrl-shift-z is Herdr's pane.zoom
       "ctrl-y": () => this.decide("accept", cx),
@@ -1460,7 +1501,13 @@ export default class Review extends View {
           .child(h_flex().gap(4).children([0, 1, 2, 3, 5, 10].map((n) => div().id(`delay-${n}`).h(24).px(10).flex().items_center().rounded(5).text_size(12).cursor_pointer()
             .bg(st.autosaveDelay === n ? t.accent + "77" : t.raised).hover((s) => s.opacity(0.85))
             .on_click((_e, cx) => { if (st.autosave) this.setSetting({ autosaveDelay: n }, cx); })
-            .child(n ? `${n}s` : "Focus change"))))));
+            .child(n ? `${n}s` : "Focus change")))))
+        .child(v_flex().gap(6).pt(4)
+          .child(div().text_size(12).text_color(t.muted).child("Editor"))
+          .child(h_flex().gap(4).children([["wingman", "Wingman"], ["nvim", "Neovim"]].map(([v, label]) => div().id(`editor-${v}`).h(24).px(10).flex().items_center().rounded(5).text_size(12).cursor_pointer()
+            .bg((st.editor ?? "wingman") === v ? t.accent + "77" : t.raised).hover((s) => s.opacity(0.85))
+            .on_click((_e, cx) => this.setSetting({ editor: v }, cx)).child(label))))
+          .child(div().text_size(11).text_color(t.dim).child("Neovim: clicking a line, ctrl-o, or a file in the tree opens it in a Neovim pane beside Wingman."))));
   }
 
   renderMenu() {
@@ -1555,6 +1602,7 @@ export default class Review extends View {
               .left(((this.tabOffset ?? 0) / total) * view).w(Math.max(24, (view / total) * view)));
           }))
         .when(vis.length > 1, (e) => e.child(div().flex_none().whitespace_nowrap().text_size(10).text_color(t.dim).px(6).child(`${vis.findIndex((x) => x.key === this.sel) + 1}/${vis.length} · ctrl-shift-↑/↓`)))
+        .when(!!f && this.nvim(), (e) => e.child(this.button("nvim", "Neovim  ctrl-o", t.raised, (cx) => this.toNvim(f, f.hunks[this.current]?.n ?? 0, cx)).flex_none().whitespace_nowrap()))
         .when(this.dirty(f), (e) => e.child(this.button("save", "Save  ctrl-s", t.accent + "55", (cx) => this.save(cx)).flex_none().whitespace_nowrap()))
         .when(!!f?.hunks.length, (e) => e
           .child(this.button("reject-file", "Reject file  ctrl-shift-⌫", t.ansi1 + "40", (cx) => this.wholeFile("reject", cx)).flex_none().whitespace_nowrap())
@@ -1563,8 +1611,9 @@ export default class Review extends View {
         .child(div().flex_1().child(f?.conflict?.theirs ? "The agent changed the same lines you're editing." : "The file was deleted while you were editing it."))
         .child(this.button("ours", "Keep mine", t.raised, (cx) => this.resolve("ours", cx)))
         .child(this.button("theirs", f?.conflict?.theirs ? "Take agent's" : "Drop my edits", t.ansi1 + "55", (cx) => this.resolve("theirs", cx)))))
-      .when(!!(this.error || this.status || !f), (e) => e.child(div().px(12).py(6).text_size(12)
-        .text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : this.mode === "edit" ? "No file open: pick one in the file tree (ctrl-b)" : "No changes to review"))))
+      .when(!!(this.error || this.status || !f), (e) => e.child(h_flex().px(12).py(6).gap(10).items_center().text_size(12)
+        .child(div().flex_1().min_w(0).text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : this.mode === "edit" ? "No file open: pick one in the file tree (ctrl-b)" : "No changes to review")))
+        .when(!this.stores.length && !!this.spaceId, (e) => e.child(this.button("open-folder", "Open folder…", t.raised, (cx) => this.openFolder(cx)).flex_none()))))
       .when(!!f, (e) => e.child(div().id("review-diff").flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(12)
         .on_size_change((size, cx) => { this.viewH = size.height; this.viewW = size.width; cx.notify(); })
         // One character's width in the diff font, for cursor columns (the font is monospace).

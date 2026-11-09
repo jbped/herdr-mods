@@ -49,6 +49,8 @@ Run the same installer with `uninstall`. It removes only what install added: its
 
 Open a Wingman pane beside an agent: run `pane.split` with `{"direction": "right", "mod": "wingman"}`, for example from the palette or a key in `keys.json`. Each pane shows the review for the space it's in.
 
+Wingman finds a space's repos from the folders its agents started in and from the files the Claude hook sees them edit. When it finds none, for example for a WSL agent started from a Windows folder, click **Open folder…** and pick a folder in the repo. The Edit view's file tree has the same button for adding more repos. Added repos are remembered for the space, and capture covers them too.
+
 | Action | Key |
 |---|---|
 | Accept / reject the selected lines, else the current change | `ctrl-y` / `ctrl-n` (a change's own buttons always act on the whole change) |
@@ -86,12 +88,19 @@ The diff is also an editor. Click in the text to place the cursor and type. Your
 
 Comment, Accept and Reject act on the lines a text selection covers. Clicking the line numbers still selects whole lines. Not supported: input methods that compose characters (Chinese, Japanese, Korean), and wide characters or emoji, which put the cursor in the wrong column.
 
+## Neovim as the editor
+
+Set **Editor** to **Neovim** in Settings to edit in Neovim instead of Wingman's own editor. Wingman stays the review: clicking a line of the diff, `ctrl-o`, the **Neovim** button, or a file in the tree opens that file at that line in a Neovim pane beside Wingman. Each space gets one Neovim, started with `--listen`, and later files open in the same one. Buffers reload when the agent writes to a file, unless they hold unsaved edits. Wingman picks up Neovim's saves within 2 seconds.
+
+On Windows, Wingman uses `nvim.exe` when it's on PATH, otherwise WSL's `nvim`. Your own Neovim config applies, including its plugins for autopairs, tags and line moves. Herdr's global keys (for example `alt-up` / `alt-down`) still apply inside the Neovim pane unless `keys.json` sends them to the terminal.
+
 ## Settings
 
 The header's **⚙ Settings** opens:
 
 - **Auto note on rejections**: tell the agent which of its changes you rejected. On by default.
 - **Note on my edits**: when you save, tell the agent that changed the file which lines you edited, so it reads the file again before its next change. On by default. The note is delivered with the agent's next tool call or prompt, and a newer save replaces a note it hasn't read yet.
+- **Editor**: Wingman (the built-in editor, the default) or Neovim (see Neovim as the editor).
 - **Autosave**: save when Wingman loses focus (another pane, or another window), and when you switch files or spaces. On by default. Herdr has no blur event for mods, so focus is checked 4 times a second.
 - **Also save after typing stops for**: Focus change (no timer, save on focus change only), 1, 2, 3, 5 or 10 seconds. Focus change by default.
 
