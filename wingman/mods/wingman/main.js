@@ -18,6 +18,7 @@ import { Capture, hostPath } from "./capture.js";
 import { merge3, diffHunks, changedRanges, mapLine } from "./merge.js";
 import { buildTree, flatten, parents } from "./tree.js";
 import { openInNvim } from "./nvim.js";
+import { PAIRS, typed, inEmptyPair, betweenBrackets } from "./pairs.js";
 import { splitLines } from "./model.js";
 import { Journal, spaceRepos, addSpaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings } from "./journal.js";
 
@@ -77,7 +78,7 @@ export default class Review extends View {
     // Opened as a popup (reason or follow-up prompt): a small form, none of the pane's work.
     if (props()?.form) return this.initForm(cx);
     this.id = Math.random().toString(36).slice(2);
-    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman" };
+    this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman", autoPairs: true };
     this.editNotes = new Map(); // file key -> the edit note last queued for it
     // Q48: Review (tabs are changed files) or Edit (file tree, tabs for changed and opened files).
     this.mode = "review"; this.treeOn = true; this.trees = new Map(); this.expanded = new Set();
@@ -111,7 +112,7 @@ export default class Review extends View {
     cx.timer.every(250, (cx) => this.autosave(cx));
     cx.timer.every(500, (cx) => this.lead(cx));
     cx.timer.every(3000, (cx) => this.collectAll(cx));
-    cx.timer.every(5000, (cx) => this.mode === "edit" && this.treeOn && this.refreshTrees(cx));
+    cx.timer.every(5000, (cx) => this.mode === "edit" && (this.treeOn || this.nvim()) && this.refreshTrees(cx));
     // Watch events would be the fast path, but they did not fire on Windows in testing,
     // so a 2 s content check is what catches outside edits. "#index" keeps the index
     // checked even when no files are listed (e.g. right after a reset).
@@ -506,6 +507,14 @@ export default class Review extends View {
 
   async openFile(store, rel, cx) {
     const key = `${store.root}|${rel}`, space = this.spaceId;
+    // Neovim's Edit view is the tree alone: the file goes straight to Neovim, at its first change.
+    if (this.treeOnly()) {
+      const f = this.files.find((x) => x.key === key);
+      this.treeSel = key; this.revealInTree(key); cx.notify();
+      try { await openInNvim(space, store.root, `${store.root}/${rel}`, f?.hunks[0]?.n ?? 0); }
+      catch (e) { this.error = String(e.message ?? e); cx.notify(); }
+      return;
+    }
     if (!this.files.some((f) => f.key === key)) {
       const f = await this.loadPlain(store, rel, cx);
       if (this.spaceId !== space || this.files.some((x) => x.key === key)) return;
@@ -518,6 +527,7 @@ export default class Review extends View {
   }
 
   nvim() { return this.settings.editor === "nvim"; }
+  treeOnly() { return this.mode === "edit" && this.nvim(); }
 
   /** Opens `f` at `line` in the space's Neovim (N1). */
   toNvim(f, line, cx) {
@@ -567,7 +577,7 @@ export default class Review extends View {
     if (mode === this.mode) return;
     if (this.settings.autosave) this.saveAll(cx); // leaving a view saves (Q46)
     this.mode = mode;
-    if (mode === "edit" && this.treeOn) this.refreshTrees(cx);
+    if (mode === "edit" && (this.treeOn || this.nvim())) this.refreshTrees(cx);
     this.settle(); this.handle.focus(); cx.notify();
   }
 
@@ -582,8 +592,8 @@ export default class Review extends View {
   toggleDir(k, cx) { if (!this.expanded.delete(k)) this.expanded.add(k); cx.notify(); }
 
   revealInTree(key) {
-    const f = this.files.find((x) => x.key === key);
-    if (f) for (const p of parents(f.rel)) this.expanded.add(`${f.store.root}|${p}`);
+    const i = key.indexOf("|"), root = key.slice(0, i), rel = key.slice(i + 1);
+    for (const p of parents(rel)) this.expanded.add(`${root}|${p}`);
   }
 
   /** Each repo's files: tracked and untracked, without ignored ones. */
@@ -629,9 +639,10 @@ export default class Review extends View {
     return tr.node;
   }
 
-  renderTree(t) {
-    const multi = this.stores.length > 1, out = [];
+  renderTree(t, full = false) {
+    const multi = this.stores.length > 1, out = [], picked = full ? this.treeSel : this.sel;
     const note = (id, text, color = t.dim) => div().id(id).px(10).py(4).text_size(11).text_color(color).child(text);
+    if (full && this.error) out.push(note("tree-error", this.error, t.ansi1));
     if (!this.stores.length) out.push(note("tree-none", "No repo in this space yet"));
     for (const st of this.stores) {
       const tr = this.trees.get(st.root), node = this.treeOf(st), counts = this.treeCounts(st);
@@ -641,7 +652,7 @@ export default class Review extends View {
       for (const row of flatten(node, (rel) => this.expanded.has(`${st.root}|${rel}`))) {
         const k = `${st.root}|${row.rel}`, c = counts.get(row.rel), open = this.expanded.has(k);
         out.push(h_flex().id(`tree-${k}`).h(22).flex_none().pl(8 + row.depth * 12).pr(8).gap(4).items_center().cursor_pointer()
-          .when(!row.dir && k === this.sel, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover))
+          .when(!row.dir && k === picked, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => (row.dir ? this.toggleDir(k, cx) : cx.spawn(async (cx) => this.openFile(st, row.rel, cx))))
           .child(div().w(10).flex_none().text_size(10).text_color(t.dim).child(row.dir ? (open ? "▾" : "▸") : ""))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(row.dir ? t.muted : t.foreground).child(row.name))
@@ -651,7 +662,8 @@ export default class Review extends View {
     }
     out.push(div().id("tree-open-folder").mx(8).mt(6).px(6).h(22).flex().items_center().rounded(4).text_size(11).text_color(t.dim).cursor_pointer()
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.openFolder(cx)).child("+ Open folder…"));
-    return v_flex().id("file-tree").w(240).flex_none().h_full().py(4).border_r(1).border_color(t.border).overflow_y_scrollbar().children(out);
+    return v_flex().id("file-tree").h_full().py(4).overflow_y_scrollbar()
+      .when(full, (e) => e.flex_1().min_w(0)).when(!full, (e) => e.w(240).flex_none().border_r(1).border_color(t.border)).children(out);
   }
 
   // ---- scrolling -------------------------------------------------------------
@@ -1020,7 +1032,7 @@ export default class Review extends View {
   }
 
   openSettings() {
-    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 450 });
+    openOverlay({ mod: "wingman", props: { form: "settings" }, kind: "dialog", width: 460, height: 500 });
   }
 
   /** Every 250 ms (Q46). Herdr has no blur event, so focus is polled: the pane losing the
@@ -1222,6 +1234,8 @@ export default class Review extends View {
         if (ctrl && shift) return false; // reject file
         if (sel) return this.type("", cx), true;
         if (c.line === 0 && c.col === 0) return true;
+        if (!ctrl && this.settings.autoPairs && inEmptyPair(body(lines[c.line]), c.col))
+          return this.type("", cx, { from: { line: c.line, col: c.col - 1 }, to: { line: c.line, col: c.col + 1 }, group: true }), true;
         return this.type("", cx, { from: ctrl ? wordMove(lines, c, -1) : c.col > 0 ? { line: c.line, col: c.col - 1 } : lineEnd(c.line - 1), to: c, group: !ctrl }), true;
       case "delete": {
         if (sel) return this.type("", cx), true;
@@ -1231,6 +1245,13 @@ export default class Review extends View {
       case "enter": {
         if (ctrl || shift) return false; // ctrl-shift-enter: accept file
         const indent = /^\s*/.exec(body(lines[sa.line]).slice(0, sa.col))[0];
+        // Between brackets, "{|}": the closer goes to its own line and the cursor to an indented one.
+        if (!sel && this.settings.autoPairs && betweenBrackets(body(lines[c.line]), c.col)) {
+          const inner = indent + indentUnit(lines);
+          this.type("\n" + inner + "\n" + indent, cx);
+          this.cur = { line: c.line + 1, col: inner.length }; this.showCursor(); cx.notify();
+          return true;
+        }
         return this.type("\n" + indent, cx), true;
       }
       case "tab": {
@@ -1260,10 +1281,35 @@ export default class Review extends View {
     }
     // Typed characters; Ctrl+Alt is AltGr on Windows keyboards.
     if (e.key_char && !m.platform && (!m.control || m.alt) && !/[\r\n]/.test(e.key_char)) {
+      if (this.settings.autoPairs && this.autoPair(e.key_char, lines, sel, sa, sb, cx)) return true;
       this.type(e.key_char, cx, { group: true });
       return true;
     }
     return false;
+  }
+
+  /**
+   * E2: a typed bracket or quote. With text selected it wraps the selection (kept selected);
+   * otherwise it may step over the same closer or type the pair with the cursor between.
+   * True when handled.
+   */
+  autoPair(ch, lines, sel, sa, sb, cx) {
+    const close = PAIRS[ch];
+    if (sel) {
+      if (!close) return false;
+      const inner = textBetween(lines, sa, sb);
+      this.type(ch + inner + close, cx);
+      this.anchor = { line: sa.line, col: sa.col + 1 };
+      this.cur = sa.line === sb.line ? { line: sa.line, col: sb.col + 1 } : { line: sb.line, col: sb.col };
+      this.showCursor(); cx.notify();
+      return true;
+    }
+    const c = this.cur, d = typed(ch, body(lines[c.line]), c.col);
+    if (d?.skip) return this.move({ line: c.line, col: c.col + 1 }, false, cx), true;
+    if (!d?.insert) return false;
+    this.type(d.insert, cx, { group: true });
+    this.cur = { line: this.cur.line, col: this.cur.col - 1 }; this.showCursor(); cx.notify();
+    return true;
   }
 
   // ---- saving ---------------------------------------------------------------
@@ -1495,6 +1541,7 @@ export default class Review extends View {
       .when(!!st, (e) => e
         .child(toggle("set-note", "Auto note on rejections", "Tell the agent which of its changes you rejected.", st.autoNote, (cx) => this.setSetting({ autoNote: !st.autoNote }, cx)))
         .child(toggle("set-editnote", "Note on my edits", "Tell the agent which lines of its files you changed.", st.editNote, (cx) => this.setSetting({ editNote: !st.editNote }, cx)))
+        .child(toggle("set-pairs", "Auto-close brackets and quotes", "Typing ( [ { \" ' ` adds the closer; Backspace in an empty pair removes both.", st.autoPairs ?? true, (cx) => this.setSetting({ autoPairs: !(st.autoPairs ?? true) }, cx)))
         .child(toggle("set-autosave", "Autosave", "Save on focus loss and file switch. Where you and the agent change the same lines, the agent's win.", st.autosave, (cx) => this.setSetting({ autosave: !st.autosave }, cx)))
         .child(v_flex().gap(6).when(!st.autosave, (e) => e.opacity(0.4))
           .child(div().text_size(12).text_color(t.muted).child("Also save after typing stops for"))
@@ -1587,8 +1634,9 @@ export default class Review extends View {
           .child(this.button("reject-all", "Reject all files", t.ansi1 + "55", (cx) => this.everything("reject", cx)))
           .child(this.button("accept-all", "Accept all files", t.ansi2 + "55", (cx) => this.everything("accept", cx)))))
       .child(h_flex().flex_1().min_h(0)
-      .when(this.mode === "edit" && this.treeOn, (e) => e.child(this.renderTree(t)))
-      .child(v_flex().flex_1().min_w(0).h_full()
+      .when(this.treeOnly(), (e) => e.child(this.renderTree(t, true)))
+      .when(this.mode === "edit" && this.treeOn && !this.treeOnly(), (e) => e.child(this.renderTree(t)))
+      .when(!this.treeOnly(), (e) => e.child(v_flex().flex_1().min_w(0).h_full()
       // File tabs scroll sideways in their own area; the hint and file buttons stay pinned right.
       .child(h_flex().h(36).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
         .child(div().id("file-tabs").flex_1().min_w(0).h_full().relative().overflow_hidden()
@@ -1637,6 +1685,6 @@ export default class Review extends View {
           .on_mouse_down("right", (ev, cx) => this.openMenu(ev, cx))
           .on_scroll_wheel((ev, cx) => this.wheel(ev, cx)))
         .child(Scrollbar.vertical("review-rows").viewport_from_layout().absolute().inset_0())
-        .when(!!sel, (e) => e.child(this.selectionBar(f, sel, t)))))));
+        .when(!!sel, (e) => e.child(this.selectionBar(f, sel, t))))))));
   }
 }
