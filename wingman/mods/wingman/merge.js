@@ -1,7 +1,8 @@
 // Three-way merge of an agent's write into unsaved edits, and the diff of merged texts.
 // Both run git on temporary copies under data/wingman/tmp, removed afterwards.
 import * as fs from "fs/promises";
-import { exec, writeTextFile } from "herdr";
+import { writeTextFile } from "herdr";
+import { git } from "./git.js";
 import { parseHunks, splitLines, wholeHunk, segmentHunks } from "./model.js";
 import { reviewDir } from "./journal.js";
 
@@ -25,7 +26,7 @@ export async function merge3(base, mine, theirs, favor = null) {
   if (mine === base || mine === theirs) return { text: theirs, conflicts: 0 };
   if (theirs === base) return { text: mine, conflicts: 0 };
   return withTemps([mine, base, theirs], async ([m, b, t]) => {
-    const r = await exec("git", ["merge-file", "-p", ...(favor ? [`--${favor}`] : []), m, b, t]);
+    const r = await git(["merge-file", "-p", ...(favor ? [`--${favor}`] : []), m, b, t]);
     if (r.code < 0 || r.code > 127) throw new Error(`git merge-file: ${(r.stderr || r.stdout).trim()}`);
     return { text: r.stdout, conflicts: r.code };
   });
@@ -37,7 +38,7 @@ export async function diffHunks(Btext, Ctext) {
   if (!B.length || !C.length) return wholeHunk(B, C);
   if (Btext === Ctext) return [];
   return withTemps([Btext, Ctext], async ([b, c]) => {
-    const d = await exec("git", ["diff", "--no-index", "--no-color", "--no-ext-diff", "--no-textconv", "-U0", "--diff-algorithm=minimal", "--", b, c]);
+    const d = await git(["diff", "--no-index", "--no-color", "--no-ext-diff", "--no-textconv", "-U0", "--diff-algorithm=minimal", "--", b, c]);
     if (d.code > 1) throw new Error(d.stderr.trim());
     return parseHunks(d.stdout);
   });

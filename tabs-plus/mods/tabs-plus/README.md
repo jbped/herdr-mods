@@ -4,9 +4,9 @@ Herdr's `tabs` mod (the tab bar) with a side panel that more mods can join. A cl
 
 ## What it adds
 
-- **Panel buttons for mod blocks.** Next to Files and Changes, a button for each block in the layout's `panel-body` stack that runs Wingman (one per view: Review, Edit) or Wayfinder. A block only gets a button when the layout has it.
+- **Panel buttons for mod blocks.** Next to Files and Changes, a button for each block in the layout's `panel-body` stack that runs Wingman (one per view: Review, Edit, Changes) or Wayfinder. A block only gets a button when the layout has it.
 - **A width per panel tab.** Switching to a panel tab resizes the panel to the width it had last time, and dragging the panel records the width for the tab shown. Wingman and Wayfinder start at 960px.
-- **Commands for the palette.** `tabs-plus.wingmanReview`, `tabs-plus.wingmanEdit` and `tabs-plus.wayfinder` select that panel tab and show the panel. A palette entry runs one command, and a hidden panel block gets no commands, so the tab bar, which is always shown, does it.
+- **Commands for the palette.** `tabs-plus.wingmanReview`, `tabs-plus.wingmanEdit`, `tabs-plus.wingmanChanges` and `tabs-plus.wayfinder` select that panel tab and show the panel. A palette entry runs one command, and a hidden panel block gets no commands, so the tab bar, which is always shown, does it.
 
 ## Install
 

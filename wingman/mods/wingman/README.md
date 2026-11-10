@@ -4,7 +4,7 @@ A Herdr pane that shows the code changes coding agents make, Cursor-style: whole
 
 ## How changes are found
 
-- **Any agent.** When an agent in a space starts working, the mod snapshots the repo the agent started in (`snapshot.ps1` / `snapshot.sh`). Files that change while it works become reviewable. Your real git index, stash and branch are never touched.
+- **Any agent.** When an agent in a space starts working, the mod snapshots every repo of the space's workspace at once (`snapshot.ps1` / `snapshot.sh`). Files that change while it works become reviewable. Your real git index, stash and branch are never touched.
 - **Claude Code**, through its hooks (`hooks/wingman-hook.sh`). Every Edit/Write is reported with the file's exact content before the edit, so the review covers every repo Claude edits, not just the one it started in.
 
 When you reject a change, the agent that made it gets a short factual note on its next tool call or prompt: what was rejected and that the original lines are back. This keeps its picture of the file right. Turn it off in **Settings**. **Comment last rejection** (`ctrl-r`) sends your own comment with it. **Comment** (`ctrl-m`) sends an instruction about a change or the selected lines, such as "refactor this into a helper". It's typed into the agent's terminal as your message, waiting until the agent isn't mid-turn.
@@ -12,6 +12,32 @@ When you reject a change, the agent that made it gets a short factual note on it
 Syntax highlighting (Prism 1.30, MIT, vendored in `prism.js` and `grammars.js`) covers JavaScript, TypeScript (`.ts .mts .cts .d.ts`), React (`.jsx .tsx`, and JSX in `.js`), Vue (`.vue`), Angular (`.ts` and `.html` templates with `{{ }}`), HTML, C#, JSON, Markdown, Dockerfiles, YAML (including `docker-compose.yml`) and `.env` files. CSS (`.css`) and SCSS (`.scss`) are covered too. In HTML and Vue files, `<script>` blocks use the grammar their `lang` names and `<style>` blocks use CSS or SCSS. Vue and Angular template syntax is recognized: `v-if`, `v-for`, `:prop`, `@event`, `#slot`, `[prop]`, `(event)`, `[(ngModel)]`, `*ngFor`, `#ref`, `@if`/`@for`/`@switch`/`@defer` blocks and `{{ }}`, with the expressions inside highlighted as JavaScript. Other files show as plain text.
 
 Each repo's review lives in `<git-dir>/wingman/`. Git never tracks or pushes that folder. Files outside any git repo are not reviewed.
+
+### Workspaces: several repos in one space
+
+A space reviews every repo in its workspace, which is made up of:
+- the repo its agents started in, and every repo Claude edited,
+- the folders of a VS Code workspace file (`*.code-workspace`) in the space's folder. Wayfinder's Launch writes one into the Ticket folder, listing one worktree per repo,
+- repos you add yourself.
+
+With more than one repo, the Edit tree shows each repo as a top-level entry, with its name (the file's `name`, else the folder), its open change count and a × to remove it. **+ Add repo…** under the tree takes:
+- a repo,
+- a folder of repos, listing the repos inside it to tick,
+- a main clone while the space's worktrees share a branch. Wingman offers to make a worktree for it beside them, on that branch (fetching first, then branching from the remote's default branch when the branch is new).
+
+Removing asks first. Open changes come back when you add the repo again. For a worktree, you choose whether to delete it too (`git worktree remove`, which refuses while it has uncommitted or untracked files).
+
+The workspace file uses VS Code's format: `{"folders": [{"path": "api"}, {"path": "../web", "name": "Web"}], "settings": {}}`. Paths are relative to the file or absolute, and comments are allowed. When a folder has several, Wingman reads the one named after the folder, else the first by name, and rereads it whenever it changes. When Wingman edits it, only `folders` changes, so every other key, comment and the order stay as they were. A space with one repo has no file. Adding a second repo makes one, in the space's folder, named after that folder. If the folder is inside a repo, or is the home folder, the file goes to `data/wingman/workspaces/<space>.code-workspace` with absolute paths instead. VS Code and Cursor can open either.
+
+Nothing here changes Herdr's spaces or other mods: Herdr's Files and Changes panels still show only the space's folder.
+
+### Which git runs
+
+Linux and macOS use the machine's own `git`. On Windows, Wingman decides for each repo:
+- **WSL's git** (through `wsl.exe`, with `/mnt/<drive>` paths) for repos WSL owns: repos inside WSL's own files (`\\wsl.localhost\<distro>\...`), worktrees WSL git added (their `.git` file points to a `/mnt` path, which Windows git can't open), and repos WSL git made (`core.filemode = true`, which Windows git never sets). Capture runs `snapshot.sh` there, the same as on Linux.
+- **Git for Windows** for everything else, with file modes ignored, since Windows can't record executable files. If Git for Windows isn't installed, WSL's git is used.
+
+WSL git on a Windows drive is slow (about 1.5 s per `git status` on a large repo), so Wingman's polls never overlap. Keeping WSL repos in WSL's own files avoids that.
 
 ## Install
 
@@ -51,7 +77,18 @@ Open a Wingman pane beside an agent: run `pane.split` with `{"direction": "right
 
 Or put Wingman in the side panel beside Files and Changes, as two panel tabs, Review and Edit. In a layout of your own (a clone, since Herdr's shipped layouts are read-only), add two blocks to the `panel-body` stack: `{"id": "wingman-review", "type": "block", "content": {"mod": "wingman", "props": {"view": "review"}}}` and the same with `wingman-edit` and `"view": "edit"`. Raise the `panel` column's `max` (for example to 2400), and point the `tabs` block at a clone of the `tabs` mod that draws a button per Wingman block. The `tabs-plus` clone does that. It also takes the commands `tabs-plus.wingmanReview` and `tabs-plus.wingmanEdit`, which the palette entries **Wingman: Review** and **Wingman: Edit** run to select the tab and show the panel. It keeps a width per panel tab: Review and Edit open at 960px the first time and then at whatever width you drag them to.
 
-Each block is its own copy of Wingman, fixed to its view:
+A third block, `{"id": "wingman-changes", "type": "block", "content": {"mod": "wingman", "props": {"view": "changes"}}}`, adds the **Changes** tab (palette: **Wingman: Changes**, command `tabs-plus.wingmanChanges`).
+
+### Changes
+
+Every uncommitted change in the space's repos, against `HEAD`: your edits, other tools', and the agent's from before Wingman started capturing. The list on the left shows each file's status (A added or untracked, M modified, D deleted, ! conflict) and what Review says about it ("2 to review", "reviewed"). The diff is read-only; a double-click opens the line in Edit.
+
+- **Discard file** puts the file back as `HEAD` has it (a new file is deleted), after you confirm.
+- **Commit**: check the files to commit (all by default), write a message (several lines are fine), then **Commit** or Ctrl+Enter. Only the checked files are committed: they're staged, new and deleted ones too, and anything else you had staged stays staged. With several repos in the space, pick the repo above the message box. A warning shows when checked files still have changes to review in Review; it doesn't stop the commit.
+- Files with unsaved edits in Edit can't be discarded or committed until those are saved or discarded.
+- Up to 500 files are listed; binary files are listed but not shown.
+
+
 - Review is read-only. Accept and Reject still write to disk. `ctrl-shift-r`, a double-click on a line, and Quick Open of an unchanged file all switch to the Edit tab at that file and line. Switching from Edit goes back to Review at the change nearest the cursor.
 - Edit holds any unsaved edits. Before Review accepts or rejects in a file that has unsaved edits in Edit, those edits are saved (autosave on: try again a moment later), or, with autosave off, you're asked to save or discard them in Edit first.
 
@@ -153,5 +190,6 @@ Settings are kept in `~/.config/herdr-app/data/wingman/settings.json`.
 | Where | What |
 |---|---|
 | `<git-dir>/wingman/` | `index.json`, `baselines/`, `capture.json`, `snap.index` (per repo) |
-| `~/.config/herdr-app/data/wingman/` | `events/` (from the hook, removed once read), `feedback/` (notes for Claude), `outbox/` (comments waiting for an idle agent), `spaces.json`, `settings.json` |
+| `~/.config/herdr-app/data/wingman/` | `events/` (from the hook, removed once read), `feedback/` (notes for Claude), `outbox/` (comments waiting for an idle agent), `spaces.json` (repos agents used, per space), `hidden.json` (repos removed by hand, per space), `workspaces/` (workspace files Wingman made), `settings.json` |
+| the space's folder | `<folder>.code-workspace`, when you add a second repo and the folder isn't inside a repo |
 | `~/.config/herdr-app/data/wingman-leader.json`, `wingman-capture.log` | which pane copy runs capture, and its log |

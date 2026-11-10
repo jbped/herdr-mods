@@ -11,7 +11,7 @@ function find(node, id) {
   return null;
 }
 
-const WIDE = { "wingman-review": 960, "wingman-edit": 960, "wayfinder": 960 }; // a first width for panels that want more than the panel's default
+const WIDE = { "wingman-review": 960, "wingman-edit": 960, "wingman-changes": 960, "wayfinder": 960 }; // a first width for panels that want more than the panel's default
 
 export default class Tabs extends View {
   init(_props, cx) {
@@ -22,8 +22,17 @@ export default class Tabs extends View {
       for (;;) {
         const c = String(await nextCommand()).replace(/^tabs-plus\./, "");
         // "Wingman: Review" / "Wingman: Edit" in the palette, the same way.
-        const child = { wayfinder: "wayfinder", wingmanReview: "wingman-review", wingmanEdit: "wingman-edit" }[c];
+        const child = { wayfinder: "wayfinder", wingmanReview: "wingman-review", wingmanEdit: "wingman-edit", wingmanChanges: "wingman-changes" }[c];
         if (child) { run("layout.select", { stack: "panel-body", child }); run("layout.show", { id: "panel" }); }
+        // "Wayfinder: Toggle" (its key): hides the panel when Wayfinder is what it shows, else shows Wayfinder.
+        // The fullscreen check in render puts the terminals back after a hide.
+        if (c === "wayfinderToggle") {
+          const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
+          const wf = (body?.children ?? []).find(x => x.content?.mod === "wayfinder");
+          if (!wf) continue;
+          if (panel && !panel.hidden && body.active === wf.id) run("layout.hide", { id: "panel" });
+          else { run("layout.select", { stack: "panel-body", child: wf.id }); run("layout.show", { id: "panel" }); }
+        }
       }
     });
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
@@ -138,7 +147,7 @@ export default class Tabs extends View {
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .children(wingmen.map(c => panelButton(c.id, c.content.props?.view === "edit" ? "Edit" : "Review", "mods/wingman/wingman.svg")))
+      .children(wingmen.map(c => panelButton(c.id, { edit: "Edit", changes: "Changes" }[c.content.props?.view] ?? "Review", "mods/wingman/wingman.svg")))
       .when(Boolean(wayfinder), el => el.child(panelButton(wayfinder.id, "Wayfinder", "mods/wayfinder/wayfinder.svg")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-plus/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-plus/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))

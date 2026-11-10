@@ -2,6 +2,7 @@
 // differ from the working-tree snapshot taken when it started become reviewable, with
 // their snapshot content as the baseline. Uses only git and Herdr's file APIs.
 import { exec, readTextFile, writeTextFile, appHome } from "herdr";
+import { git, inRepo, ownerOf, knownDistro } from "./git.js";
 
 const isWindows = (p) => /^[A-Za-z]:/.test(p);
 
@@ -12,11 +13,14 @@ const isWindows = (p) => /^[A-Za-z]:/.test(p);
 export function hostPath(cwd) {
   if (!cwd) return null;
   let p = cwd.replace(/\\/g, "/");
-  const unc = /^\/\/(?:wsl\.localhost|wsl\$)\/[^/]+(\/.*)$/i.exec(p);
-  if (unc) p = unc[1];
+  const unc = /^\/\/(?:wsl\.localhost|wsl\$)\/([^/]+)(\/.*)$/i.exec(p);
+  if (unc) p = unc[2];
+  if (!isWindows(appHome())) return p;
   const mnt = /^\/mnt\/([a-zA-Z])(\/.*)?$/.exec(p);
-  if (mnt && isWindows(appHome())) p = `${mnt[1].toUpperCase()}:${mnt[2] ?? "/"}`;
-  return p;
+  if (mnt) return `${mnt[1].toUpperCase()}:${mnt[2] ?? "/"}`;
+  // A folder inside WSL's own files: Windows opens it through \\wsl.localhost\<distro>.
+  const distro = unc?.[1] ?? knownDistro();
+  return p.startsWith("/") && distro ? `//wsl.localhost/${distro}${p}` : p;
 }
 
 export class Capture {
@@ -25,7 +29,9 @@ export class Capture {
   /** Tree id of the working tree right now (index copy + add -A + write-tree). */
   async snapshot() {
     const { gitDir, root } = this.store, dir = `${appHome()}/mods/wingman`;
-    const r = isWindows(root)
+    // WSL's repos snapshot with WSL's git (the same script as Linux); Windows git uses PowerShell.
+    const r = (await ownerOf(root)) === "wsl" ? await inRepo("sh", [`${dir}/snapshot.sh`, gitDir, root], { cwd: root })
+      : isWindows(root)
       ? await exec("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", `${dir}/snapshot.ps1`, gitDir, root])
       : await exec("sh", [`${dir}/snapshot.sh`, gitDir, root]);
     const tree = r.stdout.trim().split(/\s+/).pop();
@@ -36,7 +42,7 @@ export class Capture {
   /** Paths that differ between two trees, with git's status letter (A, M, D, T). */
   async changed(from, to) {
     if (from === to) return [];
-    const r = await exec("git", ["diff-tree", "-r", "--no-renames", "--name-status", "-z", from, to], { cwd: this.store.root });
+    const r = await git(["diff-tree", "-r", "--no-renames", "--name-status", "-z", from, to], { cwd: this.store.root });
     if (r.code !== 0) throw new Error(r.stderr.trim());
     const parts = r.stdout.split("\0").filter(Boolean), out = [];
     for (let i = 0; i + 1 < parts.length; i += 2) out.push({ status: parts[i][0], path: parts[i + 1] });
@@ -70,7 +76,7 @@ export class Capture {
       if (index.files[path]) continue;
       const created = status === "A";
       // Binary files (a NUL byte, as git decides) aren't reviewed, before or after the change.
-      const blob = (tree) => exec("git", ["cat-file", "blob", `${tree}:${path}`], { cwd: this.store.root });
+      const blob = (tree) => git(["cat-file", "blob", `${tree}:${path}`], { cwd: this.store.root });
       const after = status === "D" ? null : await blob(now);
       if (after && (after.code !== 0 || after.stdout.includes("\0"))) continue;
       let text = "";

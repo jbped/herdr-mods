@@ -21,12 +21,15 @@ import { openInNvim, openInEditor, EDITORS, editorName } from "./nvim.js";
 import { PAIRS, typed, inEmptyPair, betweenBrackets } from "./pairs.js";
 import { tagKind, closingTag, completeClose, betweenTags } from "./tags.js";
 import { segments, segmentOf } from "./wrap.js";
+import { git } from "./git.js";
+import { READ, STATUS, parseStatus, statusLetter, reviewTag, discardCommands, commitCommands } from "./changes.js";
 import { compile, findAll, nextMatch, prevMatch, replacement, parseLine } from "./find.js";
 import { rank, parseQuery } from "./quickopen.js";
 import { ACTIONS, BY_ID, resolve, index, holders, bind, unbind, reset as resetKey, refused, keystrokeOf, keyLabel, withModSection, herdrGlobal } from "./keymap.js";
 import { lineSpan, moveLines, copyLines, deleteLines, joinLines, toggleComment, commentFor } from "./lineops.js";
 import { splitLines } from "./model.js";
-import { Journal, spaceRepos, addSpaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings, loadKeys, saveKeys } from "./journal.js";
+import { spaceRoots, addFolder, removeFolder, repoInfo, addWorktree, removeWorktree, scanRepos, sharedBranch, worktreeDest } from "./workspace.js";
+import { Journal, addSpaceRepos, queueFeedback, withdrawFeedback, queuePrompt, drainOutbox, loadSettings, saveSettings, loadKeys, saveKeys } from "./journal.js";
 
 const ROW = 20, GUTTER = 58, BTN_W = 110, BTN_GAP = 6, BUTTONS = 3; // Reject, Accept, Prompt
 // Agents count as working while they are in a turn, including while blocked on a question.
@@ -93,6 +96,7 @@ async function openFirst(folders) {
 // copies talk through shared(): GOTO hands the current file to the other view, DIRTY lists each
 // copy's files with unsaved edits, SAVE asks the copies holding them to save (autosave on).
 const GOTO = "wingman.goto", DIRTY = "wingman.dirty", SAVE = "wingman.saveReq";
+const REVIEW = "wingman.review"; // Review's open change count per file key, for the Changes view
 const DIRTY_FRESH = 30000; // ms: an entry older than this is from a copy that's gone
 
 /** Shows the layout block of the Wingman copy for `view`: selects it in its stacks, shows hidden parents. */
@@ -128,8 +132,9 @@ export default class Review extends View {
     this.settings = { autoNote: true, editNote: true, autosave: true, autosaveDelay: 0, editor: "wingman", autoPairs: true, autoTags: true, externalEditor: "code", externalCommand: "", wordWrap: false };
     this.editNotes = new Map(); // file key -> the edit note last queued for it
     // Q48: Review (tabs are changed files) or Edit (file tree, tabs for changed and opened files).
-    this.view = ["review", "edit"].includes(props()?.view) ? props().view : null; // a panel copy for one view
+    this.view = ["review", "edit", "changes"].includes(props()?.view) ? props().view : null; // a panel copy for one view
     this.gotoSeen = Date.now(); this.dirtySig = ""; this.dirtyAt = 0; this.saveSeen = Date.now();
+    try { this.repoShut = new Set(JSON.parse(localStorage.getItem("repoShut") ?? "[]")); } catch { this.repoShut = new Set(); }
     this.mode = this.view ?? "review"; this.treeOn = true; this.trees = new Map(); this.expanded = new Set();
     loadSettings().then((st) => { this.settings = st; });
     this.setKeymap({});
@@ -170,7 +175,8 @@ export default class Review extends View {
     this.reset([]);
     this.queue = Promise.resolve(); this.writing = 0;
     cx.timer.every(1000, (cx) => this.follow(cx));
-    cx.timer.every(250, (cx) => { this.autosave(cx); this.publishDirty(); this.takeShared(cx); });
+    cx.timer.every(250, (cx) => { this.autosave(cx); this.publishDirty(); this.publishReview(); this.takeShared(cx); });
+    if (this.view === "changes") this.initChanges(cx);
     cx.timer.every(500, (cx) => this.lead(cx));
     cx.timer.every(3000, (cx) => this.collectAll(cx));
     cx.timer.every(5000, (cx) => this.mode === "edit" && (this.treeOn || this.nvim()) && this.refreshTrees(cx));
@@ -207,24 +213,38 @@ export default class Review extends View {
         cx.notify();
       }
       if (!sp) return;
-      // The space's repos: where its agents started (any agent), plus every repo the
-      // Claude hook saw them edit. A newly touched repo joins the view when it appears.
-      const roots = new Set(this.stores.map((st) => st.root));
-      const found = [];
+      // The space's repos (workspace.js): where its agents started (any agent), its workspace
+      // file's folders, and every repo the Claude hook saw them edit, less the ones removed by
+      // hand. A repo joins the view when it appears and leaves when it's removed.
       const start = props()?.root ? await Store.open(props().root).catch(() => null) : await openFirst(agentFolders(sp));
-      if (start) found.push(start);
-      for (const root of (await spaceRepos())[key] ?? []) if (!found.some((f) => f.root === root)) {
-        const st = await Store.open(root).catch(() => null);
-        if (st) found.push(st);
+      const { roots, names } = await spaceRoots(sp, start ? [start.root] : []);
+      const found = [];
+      for (const root of roots) {
+        const st = this.stores.find((x) => x.root === root || x.asked === root) ?? (await this.openStore(root));
+        if (st && !found.includes(st)) found.push(st);
       }
-      const fresh = found.filter((f) => !roots.has(f.root));
-      if (fresh.length && this.spaceId === key) {
-        const files = this.files, keep = { sel: this.sel, current: this.current, history: this.history, opened: this.opened };
-        this.reset([...this.stores, ...fresh]);
+      for (const st of found) st.label = names.get(st.asked ?? st.root) ?? names.get(st.root) ?? null;
+      const same = found.length === this.stores.length && found.every((st, i) => st === this.stores[i]);
+      if (!same && this.spaceId === key) {
+        const left = new Set(found), files = this.files.filter((f) => left.has(f.store));
+        const keep = { sel: files.some((f) => f.key === this.sel) ? this.sel : files[0]?.key ?? null, current: this.current,
+          history: this.history.filter((h) => h.snaps ? h.snaps.every((f) => left.has(f.store)) : !h.key || files.some((f) => f.key === h.key)), opened: this.opened.filter((k) => files.some((f) => f.key === k)) };
+        this.reset(found);
         Object.assign(this, keep); this.files = files;
         await this.reloadAll(cx);
+        if (this.mode === "edit") this.refreshTrees(cx);
       }
     } finally { this.following = false; }
+  }
+
+  /** A repo's store, or null when the folder isn't (or isn't yet) a repo: retried after 30 s. */
+  async openStore(root) {
+    const miss = (this.misses ??= new Map()), at = miss.get(root);
+    if (at && Date.now() - at < 30000) return null;
+    const st = await Store.open(root).catch(() => null);
+    if (!st) { miss.set(root, Date.now()); return null; }
+    miss.delete(root); st.asked = root;
+    return st;
   }
 
   snapshotView() {
@@ -255,22 +275,41 @@ export default class Review extends View {
       await drainOutbox((t) => agents().some((a) => a.address === t && ACTIVE.has(a.status)),
         (t, text) => hc(["send", t, text]), log);
       for (const sp of reviewSpaces()) {
-        let c = this.captures.get(sp.id);
-        if (!c) {
-          const store = await openFirst(agentFolders(sp));
-          if (!store) { if (!this.noRepo?.has(sp.id)) { (this.noRepo ??= new Set()).add(sp.id); log(`${sp.name}: no repo in ${JSON.stringify(agentFolders(sp))}`); } continue; }
-          log(`${sp.name}: capturing ${store.root}`);
-          c = { capture: new Capture(store), space: sp.id, active: false, busy: false };
-          this.captures.set(sp.id, c);
-        }
+        // W1: capture follows every repo of the space's workspace. Its repos are looked up again
+        // every 5 s (cached stores are reused), never while an agent is starting a turn.
+        const g = (this.groups ??= new Map()).get(sp.id) ?? { active: false, by: null, at: 0, caps: [] };
+        this.groups.set(sp.id, g);
         const working = agents().filter((a) => a.space === sp.id && ACTIVE.has(a.status)), active = working.length > 0;
+        if (!g.at || (active === g.active && Date.now() - g.at > 5000)) {
+          g.at = Date.now();
+          const start = await openFirst(agentFolders(sp));
+          const { roots } = await spaceRoots(sp, start ? [start.root] : []);
+          const caps = [];
+          for (const root of roots) {
+            let c = this.captures.get(`${sp.id}|${root}`);
+            if (!c) {
+              const store = root === start?.root ? start : await this.openStore(root);
+              if (!store) continue;
+              log(`${sp.name}: capturing ${store.root}`);
+              c = { capture: new Capture(store), space: sp.id, active: g.active, busy: false, by: g.by };
+              this.captures.set(`${sp.id}|${root}`, c);
+            }
+            caps.push(c);
+          }
+          for (const [k, c] of this.captures) if (c.space === sp.id && !caps.includes(c)) { this.captures.delete(k); log(`${sp.name}: stopped capturing ${c.capture.store.root}`); }
+          g.caps = caps;
+          if (!caps.length && !this.noRepo?.has(sp.id)) { (this.noRepo ??= new Set()).add(sp.id); log(`${sp.name}: no repo in ${JSON.stringify(agentFolders(sp))}`); }
+        }
         // Credit captured edits to the working agent when it is a lone Claude: its hook delivers
         // rejection feedback even for edits made through Bash. Kept until the next turn starts,
         // so the last pass after the agent stops is credited too.
-        if (active) c.by = working.length === 1 && working[0].app === "claude-code" ? working[0].address : null;
-        if (active !== c.active) {
-          c.active = active; log(`${sp.name}: agent ${active ? "working" : "stopped"} (${c.capture.store.root})`);
-          if (active) await this.collect(c, cx, true);
+        if (active) g.by = working.length === 1 && working[0].app === "claude-code" ? working[0].address : null;
+        for (const c of g.caps) c.by = g.by;
+        if (active !== g.active) {
+          g.active = active; log(`${sp.name}: agent ${active ? "working" : "stopped"} (${g.caps.map((c) => c.capture.store.root).join(", ")})`);
+          for (const c of g.caps) c.active = active;
+          // Every repo's snapshot at once: a turn waits for the slowest, not the sum.
+          if (active) await Promise.all(g.caps.map((c) => this.collect(c, cx, true)));
           cx.notify();
         }
       }
@@ -280,7 +319,7 @@ export default class Review extends View {
 
   async collectAll(cx) {
     if (!this.isLeader) return;
-    for (const c of this.captures.values()) await this.collect(c, cx);
+    await Promise.all([...this.captures.values()].map((c) => this.collect(c, cx)));
   }
 
   /**
@@ -319,6 +358,7 @@ export default class Review extends View {
   }
 
   async reloadAll(cx) {
+    if (this.mode === "changes") return this.loadChanges(cx);
     try {
       const files = [], texts = {};
       for (const st of this.stores) {
@@ -401,12 +441,14 @@ export default class Review extends View {
   // Watch events: our own writes match memory and are skipped; anything else reloads that file.
   // While writes are queued, events wait so a half-written state is never read back.
   onWatch(touched, cx) {
+    if (this.mode === "changes") return; // the Changes view polls git itself (refreshChanges)
     if (touched === "all") this.deferred.add("*");
     else for (const n of touched) this.deferred.add(n);
     if (!this.writing) cx.spawn(async (cx) => this.drain(cx));
   }
 
   async drain(cx) {
+    if (this.mode === "changes") { this.deferred.clear(); return; }
     if (this.draining) return;
     this.draining = true;
     try {
@@ -448,6 +490,7 @@ export default class Review extends View {
   shown(f) { return f.hunks.length || (f.edited && f.key === this.sel) || this.dirty(f); }
   /** The tabs: changed files, plus in the Edit view the files opened from the tree. */
   visible() {
+    if (this.mode === "changes") return this.files;
     const changed = (f) => !f.plain && (f.error || this.shown(f));
     return this.files.filter((f) => changed(f) || (this.mode === "edit" && this.opened.includes(f.key)));
   }
@@ -683,7 +726,7 @@ export default class Review extends View {
     if (!it) return;
     this.closeQuick(cx);
     const changed = this.files.find((f) => f.key === it.key && !f.plain && f.hunks.length);
-    if (this.view === "review" && !changed) return this.handOff("edit", cx, q.at, it.key);
+    if ((this.view === "review" && !changed) || this.view === "changes") return this.handOff("edit", cx, q.at, it.key);
     if (this.mode === "review" && !changed) this.setMode("edit", cx);
     cx.spawn(async (cx) => this.openFile(it.store, it.rel, cx, q.at));
   }
@@ -754,25 +797,157 @@ export default class Review extends View {
     this.error = null; this.settle(); cx.notify();
   }
 
-  /** Adds a repo to this space by hand: for agents Wingman can't place (a WSL agent started in a
-   *  Windows folder, or one the hook hasn't seen edit). Kept in the space -> repos map. */
+  // ---- W1 workspace: adding and removing repos -------------------------------------
+  // The repo strip is the tree's repo headers: each repo's name, change count and ×, with
+  // "+ Add repo…" under them. Picking a folder that isn't a repo lists the repos inside it.
+  // A main clone picked while the workspace's worktrees share a branch is offered as a new
+  // worktree beside them. Removing asks first, and offers to delete a worktree too.
+
+  space() { return spaces().find((s) => s.id === this.spaceId) ?? null; }
+  hasRepo(root) { return this.stores.some((st) => norm(st.root) === norm(root) || norm(st.asked ?? "") === norm(root)); }
+
+  /** The workspace's worktrees' shared branch and the folder beside them for `repo`, or null. */
+  async worktreeOffer(repo) {
+    const infos = await Promise.all(this.stores.map(async (st) => ({ st, info: await repoInfo(st.root).catch(() => null) })));
+    const linked = infos.filter((x) => x.info?.linked);
+    const branch = sharedBranch(linked.map((x) => x.info.branch)), dest = worktreeDest(linked.map((x) => x.st.root), repo);
+    return branch && dest ? { branch, dest } : null;
+  }
+
+  /** Adds a repo to this space by hand: a repo, a parent folder of repos, or a main clone as a worktree. */
   openFolder(cx) {
-    const space = this.spaceId;
-    if (!space) return;
+    if (!this.spaceId) return;
     cx.spawn(async (cx) => {
       try {
-        const dir = await pickFolder({ prompt: "Open in Wingman" });
+        const dir = await pickFolder({ prompt: "Add a repo to this space" });
         if (!dir) return;
+        this.wsBusy = "Looking…"; cx.notify();
         const st = await Store.open(dir).catch(() => null);
-        if (!st) { this.error = `${dir} is not in a git repository`; cx.notify(); return; }
-        // The capture leader writes the same file: retry when it wrote first.
-        for (let i = 0; ; i++) {
-          try { await addSpaceRepos([[space, st.root]]); break; } catch (e) { if (i >= 2) throw e; }
+        if (!st) {
+          const repos = await scanRepos(dir);
+          if (!repos.length) throw new Error(`${dir} is not a git repo and holds none`);
+          const offer = await this.worktreeOffer("x");
+          this.ws = { kind: "pick", parent: dir, offer, asWorktrees: !!offer, repos: repos.map((path) => ({ path, on: false, has: this.hasRepo(path) })) };
+          return;
         }
-        this.error = null; cx.notify();
-        await this.follow(cx);
-      } catch (e) { this.error = String(e.message ?? e); cx.notify(); }
+        if (this.hasRepo(st.root)) throw new Error(`${base(st.root)} is already in this space`);
+        const info = await repoInfo(st.root), offer = info && !info.linked ? await this.worktreeOffer(base(st.root)) : null;
+        if (offer) { this.ws = { kind: "worktree", root: st.root, ...offer }; return; }
+        await this.addRepos([st.root], cx);
+      } catch (e) { this.error = String(e.message ?? e); }
+      finally { this.wsBusy = null; cx.notify(); }
     });
+  }
+
+  /** Adds repo folders to the space: to its workspace file (made when this makes two) and its repo map. */
+  async addRepos(roots, cx) {
+    const sp = this.space();
+    if (!sp) return;
+    for (const root of roots) {
+      await addFolder(sp, root, this.stores.map((st) => st.asked ?? st.root));
+      // The capture leader writes the same file: retry when it wrote first.
+      for (let i = 0; ; i++) { try { await addSpaceRepos([[sp.id, root]]); break; } catch (e) { if (i >= 2) throw e; } }
+      this.misses?.delete(root);
+    }
+    this.ws = null; this.error = null; cx.notify();
+    await this.follow(cx);
+  }
+
+  /** The pick panel's or worktree offer's confirm: makes worktrees where asked, then adds. */
+  confirmAdd(cx) {
+    const ws = this.ws;
+    if (!ws || this.wsBusy) return;
+    cx.spawn(async (cx) => {
+      try {
+        const roots = [];
+        const items = ws.kind === "worktree" ? [{ path: ws.root }] : ws.repos.filter((r) => r.on && !r.has);
+        for (const r of items) {
+          const info = await repoInfo(r.path);
+          const offer = ws.kind === "worktree" ? ws : ws.asWorktrees && ws.offer && info && !info.linked ? { branch: ws.offer.branch, dest: ws.offer.dest.replace(/[^/]+$/, base(r.path)) } : null;
+          if (offer) {
+            this.wsBusy = `Making a worktree for ${base(r.path)} on ${offer.branch}…`; cx.notify();
+            await addWorktree(r.path, offer.dest, offer.branch);
+            roots.push(offer.dest);
+          } else roots.push(r.path);
+        }
+        this.wsBusy = "Adding…"; cx.notify();
+        await this.addRepos(roots, cx);
+      } catch (e) { this.error = String(e.message ?? e); }
+      finally { this.wsBusy = null; cx.notify(); }
+    });
+  }
+
+  /** × on a repo header: asks first (open changes come back when it's added again). */
+  askRemove(st, cx) {
+    if (this.files.some((f) => f.store === st && this.dirty(f))) { this.error = `${this.repoName(st)} has unsaved edits: save or undo them first`; cx.notify(); return; }
+    const open = this.files.filter((f) => f.store === st).reduce((n, f) => n + (f.plain ? 0 : f.hunks.length), 0);
+    this.ws = { kind: "remove", st, open, linked: null };
+    cx.notify();
+    cx.spawn(async (cx) => { const info = await repoInfo(st.root).catch(() => null); if (this.ws?.st === st) { this.ws.linked = !!info?.linked; cx.notify(); } });
+  }
+
+  confirmRemove(deleteWorktree, cx) {
+    const ws = this.ws, sp = this.space();
+    if (ws?.kind !== "remove" || !sp || this.wsBusy) return;
+    cx.spawn(async (cx) => {
+      try {
+        if (deleteWorktree) { this.wsBusy = `Deleting the worktree ${ws.st.root}…`; cx.notify(); await removeWorktree(ws.st.root); }
+        await removeFolder(sp, ws.st.asked ?? ws.st.root);
+        if (ws.st.asked && norm(ws.st.asked) !== norm(ws.st.root)) await removeFolder(sp, ws.st.root);
+        this.ws = null; this.error = null;
+        await this.follow(cx);
+      } catch (e) { this.error = String(e.message ?? e); }
+      finally { this.wsBusy = null; cx.notify(); }
+    });
+  }
+
+  repoName(st) { return st.label ?? base(st.root); }
+
+  /** Collapses or expands a repo in the tree. Kept across reloads (per pane copy). */
+  toggleRepo(root, cx) {
+    const shut = (this.repoShut ??= new Set());
+    if (shut.has(root)) shut.delete(root); else shut.add(root);
+    try { localStorage.setItem("repoShut", JSON.stringify([...shut])); } catch {}
+    cx.notify();
+  }
+
+  /** The add, pick, worktree and remove panels, under the tree (or the status line without one). */
+  workspacePanel(t) {
+    const ws = this.ws;
+    if (!ws && !this.wsBusy) return null;
+    const box = v_flex().id("ws-panel").mx(8).my(6).p(8).gap(6).rounded(6).bg(t.raised).text_size(11);
+    const actions = (...btns) => h_flex().gap(6).flex_wrap().children(btns.filter(Boolean));
+    const cancel = this.button("ws-cancel", "Cancel", t.background, (cx) => { this.ws = null; cx.notify(); });
+    if (this.wsBusy) return box.child(div().text_color(t.muted).child(this.wsBusy));
+    if (ws.kind === "pick") {
+      const n = ws.repos.filter((r) => r.on && !r.has).length;
+      return box.child(div().text_color(t.muted).child(`Repos in ${ws.parent}`))
+        .children(ws.repos.map((r, i) => h_flex().id(`ws-pick-${i}`).gap(6).items_center().cursor_pointer()
+          .when(!r.has, (e) => e.on_click((_e, cx) => { r.on = !r.on; cx.notify(); }))
+          .child(div().w(12).text_color(r.has ? t.dim : t.foreground).child(r.has ? "✓" : r.on ? "☑" : "☐"))
+          .child(div().flex_1().min_w(0).truncate().text_color(r.has ? t.dim : t.foreground).child(base(r.path) + (r.has ? " (in this space)" : "")))))
+        .when(!!ws.offer, (e) => e.child(h_flex().id("ws-as-wt").gap(6).items_center().cursor_pointer().on_click((_e, cx) => { ws.asWorktrees = !ws.asWorktrees; cx.notify(); })
+          .child(div().w(12).child(ws.asWorktrees ? "☑" : "☐"))
+          .child(div().flex_1().min_w(0).text_color(t.muted).child(`Main clones as new worktrees on ${ws.offer.branch}, beside the others`))))
+        .child(actions(n ? this.button("ws-add", `Add ${n} repo${n === 1 ? "" : "s"}`, t.accent + "55", (cx) => this.confirmAdd(cx)) : null, cancel));
+    }
+    if (ws.kind === "worktree") {
+      return box.child(div().text_color(t.foreground).child(`${base(ws.root)} is a main clone. This space's worktrees are on ${ws.branch}.`))
+        .child(div().text_color(t.muted).child(`A new worktree goes in ${ws.dest}`))
+        .child(actions(this.button("ws-wt", `Add a worktree on ${ws.branch}`, t.accent + "55", (cx) => this.confirmAdd(cx)),
+          this.button("ws-clone", "Add the clone itself", t.background, (cx) => cx.spawn(async (cx) => { try { await this.addRepos([ws.root], cx); } catch (e) { this.error = String(e.message ?? e); cx.notify(); } })),
+          cancel));
+    }
+    if (ws.kind === "remove") {
+      const name = this.repoName(ws.st);
+      return box.child(div().text_color(t.foreground).child(`Remove ${name} from this space?`))
+        .when(ws.open > 0, (e) => e.child(div().text_color(t.ansi3).child(`It has ${ws.open} change${ws.open === 1 ? "" : "s"} to review. They come back if you add it again.`)))
+        .when(!!ws.linked, (e) => e.child(div().text_color(t.muted).child("It's a worktree. Deleting it needs it to have no uncommitted or untracked files.")))
+        .child(actions(this.button("ws-remove", "Remove", t.ansi1 + "40", (cx) => this.confirmRemove(false, cx)),
+          ws.linked ? this.button("ws-remove-wt", "Remove and delete the worktree", t.ansi1 + "88", (cx) => this.confirmRemove(true, cx)) : null,
+          cancel));
+    }
+    return null;
   }
 
   setMode(mode, cx) {
@@ -836,6 +1011,166 @@ export default class Review extends View {
     return keys.filter((k) => held.has(k));
   }
 
+  // ---- G1/G2: the Changes view (props.view "changes") ---------------------------
+
+  initChanges(cx) {
+    this.unchecked = new Set(); this.discardKey = null; this.commitNote = null; this.commitRoot = null; this.committing = false;
+    this.commitInput = TextareaState.new({ placeholder: "Commit message (Ctrl+Enter commits the checked files)", rows: 3 });
+    this.commitInput.on("submit", (e, cx) => { if (e?.secondary) this.commit(cx); });
+    this.commitInput.on("change", (_e, cx) => cx.notify());
+    this.commitInput.on("focus", () => { this.inBar = this.commitInput; });
+    this.commitInput.on("blur", () => { if (this.inBar === this.commitInput) this.inBar = null; });
+    cx.timer.every(2000, (cx) => this.refreshChanges(cx));
+  }
+
+  /** Review publishes its open change count per file, for the Changes view's tags. */
+  publishReview() {
+    if (this.view !== "review") return;
+    const m = {};
+    for (const f of this.files) if (!f.plain && !f.error) m[f.key] = f.hunks.length;
+    const sig = JSON.stringify(m);
+    if (sig === this.reviewSig) return;
+    this.reviewSig = sig; setShared(REVIEW, m);
+  }
+
+  /** git in a store's repo, wherever the repo lives (git.js). */
+  git(st, args, opts = {}) { return git(args, { cwd: st.root, ...opts }); }
+
+  /** A repo's `git status` and HEAD, as one string that changes when either does. */
+  async statusOf(st) {
+    const [s, head] = await Promise.all([this.git(st, STATUS), this.git(st, [...READ, "rev-parse", "-q", "--verify", "HEAD"])]);
+    if (s.code !== 0) throw new Error(`git status in ${base(st.root)}: ${(s.stderr || s.stdout).trim()}`);
+    return { out: s.stdout, head: head.code === 0 ? head.stdout.trim() : null };
+  }
+
+  /** Every uncommitted file in the space's repos, as HEAD (B) against the working tree (C). */
+  async loadChanges(cx) {
+    if (this.loadingChanges) return;
+    this.loadingChanges = true;
+    try {
+      const files = [], sig = [];
+      for (const st of this.stores) {
+        const { out, head } = await this.statusOf(st);
+        sig.push(st.root, head, out);
+        for (const { rel, xy } of parseStatus(out)) files.push(await this.loadChange(st, rel, xy, !!head, cx));
+      }
+      this.files = files; this.changeSig = sig.join("\0"); this.status = null;
+      if (this.discardKey && !files.some((f) => f.key === this.discardKey)) this.discardKey = null;
+      this.settle(); cx.notify();
+    } catch (e) { this.error = String(e.message ?? e); cx.notify(); }
+    finally { this.loadingChanges = false; }
+  }
+
+  async loadChange(st, rel, xy, hasHead, cx) {
+    const path = `${st.root}/${rel}`, key = `${st.root}|${rel}`;
+    const f = { rel, path, basePath: null, store: st, key, xy, letter: statusLetter(xy), plain: false, created: false, by: null, as: null, hunks: [] };
+    try {
+      const show = hasHead ? await this.git(st, [...READ, "show", `HEAD:${rel}`]) : { code: 1, stdout: "" };
+      const inHead = show.code === 0, Btext = inHead ? show.stdout : "", Ctext = await readTextFile(path);
+      if (Btext.includes("\0") || Ctext?.includes("\0")) return { ...f, inHead, error: "binary file" };
+      const hunks = await diffHunks(Btext, Ctext ?? "");
+      return this.withTokens({ ...f, inHead, created: !inHead, Btext, Ctext, B: splitLines(Btext), C: splitLines(Ctext ?? ""), hunks }, cx);
+    } catch (e) { return { ...f, error: String(e.message ?? e) }; }
+  }
+
+  /** Every 2 s: reloads when git status or HEAD changed, or a listed file's text did. */
+  async refreshChanges(cx) {
+    // One check at a time: WSL git on a Windows drive takes over a second per status.
+    if (this.refreshing || this.loadingChanges || this.committing || !this.stores.length) return;
+    this.refreshing = true;
+    try {
+      const sig = [];
+      for (const st of this.stores) { const { out, head } = await this.statusOf(st); sig.push(st.root, head, out); }
+      let stale = sig.join("\0") !== this.changeSig;
+      for (const f of this.files) { if (stale) break; if (!f.error && (await readTextFile(f.path)) !== f.Ctext) stale = true; }
+      if (stale) await this.loadChanges(cx);
+    } catch (e) { this.error = String(e.message ?? e); cx.notify(); }
+    finally { this.refreshing = false; }
+  }
+
+  /** Puts a file back as HEAD has it (asked first by the button). Unsaved edits in Edit block it. */
+  discard(f, cx) {
+    this.discardKey = null;
+    if (this.heldElsewhere([f.key]).length) { this.error = `${base(f.rel)} has unsaved edits in Edit: save or discard them there first`; cx.notify(); return; }
+    cx.spawn(async (cx) => {
+      try {
+        for (const args of discardCommands(f.rel, f.inHead)) {
+          const r = await this.git(f.store, args);
+          if (r.code !== 0) throw new Error(`git ${args[0]}: ${(r.stderr || r.stdout).trim()}`);
+        }
+        this.error = null; this.commitNote = `Discarded ${f.rel}`;
+      } catch (e) { this.error = String(e.message ?? e); }
+      await this.loadChanges(cx);
+    });
+    cx.notify();
+  }
+
+  /** The repo the commit box commits to: the one picked, else the first with changes. */
+  commitStore() {
+    const withChanges = this.stores.filter((st) => this.files.some((f) => f.store === st));
+    return withChanges.find((st) => st.root === this.commitRoot) ?? withChanges[0] ?? null;
+  }
+
+  checkedIn(st) { return this.files.filter((f) => f.store === st && !this.unchecked.has(f.key)); }
+
+  /** Commits the checked files of the commit repo, only them, with the message. */
+  commit(cx) {
+    const st = this.commitStore();
+    if (!st || this.committing) return;
+    let cmds;
+    try { cmds = commitCommands(this.checkedIn(st).map((f) => f.rel), this.commitInput.value()); }
+    catch (e) { this.error = String(e.message ?? e); cx.notify(); return; }
+    const held = this.heldElsewhere(this.checkedIn(st).map((f) => f.key));
+    if (held.length) { this.error = `Unsaved edits in Edit: ${held.map((k) => base(k.slice(k.indexOf("|") + 1))).join(", ")}. Save or discard them first`; cx.notify(); return; }
+    this.committing = true; this.error = null; this.commitNote = null; cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        for (const args of cmds) {
+          const r = await this.git(st, args, { timeout: 120000 });
+          if (r.code !== 0) throw new Error(`git ${args[0]}: ${(r.stderr || r.stdout).trim()}`);
+        }
+        this.commitNote = `Committed ${cmds[1].length - 4} file${cmds[1].length === 5 ? "" : "s"} to ${base(st.root)}`;
+        this.commitInput.set_value(""); this.unchecked.clear();
+      } catch (e) { this.error = String(e.message ?? e); }
+      finally { this.committing = false; }
+      await this.loadChanges(cx); cx.notify();
+    });
+  }
+
+  renderChanges(t) {
+    const review = shared(REVIEW), st = this.commitStore(), multi = this.stores.length > 1;
+    const checked = st ? this.checkedIn(st) : [], open = checked.filter((f) => (review?.[f.key] ?? 0) > 0).length;
+    const box = (on) => div().w(14).h(14).flex_none().rounded(3).border_1().border_color(on ? t.accent : t.border).bg(on ? t.accent : t.background)
+      .flex().items_center().justify_center().text_size(10).text_color(t.background).child(on ? "✓" : "");
+    const letterColor = { A: t.ansi2, D: t.ansi1, "!": t.ansi3, M: t.ansi4 };
+    const row = (f) => {
+      const cut = f.rel.lastIndexOf("/") + 1, tag = reviewTag(f.key, review), on = !this.unchecked.has(f.key);
+      return h_flex().id(`chg-${f.key}`).h(26).flex_none().px(8).gap(6).items_center().rounded(5).cursor_pointer()
+        .when(f.key === this.sel, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover))
+        .on_click((_e, cx) => { if (!f.error) this.pick(f.key, cx); else { this.error = `${f.rel}: ${f.error}`; cx.notify(); } })
+        .child(div().id(`chk-${f.key}`).on_click((_e, cx) => { cx.stop_propagation(); if (on) this.unchecked.add(f.key); else this.unchecked.delete(f.key); cx.notify(); }).child(box(on)))
+        .child(div().w(12).flex_none().text_size(11).font_semibold().text_color(letterColor[f.letter] ?? t.muted).child(f.letter))
+        .child(h_flex().flex_1().min_w(0).gap(6).items_center()
+          .child(div().flex_none().text_size(12.5).when(!!f.error, (e) => e.text_color(t.dim)).child(f.rel.slice(cut)))
+          .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child((multi ? base(f.store.root) + (cut ? "/" : "") : "") + f.rel.slice(0, Math.max(0, cut - 1)))))
+        .when(!!tag, (e) => e.child(div().flex_none().text_size(10).text_color(tag === "reviewed" ? t.dim : t.ansi3).child(tag)));
+    };
+    const all = this.files.length > 0 && this.files.every((f) => !this.unchecked.has(f.key));
+    return v_flex().w(320).flex_none().h_full().border_r(1).border_color(t.border)
+      .child(h_flex().h(36).flex_none().px(8).gap(6).items_center().border_b(1).border_color(t.border)
+        .child(div().id("chk-all").cursor_pointer().on_click((_e, cx) => { if (all) for (const f of this.files) this.unchecked.add(f.key); else this.unchecked.clear(); cx.notify(); }).child(box(all)))
+        .child(div().flex_1().text_size(12).text_color(t.muted).child(`${this.files.length} changed file${this.files.length === 1 ? "" : "s"}`)))
+      .child(v_flex().id("chg-list").flex_1().min_h(0).p(4).overflow_y_scrollbar().children(this.files.map(row)))
+      .child(v_flex().flex_none().p(8).gap(6).border_t(1).border_color(t.border)
+        .when(multi && !!st, (e) => e.child(h_flex().gap(4).flex_wrap().children(this.stores.filter((s) => this.files.some((f) => f.store === s)).map((s) =>
+          div().id(`repo-${s.root}`).h(22).px(8).flex().items_center().rounded(5).text_size(11).cursor_pointer()
+            .bg(s === st ? t.accent + "77" : t.raised).on_click((_e, cx) => { this.commitRoot = s.root; cx.notify(); }).child(base(s.root))))))
+        .child(Textarea.new(this.commitInput).h(72).px(8).py(6).rounded(6).border_1().border_color(t.border).bg(t.background).text_size(12))
+        .when(open > 0, (e) => e.child(div().text_size(11).text_color(t.ansi3).child(`${open} checked file${open === 1 ? " has" : "s have"} changes still to review`)))
+        .when(!!this.commitNote, (e) => e.child(div().text_size(11).text_color(t.dim).child(this.commitNote)))
+        .child(this.button("commit", this.committing ? "Committing…" : `Commit ${checked.length} file${checked.length === 1 ? "" : "s"}${multi && st ? ` to ${base(st.root)}` : ""}`, checked.length && !this.committing ? t.accent + "88" : t.raised, (cx) => this.commit(cx)).h(28).justify_center()));
+  }
+
   /** ctrl-b: shows or hides the tree, switching to the Edit view first if needed. */
   toggleTree(cx) {
     if (this.mode !== "edit") { this.treeOn = true; return this.setMode("edit", cx); }
@@ -858,7 +1193,7 @@ export default class Review extends View {
     cx.spawn(async (cx) => {
       try {
         for (const st of this.stores) {
-          const r = await exec("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: st.root });
+          const r = await git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: st.root });
           if (r.code !== 0) { this.trees.set(st.root, { error: (r.stderr || r.stdout).trim() }); continue; }
           if (this.trees.get(st.root)?.list === r.stdout) continue;
           const paths = [...new Set(r.stdout.split("\0").filter(Boolean))];
@@ -901,7 +1236,18 @@ export default class Review extends View {
     if (!this.stores.length) out.push(note("tree-none", "No repo in this space yet"));
     for (const st of this.stores) {
       const tr = this.trees.get(st.root), node = this.treeOf(st), counts = this.treeCounts(st);
-      if (multi) out.push(div().id(`tree-repo-${st.root}`).px(10).pt(8).pb(2).text_size(11).font_semibold().text_color(t.muted).child(base(st.root)));
+      if (multi) {
+        const n = this.files.filter((f) => f.store === st && !f.plain).reduce((k, f) => k + f.hunks.length, 0);
+        const shut = this.repoShut?.has(st.root);
+        out.push(h_flex().id(`tree-repo-${st.root}`).pl(8).pr(6).pt(8).pb(2).gap(4).items_center().text_size(11).cursor_pointer()
+          .on_click((_e, cx) => this.toggleRepo(st.root, cx))
+          .child(div().w(10).flex_none().text_size(10).text_color(t.dim).child(shut ? "▸" : "▾"))
+          .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.muted).child(this.repoName(st)))
+          .when(n > 0, (e) => e.child(div().flex_none().text_size(10).text_color(t.ansi3).child(String(n))))
+          .child(div().id(`tree-repo-x-${st.root}`).flex_none().w(16).h(16).flex().items_center().justify_center().rounded(3).text_color(t.dim).cursor_pointer()
+            .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => { cx.stop_propagation(); this.askRemove(st, cx); }).child("×")));
+      }
+      if (multi && this.repoShut?.has(st.root)) continue;
       if (tr?.error) { out.push(note(`tree-err-${st.root}`, tr.error, t.ansi1)); continue; }
       if (!node) { out.push(note(`tree-load-${st.root}`, "Loading…")); continue; }
       for (const row of flatten(node, (rel) => this.expanded.has(`${st.root}|${rel}`))) {
@@ -916,7 +1262,9 @@ export default class Review extends View {
       }
     }
     out.push(div().id("tree-open-folder").mx(8).mt(6).px(6).h(22).flex().items_center().rounded(4).text_size(11).text_color(t.dim).cursor_pointer()
-      .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.openFolder(cx)).child("+ Open folder…"));
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.openFolder(cx)).child("+ Add repo…"));
+    const panel = this.workspacePanel(t);
+    if (panel) out.push(panel);
     return v_flex().id("file-tree").h_full().py(4).overflow_y_scrollbar()
       .when(full, (e) => e.flex_1().min_w(0)).when(!full, (e) => e.w(240).flex_none().border_r(1).border_color(t.border)).children(out);
   }
@@ -985,7 +1333,7 @@ export default class Review extends View {
     const f = this.file(), x = ev.local_position?.x ?? -1, y = ev.local_position?.y ?? -1, i = this.rowAt(y);
     if (!f || i < 0) return;
     const r = this.rowsOf(f)[i];
-    if (r.kind === "@") return this.rowButton(r.hunk, x, cx);
+    if (r.kind === "@") return this.mode === "changes" ? undefined : this.rowButton(r.hunk, x, cx);
     // The text: place the cursor, select words or lines, or start a text drag (Q42).
     if (x >= GUTTER && this.editable(f)) return this.textDown(f, r, x, y, ev, cx);
     this.anchor = null; // the line numbers: line selection, as before
@@ -1073,7 +1421,7 @@ export default class Review extends View {
    * `plan` is a list of [file, action] where action(state) -> { state, write }.
    */
   run(plan, cx, feedback = []) {
-    if (!plan.length) return;
+    if (!plan.length || this.mode === "changes") return;
     if (plan.some(([f]) => f.conflict)) { this.error = "Pick Keep mine or Take agent's first"; cx.notify(); return; }
     // Panel split: another copy (Edit) holds unsaved edits to these files. Review acts on what's
     // on disk, so they're saved first (autosave on) or left to the user (off).
@@ -1360,7 +1708,7 @@ export default class Review extends View {
 
   /** Panel split: the Review copy keeps no unsaved text. */
   readOnly(cx) {
-    this.error = `Review is read-only: double-click a line to edit it in Edit (${this.kl("toggleView")})`; cx.notify();
+    this.error = `${this.mode === "changes" ? "Changes" : "Review"} is read-only: double-click a line to edit it in Edit`; cx.notify();
   }
   cw() { return this.charW ?? 7.2; }
   hasTextSel() { return !!(this.anchor && this.cur && cmp(this.anchor, this.cur)); }
@@ -1387,7 +1735,7 @@ export default class Review extends View {
     if (r.side !== "new") { cx.notify(); return; } // removed lines are read-only
     const p = this.posAt(f, r, x), lines = linesOf(f);
     this.selA = this.selB = null; this.goalX = null;
-    if (ev.click_count === 2 && this.view === "review") return this.handOff("edit", cx, p);
+    if (ev.click_count === 2 && (this.view === "review" || this.mode === "changes")) return this.handOff("edit", cx, p);
     if (ev.click_count === 2) { [this.anchor, this.cur] = wordAt(lines, p); cx.notify(); return; }
     if (ev.click_count >= 3) {
       this.anchor = { line: p.line, col: 0 };
@@ -1458,7 +1806,7 @@ export default class Review extends View {
   type(text, cx, { from, to, group = false, select = false } = {}) {
     const f = this.file();
     if (!this.editable(f) || !this.cur) return;
-    if (this.view === "review") return this.readOnly(cx);
+    if (this.view === "review" || this.mode === "changes") return this.readOnly(cx);
     const sel = this.hasTextSel(), a = from ?? (sel ? this.anchor : this.cur), b = to ?? this.cur;
     const lang = languageOf(f.rel);
     const { state, cursor } = edit(f, a, b, text, (ls) => highlightLines(ls, lang));
@@ -1733,7 +2081,7 @@ export default class Review extends View {
   replaceAll(cx) {
     const f = this.file(), { ms, re } = this.matches(f);
     if (!this.editable(f) || !re || !ms.length) return;
-    if (this.view === "review") return this.readOnly(cx);
+    if (this.view === "review" || this.mode === "changes") return this.readOnly(cx);
     const lines = linesOf(f), repl = this.replaceInput.value(), regex = this.findOpts.regex;
     const subs = ms.map((m) => replacement(body(lines[m.line]).slice(m.from, m.to), re, repl, regex));
     this.cur ??= { line: 0, col: 0 };
@@ -1904,6 +2252,7 @@ export default class Review extends View {
       if (qk) { qk(); done(); }
       return;
     }
+    if (this.commitInput && this.inBar === this.commitInput) return; // the commit message box types its own keys
     // The find bar has the keyboard: Esc, the bar's own actions, and switching between find, replace and line.
     if (this.inBar) {
       if (k === "escape") { this.closeFind(cx); return done(); }
@@ -2017,7 +2366,7 @@ export default class Review extends View {
     return h_flex().absolute().bottom(12).left(0).right(0).justify_center()
       .child(h_flex().gap(8).px(10).py(5).items_center().rounded(8).bg(t.popover).border_1().border_color(t.accent).shadow_md().text_size(11.5)
         .child(div().text_color(t.muted).child(`${n} line${n === 1 ? "" : "s"} selected`))
-        .when(this.picks(f, sel).any, (e) => e
+        .when(this.mode !== "changes" && this.picks(f, sel).any, (e) => e
           .child(this.button("sel-reject", `Reject  ${this.kl("reject")}`, t.ansi1 + "55", (cx) => this.selectionAction("reject", cx)))
           .child(this.button("sel-accept", `Accept  ${this.kl("accept")}`, t.ansi2 + "55", (cx) => this.selectionAction("accept", cx))))
         .child(this.button("sel-prompt", `Comment  ${this.kl("comment")}`, t.ansi4 + "55", (cx) => this.askPrompt(this.current, cx)))
@@ -2036,10 +2385,10 @@ export default class Review extends View {
     if (inHunk) this.current = r.hunk;
     // With changed lines selected, Accept/Reject act on those lines only; otherwise on the hunk.
     // The labels stay short; the selection bar shows when they act on selected lines.
-    const selChanges = hasSel && this.picks(f, sel).any;
+    const selChanges = hasSel && this.picks(f, sel).any && this.mode !== "changes";
     const items = [
       { cmd: "prompt", label: "Comment", key: this.kl("comment") },
-      ...(inHunk || selChanges ? [
+      ...((inHunk && this.mode !== "changes") || selChanges ? [
         { cmd: "reject", label: "Reject", key: this.kl("reject") },
         { cmd: "rejectReason", label: "Reject with comment…", key: "" },
         { cmd: "accept", label: "Accept", key: this.kl("accept") },
@@ -2195,6 +2544,11 @@ export default class Review extends View {
   }
 
   row(r, f, t, selected = false) {
+    if (r.kind === "@" && this.mode === "changes") {
+      return h_flex().w_full().h(ROW).flex_none().items_center().bg(t.raised)
+        .child(div().w(GUTTER).flex_none())
+        .child(div().flex_1().text_color(t.dim).text_size(11).child(`change ${r.hunk + 1} of ${f.hunks.length}`));
+    }
     if (r.kind === "@") {
       // Row renderers can't hold handlers; the input layer maps clicks here to a button by x (rowButton).
       const current = r.hunk === this.current;
@@ -2270,35 +2624,42 @@ export default class Review extends View {
       .child(h_flex().flex_1().min_h(0)
       .when(this.treeOnly(), (e) => e.child(this.renderTree(t, true)))
       .when(this.mode === "edit" && this.treeOn && !this.treeOnly(), (e) => e.child(this.renderTree(t)))
+      .when(this.mode === "changes", (e) => e.child(this.renderChanges(t)))
       .when(!this.treeOnly(), (e) => e.child(v_flex().flex_1().min_w(0).h_full()
       // File tabs scroll sideways in their own area; the hint and file buttons stay pinned right.
       .child(h_flex().h(36).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border)
         .child(div().id("file-tabs").flex_1().min_w(0).h_full().relative().overflow_hidden()
           .on_size_change((size, cx) => { this.tabViewW = size.width; this.setTabOffset(this.tabOffset ?? 0); if (this.sel) this.showTab(this.sel); cx.notify(); })
           .on_scroll_wheel((ev, cx) => this.tabWheel(ev, cx))
-          .child(h_flex().absolute().top(0).bottom(0).left(-(this.tabOffset ?? 0)).children(vis.map((x) => this.tab(x, t))))
+          .when(this.mode === "changes" && !!f, (e) => e.child(div().absolute().top(0).bottom(0).left(4).flex().items_center().text_size(12).text_color(t.muted).child(f?.rel ?? "")))
+          .when(this.mode !== "changes", (e) => e.child(h_flex().absolute().top(0).bottom(0).left(-(this.tabOffset ?? 0)).children(vis.map((x) => this.tab(x, t)))))
           // Position indicator, only when the tabs don't all fit.
           .when(this.tabMax() > 0, (e) => {
             const total = this.tabMax() + (this.tabViewW ?? 0), view = this.tabViewW ?? 0;
             return e.child(div().absolute().bottom(1).h(2).rounded(1).bg(t.dim)
               .left(((this.tabOffset ?? 0) / total) * view).w(Math.max(24, (view / total) * view)));
           }))
-        .when(vis.length > 1, (e) => e.child(div().flex_none().whitespace_nowrap().text_size(10).text_color(t.dim).px(6).child(`${vis.findIndex((x) => x.key === this.sel) + 1}/${vis.length} · ${this.kl("prevFile")}/${this.kl("nextFile")}`)))
+        .when(vis.length > 1 && this.mode !== "changes", (e) => e.child(div().flex_none().whitespace_nowrap().text_size(10).text_color(t.dim).px(6).child(`${vis.findIndex((x) => x.key === this.sel) + 1}/${vis.length} · ${this.kl("prevFile")}/${this.kl("nextFile")}`)))
         .when(!!f && this.nvim(), (e) => e.child(this.button("nvim", `Neovim  ${this.kl("openInNvim")}`, t.raised, (cx) => this.toNvim(f, f.hunks[this.current]?.n ?? 0, cx)).flex_none().whitespace_nowrap()))
         .when(this.dirty(f), (e) => e.child(this.button("save", `Save  ${this.kl("save")}`, t.accent + "55", (cx) => this.save(cx)).flex_none().whitespace_nowrap()))
         // Only a file with the agent's changes (an opened file's own edits aren't the agent's).
-        .when(!!f && !f.plain && f.hunks.length > 0, (e) => e
+        .when(this.mode === "changes" && !!f, (e) => this.discardKey === f.key
+          ? e.child(this.button("discard-yes", "Discard all changes to this file", t.ansi1 + "88", (cx) => this.discard(f, cx)).flex_none().whitespace_nowrap())
+            .child(this.button("discard-no", "Cancel", t.raised, (cx) => { this.discardKey = null; cx.notify(); }).flex_none())
+          : e.child(this.button("discard", "Discard file", t.ansi1 + "40", (cx) => { this.discardKey = f.key; cx.notify(); }).flex_none().whitespace_nowrap()))
+        .when(this.mode !== "changes" && !!f && !f.plain && f.hunks.length > 0, (e) => e
           .child(this.button("reject-file", `Reject file  ${this.kl("rejectFile")}`, t.ansi1 + "40", (cx) => this.wholeFile("reject", cx)).flex_none().whitespace_nowrap())
           .child(this.button("accept-file", `Accept file  ${this.kl("acceptFile")}`, t.ansi2 + "40", (cx) => this.wholeFile("accept", cx)).flex_none().whitespace_nowrap()))
         .when(!!f, (e) => e.child(this.button("vscode", `${editorName(this.settings.externalEditor)}  ${this.kl("openInVSCode")}`, t.raised, (cx) => this.toVSCode(cx)).flex_none().whitespace_nowrap())))
+      .when(!(this.mode === "edit" && this.treeOn) && !!(this.ws || this.wsBusy), (e) => e.child(this.workspacePanel(t)))
       .when(!!f && !!this.bar, (e) => e.child(this.findBar(f, t)))
       .when(!!f?.conflict, (e) => e.child(h_flex().px(12).py(6).gap(8).items_center().bg(t.ansi3 + "22").text_size(12)
         .child(div().flex_1().child(f?.conflict?.theirs ? "The agent changed the same lines you're editing." : "The file was deleted while you were editing it."))
         .child(this.button("ours", "Keep mine", t.raised, (cx) => this.resolve("ours", cx)))
         .child(this.button("theirs", f?.conflict?.theirs ? "Take agent's" : "Drop my edits", t.ansi1 + "55", (cx) => this.resolve("theirs", cx)))))
       .when(!!(this.error || this.status || !f), (e) => e.child(h_flex().px(12).py(6).gap(10).items_center().text_size(12)
-        .child(div().flex_1().min_w(0).text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : this.mode === "edit" ? `No file open: pick one in the file tree (${this.kl("toggleTree")}) or Quick Open (${this.kl("quickOpen")})` : "No changes to review")))
-        .when(!this.stores.length && !!this.spaceId, (e) => e.child(this.button("open-folder", "Open folder…", t.raised, (cx) => this.openFolder(cx)).flex_none()))))
+        .child(div().flex_1().min_w(0).text_color(this.error || picked?.error ? t.ansi1 : t.muted).child(this.error ?? this.status ?? (picked?.error ? `${picked.rel}: ${picked.error}` : this.mode === "edit" ? `No file open: pick one in the file tree (${this.kl("toggleTree")}) or Quick Open (${this.kl("quickOpen")})` : this.mode === "changes" ? "No uncommitted changes" : "No changes to review")))
+        .when(!this.stores.length && !!this.spaceId, (e) => e.child(this.button("open-folder", "Add repo…", t.raised, (cx) => this.openFolder(cx)).flex_none()))))
       .when(!!f, (e) => e.child(div().id("review-diff").flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(12)
         .on_size_change((size, cx) => { this.viewH = size.height; this.viewW = size.width; cx.notify(); })
         // One character's width in the diff font, for cursor columns (the font is monospace).

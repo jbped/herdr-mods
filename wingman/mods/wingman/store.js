@@ -2,13 +2,17 @@
 // Every write is compare-and-swap (writeTextFile's `expected`), so a file that
 // changed since it was read is never overwritten; the action fails instead.
 import { exec, readTextFile, writeTextFile } from "herdr";
+import { git, hostOf, toWsl } from "./git.js";
 import { splitLines, parseHunks, wholeHunk } from "./model.js";
 
 const isWindows = (p) => /^[A-Za-z]:/.test(p);
 export const norm = (p) => { const s = p.replace(/\\/g, "/").replace(/^\/\/\?\//, ""); return isWindows(s) ? s.toLowerCase() : s; };
 
+const inWslFiles = (p) => /^\/\/(?:wsl\.localhost|wsl\$)\//i.test(p);
+
 async function remove(path) {
-  const r = isWindows(path)
+  const r = inWslFiles(path) ? await exec("wsl.exe", ["-e", "rm", "-f", "--", toWsl(path)])
+    : isWindows(path)
     ? await exec("cmd", ["/c", "del", "/f", "/q", path.replace(/\//g, "\\")])
     : await exec("rm", ["-f", "--", path]);
   if (r.code !== 0) throw new Error(`delete ${path}: ${(r.stderr || r.stdout).trim()}`);
@@ -18,7 +22,7 @@ async function remove(path) {
  *  fs/promises, so folders inside a repo are made by the OS's own mkdir. */
 export async function ensureDir(path) {
   const win = isWindows(path);
-  const r = win ? await exec("cmd", ["/c", "mkdir", path.replace(/\//g, "\\")]) : await exec("mkdir", ["-p", "--", path]);
+  const r = inWslFiles(path) ? await exec("wsl.exe", ["-e", "mkdir", "-p", "--", toWsl(path)]) : win ? await exec("cmd", ["/c", "mkdir", path.replace(/\//g, "\\")]) : await exec("mkdir", ["-p", "--", path]);
   // cmd's mkdir creates parents but fails when the folder exists, which is fine here.
   if (r.code !== 0 && !(win && /already exists/i.test(r.stderr + r.stdout))) throw new Error(`mkdir ${path}: ${(r.stderr || r.stdout).trim()}`);
 }
@@ -35,10 +39,10 @@ export async function swap(path, before, after) {
 export class Store {
   static async open(root) {
     // Any folder inside the repo works: the store opens at the top level, where git's paths start.
-    const r = await exec("git", ["rev-parse", "--show-toplevel", "--absolute-git-dir"], { cwd: root });
+    const r = await git(["rev-parse", "--show-toplevel", "--absolute-git-dir"], { cwd: root });
     if (r.code !== 0) throw new Error(`not a git repository: ${root}`);
-    const [top, gitDir] = r.stdout.trim().split(/\r?\n/).map((s) => s.trim().replace(/\\/g, "/"));
-    return new Store(top, gitDir);
+    const [top, gitDir] = r.stdout.trim().split(/\r?\n/);
+    return new Store(await hostOf(top, root), await hostOf(gitDir, root));
   }
 
   constructor(root, gitDir) {
@@ -74,7 +78,7 @@ export class Store {
     if (!B.length || !C.length) hunks = wholeHunk(B, C);
     else if (Btext === c) hunks = [];
     else {
-      const d = await exec("git", ["diff", "--no-index", "--no-color", "--no-ext-diff", "--no-textconv", "-U0",
+      const d = await git(["diff", "--no-index", "--no-color", "--no-ext-diff", "--no-textconv", "-U0",
         "--diff-algorithm=minimal", "--", basePath, path], { cwd: this.root });
       if (d.code > 1) throw new Error(d.stderr.trim());
       hunks = parseHunks(d.stdout);
