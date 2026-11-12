@@ -1,0 +1,11 @@
+{
+  "place": "none",
+  "title": "Scroll prototype (throwaway)",
+  "palette": [
+    { "title": "Scroll proto: Toggle Scrolling", "command": "scroll-proto.toggle", "about": "PROTOTYPE: switch this tab between Dwindle and Scrolling" },
+    { "title": "Scroll proto: Column left", "command": "scroll-proto.left", "about": "PROTOTYPE" },
+    { "title": "Scroll proto: Column right", "command": "scroll-proto.right", "about": "PROTOTYPE" },
+    { "title": "Scroll proto: Cycle width", "command": "scroll-proto.width", "about": "PROTOTYPE" },
+    { "title": "Scroll proto: New column", "command": "scroll-proto.new", "about": "PROTOTYPE" }
+  ]
+}
