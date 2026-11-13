@@ -185,7 +185,7 @@ export default class ScrollProto extends View {
     const f = focused();
     return h_flex().size_full().px(8).gap(8).items_center().text_size(11).text_color(t.muted).bg(t.chrome)
       .child(div().text_color(t.blocked).child("PROTOTYPE"))
-      .child(this.btn(t, "toggle", mode === "scrolling" ? "Scrolling" : "Dwindle", "toggle"))
+      .child(this.btn(t, "toggle", mode === "scrolling" ? "Mode: Scrolling (click for Dwindle)" : "Mode: Dwindle (click for Scrolling)", "toggle"))
       .child(this.btn(t, "left", "◀", "left"))
       .child(this.btn(t, "right", "▶", "right"))
       .child(this.btn(t, "width", "Width", "width"))
