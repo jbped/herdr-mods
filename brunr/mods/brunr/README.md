@@ -1,6 +1,6 @@
 # Brunr
 
-A side panel for Herdr that lists Bruno Collections as a tree, edits their Requests, folders, Environments and `.env` files, runs the Requests with the Bruno CLI and shows each Response in a pane.
+A side panel for Herdr that lists Bruno Collections as a tree, edits their Requests (as Bruno's tabs or as text), folders, Environments and `.env` files, runs the Requests with the Bruno CLI and shows each Response in a pane.
 
 This file is the reference. What the mod offers and how to install it is in the page one folder up.
 
@@ -158,14 +158,15 @@ The Request side, top to bottom:
 
 - A bar with the method menu (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS), the URL field and Run.
 - A line with the Request's name, its path in the Collection, an `Unsaved` mark while it has a Draft, Save and Discard.
-- The whole file as text. YAML has syntax colours and bru is plain text.
-- The warnings for the text, each with its line. A click on one moves the cursor to that line.
+- Notes, when they apply: "Editing works on this computer only.", a read error, and the changed-on-disk line (below).
+- Bruno's tabs and the shown tab's content (see The Request form). A Request that does not get the tabs shows its file as text instead, under the line "The form is available for HTTP Requests in YAML Collections."
+- The warnings for the text, each with its line. A click on one opens the File tab and moves the cursor to that line.
 
 The bar and the text:
 
 - The method menu changes the method line and nothing else. It is greyed out when the file has no method line.
-- The URL field changes the `url` line, and the params follow it (below). It is greyed out when the file has no `url` line.
-- A change to the method or `url` line in the text shows in the bar.
+- The URL field changes the `url` line, and the params follow it (see Params). It is greyed out when the file has no `url` line.
+- A change to the method or `url` line, in File or by a tab, shows in the bar.
 - A Request whose text does not parse cannot run, so Run is off until it parses.
 
 A Draft is a Request's unsaved edits:
@@ -183,7 +184,7 @@ Save (`ctrl-s` while the pane holds the keyboard, or the Save button):
 
 When the shown file changes on disk:
 
-- With no Draft, the editor shows the new text.
+- With no Draft, the Request side shows the new text.
 - With a Draft, a line says "The file changed on disk." with Reload (drops the Draft) and Keep mine. Keep mine keeps the Draft, and the next save still asks Reload from disk or Overwrite.
 
 Runs with Drafts:
@@ -192,16 +193,107 @@ Runs with Drafts:
 - A folder or Collection Run saves nothing by itself. When Requests in it have Drafts it asks `2 Requests have unsaved changes.` with Cancel, Run without saving and Save and run. Save and run stops at the first Request that does not save, names it and does not run.
 - A toast names a Request and never shows its text.
 
-The URL field keeps the params in step with the URL in both formats, as Bruno does:
+A Request on another Machine opens read-only with the note "Editing works on this computer only." Run still works there. Its tabs show and change nothing: menus and buttons are greyed out, editors are read-only, and text typed into a field goes back to what the file holds.
+
+## The Request form
+
+The form is Bruno's tab strip over the Request's file, plus a File tab that holds the text. It is one view of a Draft, and File is the other.
+
+Which Requests get it:
+
+- A Request gets the tabs when its Collection uses the YAML format, its file's top level reads as a YAML map, and its `info.type` is `http` or missing.
+- Every other Request shows only its text, under the line "The form is available for HTTP Requests in YAML Collections." That covers bru Collections, GraphQL, gRPC and WebSocket Requests, and a YAML file broken at its top level.
+- An edit in File that changes the type or breaks the top level hides the tabs until the text is fixed.
+
+The tabs, in order, and what each edits:
+
+| Tab | Edits | Fields | Badge |
+|---|---|---|---|
+| Params | `http.params`, and the query of the `url` line | Query rows (Name, Value), Path rows (Name, Value) | count of enabled params, query and path |
+| Body | `http.body` | mode menu, then an editor or rows (Key, Value) | dot when the mode is not No Body |
+| Headers | `http.headers` | rows (Name, Value) | count of enabled headers |
+| Auth | `http.auth` | mode menu and that mode's fields | dot for Basic Auth, Bearer Token and API Key |
+| Vars | `runtime.variables` and the post-response variable entries of `runtime.actions` | Pre Request rows (Name, Value), Post Response rows (Name, Expr) | count of enabled variables of both kinds |
+| Script | the before-request and after-response entries of `runtime.scripts` | two JavaScript editors, Pre Request and Post Response, stacked | dot when either holds code |
+| Assert | `runtime.assertions` | rows (Expr, Operator, Value) | count of enabled assertions |
+| Tests | the tests entry of `runtime.scripts` | one JavaScript editor | dot when it holds code |
+| Docs | `docs` | one Markdown editor | dot when it holds text |
+| Settings | `settings` | three toggles and two number fields | dot when the Request has `info.tags` |
+| File | the whole file | the text, with syntax colours for YAML | none |
+
+- A badge count of 0 shows nothing. A section the form cannot read shows a dot.
+- The pane opens on the tab used last, and on Params the first time. Only the tab's name is remembered.
+- The strip wraps onto more lines when the pane is narrow, so every tab stays reachable.
+- Every row table has an enabled checkbox, its fields and an × that removes the row. Typing in the empty last row adds a row. A row whose fields are all emptied is removed, because empty rows are not written.
+
+One Draft, two views:
+
+- The Draft text is the only state. A tab draws from the text and File shows the same text. A form edit shows in File at once and marks the Request `Unsaved`. An edit in File shows in the tabs. Save, Discard, `ctrl-s`, Run, the warnings and the changed-on-disk line work the same from every tab.
+- A form edit rewrites only its own section, in the shape Bruno writes it. Every other byte of the text stays, including line endings, other sections and keys the form does not know. The form never touches `examples`, `app` or the block of another Request type.
+- Bruno's shape: the top-level blocks are `info`, `http`, `runtime`, `settings`, `examples` and `docs` in that order, with a blank line before each. `http` holds `method`, `url`, `headers`, `params`, `body` and `auth`. `runtime` holds `variables`, `scripts`, `assertions` and `actions`. Lists are indented two spaces under their key, and `disabled: true` is the last key of a row that is off.
+- A section that does not exist is created where that order puts it. A section that becomes empty is removed, and an `http` or `runtime` block left empty goes with it.
+- Inside a section, a row the edit keeps is changed in place, and only the keys whose values changed. Its comments, quoting and unknown keys stay, and so does hand indentation. The line of a value that changed is rewritten, so a comment at the end of that line goes.
+- Rows are matched to the old ones by name: the longest common run first, then the same name anywhere, then a one-for-one rename. A new row is written in Bruno's shape. A removed row takes its keys and the comment lines under it with it. A comment above the first row stays.
+- Data that equals what the section already holds writes nothing, so opening a tab never changes the file.
+
+"This section can only be edited in File.":
+
+- A tab whose section the reader does not recognise shows this sentence, a warning icon and an Open File button, and no fields. The form never rewrites that section. Fixing it in File makes the tab work again.
+- Causes:
+  - An auth mode other than No Auth, Inherit, Basic Auth, Bearer Token and API Key, or an API key placement other than header or query.
+  - A body that is a file, GraphQL, SPARQL or of an unknown type, and a multipart row that is a file upload.
+  - A pre-request variable with a typed value (`value: { type, data }`).
+  - A param with no `query` or `path` type, an assertion whose operator is not in the list, a script with no type, and two scripts of one type.
+  - A settings value Bruno's reader would drop: a boolean other than true or false, a timeout that is not a number or `inherit`, and a negative or non-numeric max redirects.
+  - A hand-written shape: a flow list or flow items (`headers: [{ name: a }]`), a quoted or repeated key, a scalar where a list or map belongs, a line outside every entry, and a comment after a quoted value (`value: "x" # note`).
+
+Params and the URL field keep each other in step, in both directions, as Bruno does:
 
 - The URL splits at its first `?` outside `{{ }}`. The query params are the `&` pairs after it up to a `#`, split at the first `=` and not decoded. A pair with no `=` has no value and a pair with no name is dropped.
 - The path params are the `:name` segments before the `?`, and `:name` inside a segment such as `Items(id=:id)`.
-- The new list is the URL's query params (enabled), then new path params with empty values, then the disabled query params as they were, then the enabled path params the URL still has, as they were.
-- This drops the description of every enabled query param, and every disabled path param.
-- A list equal to the old one leaves the params block alone. A file with no params block and a URL with no query or `:name` segment gets only its `url` line changed.
-- Editing the `url` line in the text changes that line and nothing else. The params are not rewritten.
+- An edit of the URL field makes the new list: the URL's query params (enabled), then new path params with empty values, then the disabled query params as they were, then the enabled path params the URL still has, as they were.
+- This drops the description of every enabled query param, and every disabled path param. A list equal to the old one leaves the params block alone. A file with no params block and a URL with no query or `:name` segment gets only its `url` line changed.
+- An edit of the Query table rebuilds the URL: the part before the first `?`, then `?` and the enabled rows that have a name as `name=value`, not encoded, joined by `&`. A `#fragment` is dropped. The table edit keeps the rows' descriptions.
+- Path rows come from the `:name` segments. Their names cannot be edited, they have no checkbox, and they cannot be added or removed. A path row whose `:name` is no longer in the URL is dropped at the next Params edit.
+- A file whose URL has a query but no params rows loses that query from the URL at the first Query table edit.
+- Editing the `url` line in File changes that line and nothing else. The params are not rewritten.
 
-A Request on another Machine opens read-only with the note "Editing works on this computer only." Run still works there.
+Body:
+
+- The mode menu is at the top of the tab, with Multipart Form, Form URL Encoded, JSON, XML, TEXT and No Body, and a ✓ on the current one.
+- JSON, XML and TEXT show a code editor. The two form modes show rows (Key, Value), and multipart rows are text only. No Body shows "No Body".
+- A mode switch keeps the text between JSON, XML and TEXT and the rows between the two form modes. Any other switch starts empty. No Body removes the `body` block. A switch does not touch headers, and the CLI sets the content type when it sends.
+- Prettify, for JSON only, reformats with two-space indents and keeps `{{variables}}` outside strings. When the text is not JSON the tab says "Unable to prettify. Invalid JSON format." and nothing changes.
+
+Auth:
+
+- The mode menu has Basic Auth, Bearer Token, API Key, Inherit and No Auth.
+- Basic Auth has Username and Password. Bearer Token has Token. API Key has Key, Value and Add To, which is Header or Query Params.
+- Password, Token and the API key Value are masked, one dot per character, with an eye button per field. A reveal ends when the tab or the Request changes.
+- Inherit shows "The auth comes from the folder or Collection." and has no fields. Brunr does not look up which folder or Collection it comes from, so Inherit and No Auth have no badge.
+- A mode change drops the old mode's fields and writes only the new mode's `type`, as Bruno does. A new Basic Auth writes both fields once either has text, and a new API Key writes `placement: header` at once. After that each field is written as typed.
+
+Vars, Script, Assert, Tests, Docs, Settings:
+
+- **Vars.** Pre Request variables are rows of Name and Value. Post Response variables are rows of Name and Expr, written as Bruno writes them: a `set-variable` entry in `runtime.actions` with a `jsonq` selector and the scope `runtime`. A post-response row that already exists keeps its scope and description. Other entries of `runtime.actions` keep their lines and places.
+- **Script.** Pre Request and Post Response are stacked JavaScript editors with Bruno's headings.
+- **Tests.** One JavaScript editor.
+- Scripts and tests are trimmed when written and left out when empty, as Bruno does. The editor keeps what is typed, such as a trailing newline, while the file holds the trimmed code. A script that differs from the file only by surrounding whitespace leaves the file unchanged.
+- **Assert.** Expr, an Operator menu with Bruno's 28 operators in its order (eq to isArray, the list scrolls) and Value. The operators isEmpty to isArray take no value. Their Value cell is greyed out, and choosing one clears the value.
+- **Docs.** One Markdown editor. A docs text of only whitespace removes the section.
+- **Settings.** URL Encoding, Automatically Follow Redirects and Forward Authorization on Redirect are toggles. Timeout (ms) takes a whole number or `inherit`, and Max Redirects takes a whole number. A text that is not valid shows in red with "Use a number of milliseconds, or inherit." or "Use a whole number, 0 or more." and is not written.
+- A Request with no settings block shows Bruno's defaults: URL Encoding off, Timeout `inherit`, Follow Redirects on, Max Redirects 5, Forward Authorization on. The first change writes all five keys. A settings block that lacks a key shows the value Bruno's reader gives it, which is on for URL Encoding and 0 for Timeout.
+
+Where Brunr's pane differs from Bruno's:
+
+- The tab strip wraps. Bruno moves tabs that do not fit into a menu.
+- The body mode menu is at the top of the Body tab. Bruno puts it at the right of the tab bar.
+- Script shows both editors at once. Bruno has Pre Request and Post Response sub-tabs.
+- A body mode switch keeps only the text or rows described above. Bruno keeps every mode's content in memory.
+- Prettify handles JSON only, and its message shows in the Body tab. Bruno also prettifies XML and shows a toast.
+- The API key placement item reads "Query Params". Bruno's reads "Query Param".
+- Timeout is one field that takes a number or `inherit`. Bruno has a control to inherit or override, which shows the timeout of its Preferences.
+- Not built: description columns, drag to reorder, Bulk Edit, the list of inherited headers, the multipart Content-Type column and file rows, Settings' Tags and Enable App, naming the folder or Collection that Inherit comes from, Auth modes beyond the five, and the file, SPARQL and GraphQL body modes.
 
 ## Tree actions
 
@@ -329,6 +421,7 @@ Brunr reads and writes secret values, and keeps them in one place. These rules a
 - A value is read from disk only when you open an editor on its file, or confirm Move to .env, which reads `.env`. It is written back to the same file on save.
 - A value exists only in the open editor. It is not placed in shared state, stored state, a toast, a log or a command-line argument.
 - Values are masked by default, with a reveal per row.
+- A Request's form values, such as a bearer token or a basic password, are part of the Draft text and follow the Draft's rules: memory only, never shared state, stored state, a toast, a log or a command-line argument. The Auth tab masks the Password, Token and API key Value fields, one dot per character, with an eye button per field. Other form fields are not masked, as in Bruno.
 - The editors keep no Draft. Closing one with unsaved edits asks, then discards them.
 - Brunr has no clipboard action for a value. The row menus, picker and footer show no value.
 - The `.env` table save keeps comments and blank lines. Bruno's own table save does not.
@@ -337,9 +430,9 @@ Brunr reads and writes secret values, and keeps them in one place. These rules a
 
 Three limits remain:
 
-- A revealed value and the Raw text can be selected and copied with the system keys. Herdr's input and editor components cannot turn that off.
+- A revealed value, the Raw text, the File tab and the unmasked form fields can be selected and copied with the system keys. Herdr's input and editor components cannot turn that off.
 - A Response's Timeline shows the request as sent, with resolved values, until its pane closes.
-- A screenshot taken while a row is revealed, or in the Raw view, contains the value.
+- A screenshot taken while a row or an Auth field is revealed, in the Raw view, on the File tab or on a form tab with values in it contains the values.
 
 ## Keys
 
@@ -402,14 +495,18 @@ Command palette entries: "Brunr: Toggle" (`layout.toggle` for the block `brunr`)
 ## State
 
 - The panel keeps in its localStorage: which Collections and folders are unfolded, the Environment chosen per Collection (keyed by Machine and root) and the Global environment chosen per workspace file. Herdr keeps it in store files under `data/brunr/` in the app home.
+- The pane keeps the name of the last used Request tab in localStorage (`requestTab`). Nothing else of the form is stored.
 - Collections start unfolded and folders folded until you change them.
-- Drafts are held in memory by the mod and are never written to disk. Request text can hold tokens.
+- Drafts are held in memory by the mod and are never written to disk. Request text can hold tokens, and the form's fields hold the same text.
+- The form's inputs, editors, reveal toggles and Prettify message are held in memory by the pane copy and go when the pane closes.
 - Dialog forms (New Request, Rename and so on) hold what you typed in memory, by the form's id.
 - An Environment or `.env` value exists only in its open editor and is stored nowhere.
 - Folds in the Response pane's list are held in memory for one Run.
 - The Response pane's filters and sort are held in memory by that pane until it closes. They are never written to disk or shared state.
 - Runs and Responses are never written to disk. The report and progress files are the only exception, and they live for the length of one Run.
-- Shared state holds two counters, `brunr.tick` and `brunr.drafts`, that make the other copies of the mod draw again, and `brunr.request`. `brunr.request` holds the last ask a popup, dialog or editor made for the panel or a pane: a kind, a row key (Machine, Collection path and the path inside it), an action, a choice id, a form id, an Environment or Global environment name or file path, a method name and an address. It never holds Request text, a value typed in a form, an Environment value, a `.env` value or Response data.
+- Shared state holds two counters, `brunr.tick` and `brunr.drafts`, that make the other copies of the mod draw again, and `brunr.request`. `brunr.request` holds the last ask a popup, dialog or editor made for the panel or a pane: a kind, a row key (Machine, Collection path and the path inside it), an action, a choice id, a form id, an Environment or Global environment name or file path, a method name and an address. An ask from a form menu adds the tab, the field name, a row number and the chosen option, which is a mode, a placement or an operator. It never holds Request text, a value typed in a form, an Environment value, a `.env` value or Response data.
+
+Each pane copy reads its asks from an in-memory log of the last 50, because shared state holds only the latest ask. The log holds the same fields.
 
 ## Limits
 
@@ -428,6 +525,8 @@ Command palette entries: "Brunr: Toggle" (`layout.toggle` for the block `brunr`)
 - The running Request is named only while the CLI sends Requests in the order Brunr expects. Requests with the same `seq` keep the folder's listing order, which Brunr takes as the file name ignoring case, as Windows lists files. Another Machine may list them in another order.
 - On Windows, a timed-out Run may leave the CLI running until it ends by itself, since Brunr ends the `node` that started it.
 - Secrets stored in Bruno desktop are empty in a CLI Run (see Secrets).
+- With API Key auth set to add the key to the query, `bru` 4.3 does not send the key when the Request's URL starts with a variable such as `{{baseUrl}}`. It adds the key before it fills in the variables. A URL that starts with a literal host works.
+- Known defect: a pane opened as a new tab, which happens when the focused tab has no focused pane, can attach to the previous tab. It then shows that tab's Request and takes that tab's menu choices and dialog answers, and closing it clears that tab's shown Request. A pane opened beside the focused pane is not affected.
 - On Windows Brunr starts `bru.cmd`, so the npm global folder must be on the PATH Herdr was started with. Without it the panel shows the missing CLI notice. Moves, new folders, permanent deletes and the Recycle Bin call start `node`, so it must be on that PATH too.
 - Bruno desktop cannot be told to open a specific Request, so "Open Bruno" only starts the app. Brunr looks for it at `<home>/AppData/Local/Programs/Bruno/Bruno.exe` on Windows, `/Applications/Bruno.app` on macOS and `bruno` on the PATH elsewhere.
 - `"place": "right"` is not enough to place the panel. On the Herdr version tested, the shipped `main` layout did not dock it, and a personal layout docked it at the window root, full height, with a generated id. The page's Install therefore adds a block with the id `brunr`. `ctrl-shift-u` finds the block by its mod, so it works with any id. The "Brunr: Toggle" palette entry uses the id `brunr`.
@@ -441,9 +540,9 @@ One mod draws every part. Herdr starts a copy of it for the panel, for each Requ
 
 - `main.js`: the entry. Chooses the copy by its props, loads and watches Collections, handles keys, clicks and Runs.
 - `panel.js`: draws the tree, the notices and the footer.
-- `request.js`: draws the Request side of the pane and turns its input into Draft edits.
-- `response.js`: draws the pane's frame and the Response side.
-- `popup.js`: draws the Environment pickers, the row and method menus and the question dialogs.
+- `request.js`: draws the Request side of the pane (bar, name line, notes, tab strip, File editor, warnings) and turns its input into Draft edits.
+- `response.js`: draws the pane's frame and the Response side, and takes the asks addressed to the pane when it draws.
+- `popup.js`: draws the Environment pickers, the row, method and form menus and the question dialogs. A menu is at most 440px high and its list scrolls.
 - `forms.js`: draws the New Request, New folder, Rename and Clone dialogs.
 - `actions.js`: the panel's tree actions: menus, dialogs, Move to, delete, drag and drop, and the run of one operation.
 - `treeops.js`: the rules of the tree actions: positions to Bruno's numbers, the drop rule, Move to's choices, form messages, how a Draft follows its file and the row menu's entries. No Herdr calls.
@@ -451,6 +550,14 @@ One mod draws every part. Herdr starts a copy of it for the panel, for each Requ
 - `envops.js`: the Environment operations of `fileops.js`. No Herdr calls.
 - `collpaths.js`: paths, siblings and sequence numbers shared by the operations. No Herdr calls.
 - `names.js`: file and display names by Bruno's rules. No imports.
+- `form.js`: the form's entry points: `canForm`, `readTab`, `writeTab`, `tabBadge`, the tab list and the data each tab reads and writes. No Herdr calls.
+- `formtabs.js`: the readers and writers of Params, Headers, Body, Auth, Docs and Settings. No Herdr calls.
+- `formruntime.js`: the readers and writers of Vars, Script, Tests and Assert. No Herdr calls.
+- `formsec.js`: finds, replaces, creates and removes a section by Bruno's key order, and matches old rows to new ones. No Herdr calls.
+- `yamlblock.js`: line-level tools for block maps and list items that leave other lines as they are. No Herdr calls.
+- `formview.js`: the form's view rules: which tabs show, labels, menus, the row tables and what an edit makes of the data, when a field is reset from the text, and Prettify. No Herdr calls.
+- `formui.js`: the form's view state (inputs, editors, reveals), the tab strip, the row table, menus and buttons.
+- `formpanes.js`: the bodies of the ten form tabs and the "can only be edited in File" notice.
 - `edit.js`: format writers that change a Request or folder file in place, and the text of a new one. No Herdr calls.
 - `urlsync.js`: the URL field's edit with the params block rewritten as Bruno does. No Herdr calls.
 - `yamlwrite.js`: a string as Bruno's YAML writer emits it. No imports.
@@ -468,7 +575,7 @@ One mod draws every part. Herdr starts a copy of it for the panel, for each Requ
 - `tree.js`: the rows, the key map, the block finder and the confirmation and secret texts. No Herdr calls.
 - `runtree.js`: the Response pane's Run list as rows of folders and Requests, with counts and folds, for the live list and the result alike. No Herdr calls.
 - `runfilter.js`: the Response pane's filters and sort. Takes a finished Run's Responses and gives the Requests to list, in order, with the whole Run's folder counts. No Herdr calls.
-- `store.js`: saved state, the in-memory Run store, shown Requests, forms, the open editor windows and the asks between copies.
+- `store.js`: saved state, the in-memory Run store, shown Requests, forms, the open editor windows and the asks between copies, with the log of the last 50 asks that pane copies read.
 - `sources.js`: reads `brunr.json` and the workspace and finds Collection roots. Loads one Collection.
 - `machine.js`: every `exec`, `readTextFile`, `watchFolder` and `fs` call except the ones in `effects.js`. Lists and reads files, checks the CLI, runs `bru` with its output going to the progress file, reads that file on a `cx.timer` while the Run is in progress, reads and deletes reports and progress files and starts Bruno desktop.
 - `plan.js`: turns a target and the chosen Environments into the `bru run` arguments, and lists the Requests a Run sends in the CLI's order. No Herdr calls.

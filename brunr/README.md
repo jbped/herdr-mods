@@ -6,7 +6,7 @@ A side panel that lists your Bruno Collections as a tree, edits and runs their R
 
 ## Features
 
-- **Edit a Request.** The pane shows a method menu, a URL bar and the whole file as text beside the Response. Edits stay a Draft until `ctrl-s` saves them, and a Run saves the Draft first.
+- **Edit a Request.** Bruno's tabs (Params, Body, Headers, Auth, Vars, Script, Assert, Tests, Docs, Settings) sit over the Request's file, with a File tab that holds the text, for HTTP Requests in YAML Collections. Edits stay a Draft until `ctrl-s` saves them, and a Run saves the Draft first.
 - **Tree actions.** Create, clone, rename, delete (to the system trash), move and reorder Requests and folders from a menu, a key, or drag and drop.
 - **Environments.** Edit an Environment in a table with masked values, and move a secret variable to `.env`. Pick one per Collection from a chip, and a Global environment per Bruno workspace.
 - **The .env editor.** Edit `.env` files as a table or as raw text. A table save changes only the lines you edited and keeps comments.
