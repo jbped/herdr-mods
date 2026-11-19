@@ -24,14 +24,15 @@ A dialog that lists the person's own mods, the GitHub folder each was installed 
 - A check: hash local files with git; list the last 30 commits touching the folder; compare with the newest tree; when unequal and no installed version is saved, try the next 10 commits' trees; updates are the commits newer than the installed one; edits are files differing from the installed tree.
 - After a refresh that found updates, `notify()` posts "<name> has an update" or "N mods have updates" with the names, and an action `mod.open moddr`.
 - Ages read "now", "5m", "3h", "2d", then "Nov 16".
+- Signing: `moddr.json` `token`, else `gh auth token --hostname github.com` (run once in `init`, after the first load, kept in memory), else unsigned. The header summary ends with "token from moddr.json", "signed in with gh" or "unsigned".
 
 ## Built from
 
 - One mod, `moddr`: `main.js` (the dialog), `track.js` (Source parsing, GitHub calls through an injected `io`, the comparison, no Herdr imports), `store.js` (the file, the mods list, hashing).
 - `mod.json`: `{ "place": "none", "title": "Moddr", "overlay": { "kind": "dialog", "width": 560, "height": 0.7 }, "palette": [ … "Moddr: Open" → mod.open moddr ] }`.
 - `herdr` functions: `appHome`, `exec`, `readTextFile`, `writeTextFile`, `props`, `closeOverlay`, `notify`, `theme`, `checking`. `fs/promises` `readdir` with `withFileTypes`. `fetch`. `gpui-base`: `InputState`, `Input`, `ScrollHandle`.
-- Programs: `git hash-object --no-filters -- <paths>` in the mod's folder.
-- GitHub REST: `GET /repos/{o}/{r}/commits?sha&path&per_page=30` and `GET /repos/{o}/{r}/git/trees/{commit}?recursive=1`, with `Authorization: Bearer` only when `moddr.json` has `token`.
+- Programs: `git hash-object --no-filters -- <paths>` in the mod's folder, and `gh auth token --hostname github.com` (optional; a failure means unsigned).
+- GitHub REST: `GET /repos/{o}/{r}/commits?sha&path&per_page=30` and `GET /repos/{o}/{r}/git/trees/{commit}?recursive=1`, with `Authorization: Bearer` when there is a token.
 - Files: reads `installed.json` (its keys are Herdr's shipped mods) and each mod's `README.md`. Reads and writes `moddr.json` with the expected-text guard of `writeTextFile`.
 - `keys.json`: `"ctrl-shift-g": "mod.open:moddr"`.
 
@@ -41,6 +42,7 @@ A dialog that lists the person's own mods, the GitHub folder each was installed 
 - Skip `jsconfig.json` and `*.d.ts`: Herdr writes them into every mod folder, so they would always differ.
 - Keep `installed` on the record, not in `check`. The badge reads `entry.installed`.
 - A share URL names the share folder. Resolve to `mods/<name>/` before listing commits, or README edits count as updates.
+- On Windows, `exec("gh")` finds only a Windows gh. Never write gh's token to a file.
 - Unsigned GitHub requests are limited to 60 an hour. Refresh only on request, and say so plainly when GitHub answers 403 "rate limit".
 - `init` runs during `herdr-app check`: return before any file or network work when `checking()` is true.
 - Closing the dialog cancels a refresh. Each mod's result is saved as it finishes, so finished ones stay.
@@ -53,4 +55,5 @@ A dialog that lists the person's own mods, the GitHub folder each was installed 
 - A copy of an older version shows "N updates" with the right commit messages, and the current version shows "up to date".
 - A copy with one file changed shows "unknown version" with that file. After `m` it shows "edited here".
 - A refresh that finds updates posts a notification.
+- With gh signed in the header says "signed in with gh"; without gh it says "unsigned" and checks still work.
 - `node --test moddr/tests/*.test.mjs` passes.

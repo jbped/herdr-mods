@@ -65,8 +65,8 @@ async function get(io, url, token) {
   try { body = JSON.parse(text); } catch { /* not JSON */ }
   if (!res.ok) {
     const msg = body?.message ?? "";
-    if (res.status === 403 && /rate limit/i.test(msg)) throw new Error("GitHub's hourly limit for unsigned requests is used up. Try later, or add a token to moddr.json");
-    if (res.status === 404) throw new Error("GitHub has no such repo or branch, or it is private");
+    if (res.status === 403 && /rate limit/i.test(msg)) throw new Error("GitHub's hourly limit for unsigned requests is used up. Try later, sign in with gh auth login, or add a token to moddr.json");
+    if (res.status === 404) throw new Error(token ? "GitHub has no such repo or branch, or this account cannot see it" : "GitHub has no such repo or branch, or it is private. Sign in with gh auth login to read private repos");
     throw new Error(msg ? `GitHub answered ${res.status}: ${msg}` : `GitHub answered ${res.status}`);
   }
   return body;

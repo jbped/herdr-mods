@@ -2,7 +2,7 @@
 // the git blob sha of each of their files.
 //
 // moddr.json: { "token"?: "<GitHub token>", "mods": { "<name>": { source, installed, tracked, check } } }
-// The person may add "token" by hand. Moddr keeps every field it does not know.
+// The person may add "token" by hand; it wins over gh's. Moddr keeps every field it does not know.
 import { appHome, exec, readTextFile, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
 import { ignored } from "./track.js";
@@ -42,6 +42,18 @@ export async function save(data, changed) {
     await writeTextFile(filePath(), text(), known ?? null);
   }
   known = text();
+}
+
+/** The GitHub token gh is signed in with, or null when gh is missing or signed out. Kept in
+ *  memory only, never written. */
+export async function ghToken() {
+  try {
+    const r = await exec("gh", ["auth", "token", "--hostname", "github.com"], { timeout: 10000 });
+    const t = r.stdout.trim();
+    return r.code === 0 && /^[A-Za-z0-9_]+$/.test(t) ? t : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The mods folder's own mods: every folder in it that Herdr did not ship. */

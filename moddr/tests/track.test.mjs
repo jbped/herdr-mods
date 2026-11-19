@@ -126,3 +126,19 @@ test("differ and state", () => {
   assert.equal(state({ source: src }), "unchecked");
   assert.equal(state({ source: src, check: { error: "x" } }), "error");
 });
+
+test("a token signs every request", async () => {
+  const seen = [];
+  const fetch = async (url, opts) => { seen.push(opts.headers.Authorization); return github(history)(url); };
+  await check({ fetch, files: async () => ({ "main.js": "b3", "mod.json": "j1" }) }, "m", { source: src }, "gho_abc");
+  assert.ok(seen.length && seen.every((h) => h === "Bearer gho_abc"));
+  const bare = [];
+  await check({ fetch: async (url, opts) => { bare.push(opts.headers.Authorization); return github(history)(url); }, files: async () => ({ "main.js": "b3", "mod.json": "j1" }) }, "m", { source: src });
+  assert.ok(bare.every((h) => h === undefined));
+});
+
+test("a missing repo points at gh when unsigned", async () => {
+  const fetch = async () => ({ ok: false, status: 404, text: async () => JSON.stringify({ message: "Not Found" }) });
+  await assert.rejects(check({ fetch, files: async () => ({}) }, "m", { source: src }), /gh auth login/);
+  await assert.rejects(check({ fetch, files: async () => ({}) }, "m", { source: src }, "t"), /cannot see it/);
+});

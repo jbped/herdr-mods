@@ -56,6 +56,7 @@ export default class Moddr extends View {
     this.editing = null; // the mod whose source is being typed
     this.editError = null;
     this.suggest = {}; // name -> GitHub links in its README
+    this.gh = null; // gh's token, looked up once when the dialog opens
     this.scroll = ScrollHandle.new();
     this.handle = cx.focus_handle();
     this.input = InputState.new({ placeholder: "https://github.com/<owner>/<repo>/tree/<branch>/<folder>" });
@@ -64,8 +65,12 @@ export default class Moddr extends View {
     this.handle.focus();
     cx.timer.after(600, () => { if (!this.editing) this.handle.focus(); });
     if (checking()) return;
-    cx.spawn(async (cx) => { await this.reload(); cx.notify(); });
+    cx.spawn(async (cx) => { await this.reload(); cx.notify(); this.gh = await store.ghToken(); cx.notify(); });
   }
+
+  /** moddr.json's token, else gh's, else none (unsigned requests). */
+  token() { return this.data.token || this.gh || null; }
+  auth() { return this.data.token ? "token from moddr.json" : this.gh ? "signed in with gh" : "unsigned"; }
 
   async reload() {
     const { data, error } = await store.load();
@@ -90,7 +95,7 @@ export default class Moddr extends View {
     this.busy.add(name);
     cx.notify();
     let found;
-    try { found = await check(io, name, e, this.data.token); } catch (err) { found = { error: String(err?.message ?? err) }; }
+    try { found = await check(io, name, e, this.token()); } catch (err) { found = { error: String(err?.message ?? err) }; }
     this.busy.delete(name);
     const now = this.entry(name);
     if (!now?.source) { cx.notify(); return; } // untracked meanwhile
@@ -148,7 +153,7 @@ export default class Moddr extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        src = await resolve(io, src, name, this.data.token);
+        src = await resolve(io, src, name, this.token());
       } catch (e) {
         this.busy.delete(name);
         this.editError = String(e?.message ?? e);
@@ -228,6 +233,7 @@ export default class Moddr extends View {
       `${tracked.length} of ${this.names.length} tracked`,
       counts.updates ? `${counts.updates} with updates` : null,
       lastAt ? `checked ${ago(lastAt)}` : null,
+      this.auth(),
     ].filter(Boolean).join(" · ");
 
     const button = (id, label, on, enabled = true) =>

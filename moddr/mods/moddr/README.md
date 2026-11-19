@@ -65,6 +65,16 @@ When updates are found, a notification names the mods. Clicking it opens Moddr.
 
 Reinstalling a mod needs no step in Moddr: the next refresh finds the new files' version.
 
+## Signing in
+
+GitHub requests use the first of:
+
+1. `token` in `moddr.json`.
+2. The token `gh auth token --hostname github.com` prints, when the GitHub CLI is installed and signed in where Herdr runs. Moddr asks once each time it opens and keeps the token in memory only.
+3. Nothing: unsigned requests, 60 an hour, public repos only.
+
+The header ends with which one is in use: "token from moddr.json", "signed in with gh" or "unsigned". On Windows, gh must be installed on Windows itself: a gh inside WSL is not seen. After `gh auth login`, close and open Moddr again.
+
 ## moddr.json
 
 `~/.config/herdr-app/moddr.json`, written by Moddr:
@@ -83,12 +93,12 @@ Reinstalling a mod needs no step in Moddr: the next refresh finds the new files'
 }
 ```
 
-- `token` is optional and only added by hand. With it, requests are signed and GitHub allows 5,000 an hour. A fine-grained token with no permissions is enough for public repos. Moddr keeps it in this file as plain text and sends it only to api.github.com.
+- `token` is optional and only added by hand. It wins over gh's. A fine-grained token with no permissions is enough for public repos. Moddr keeps it in this file as plain text and sends it only to api.github.com. Prefer gh, which keeps its token in the system's keyring.
 - A write that finds the file changed by another copy reads it again and keeps that copy's other mods.
 
 ## Limits
 
-- GitHub only, public repos only (a token with repo access also reads private ones).
+- GitHub.com only. Private repos need gh or a token with access to them.
 - 30 commits are read per Source. Older updates show as "30+".
 - A repo too big for GitHub to list in one tree answer cannot be checked.
 - Moddr does not install updates. Reinstall the mod as you installed it, then refresh.

@@ -12,14 +12,15 @@ Lists the mods you installed, where each came from on GitHub, and whether that s
 - **Local edits.** A mod you changed by hand shows "edited here" and the files that differ from the installed version.
 - **A toast when updates turn up.** A refresh that finds updates posts a notification that opens the list.
 - **Sources from a URL.** Paste a GitHub folder link: the mod's own folder, or the share folder that holds it under `mods/<name>/`. A README that links a GitHub folder is offered as the source.
+- **Signs in with gh.** When the GitHub CLI is signed in, Moddr uses its token: 5,000 requests an hour instead of 60, and private repos you can see.
 - **Your mods only.** Herdr's shipped mods update with Herdr and are left out.
 - **Vim keys.** `j` and `k` move, `r` refreshes, `s` sets a source, `m` marks the newest version installed, `x` stops tracking.
 
 ## Needs
 
-- Herdr and git. Sources must be public GitHub repos.
-- It runs `git hash-object` on the files in your mods folder. It reads `installed.json` and each mod's `README.md`, and writes `moddr.json` in the Herdr config folder.
-- It calls the GitHub API (api.github.com) when you refresh or set a source. Without a token GitHub allows 60 requests an hour, and each tracked mod takes two or more.
+- Herdr and git. Sources are GitHub repos: public ones, or private ones when gh is signed in or `moddr.json` has a token. The GitHub CLI (`gh`) is optional.
+- It runs `git hash-object` on the files in your mods folder, and `gh auth token` once each time it opens. The token stays in memory and is sent only to api.github.com. It reads `installed.json` and each mod's `README.md`, and writes `moddr.json` in the Herdr config folder.
+- It calls the GitHub API (api.github.com) when you refresh or set a source. Signed out, GitHub allows 60 requests an hour, and each tracked mod takes two or more.
 
 ## Install
 
@@ -50,4 +51,4 @@ Press the key or pick "Moddr: Open" in the palette. Select a mod, press `s` and 
 | `x` | stop tracking |
 | `q` or `escape` | close |
 
-Every state, how the installed version is found, `moddr.json`, the token and the limits: [`mods/moddr/README.md`](mods/moddr/README.md).
+Every state, how the installed version is found, `moddr.json`, signing in and the limits: [`mods/moddr/README.md`](mods/moddr/README.md).
