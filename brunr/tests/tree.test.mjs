@@ -17,15 +17,15 @@ test("one Machine: no Machine row; folded Collections show one row each", () => 
 test("Collections start unfolded and folders folded", () => {
   const e = entry(null, "/c/shop");
   const rows = buildRows({ entries: [e], loaded: new Map([[e.key, { collection: shop }]]), isOpen: (_k, d) => d });
-  assert.deepEqual(rows.slice(0, 3).map((r) => [r.kind, r.name, r.open ?? null]), [["collection", "Shop", true], ["request", "Get Health", null], ["folder", "Products", false]]);
+  assert.deepEqual(rows.slice(0, 3).map((r) => [r.kind, r.name, r.open ?? null]), [["collection", "Shop", true], ["folder", "Products", false], ["folder", "Orders", false]]);
 });
 
-test("open Collections and folders show their children in order with depth", () => {
+test("open Collections and folders show their children in Bruno's sidebar order with depth", () => {
   const e = entry(null, "/c/shop");
   const open = new Set([e.key, `${e.key}#products`]);
   const rows = buildRows({ entries: [e], loaded: new Map([[e.key, { collection: shop }]]), isOpen: (k) => open.has(k) });
   assert.deepEqual(rows.slice(0, 5).map((r) => [r.kind, r.name, r.depth]), [
-    ["collection", "Shop", 0], ["request", "Get Health", 1], ["folder", "Products", 1], ["request", "List Products", 2], ["request", "Missing Product", 2],
+    ["collection", "Shop", 0], ["folder", "Products", 1], ["folder", "top sellers", 2], ["request", "List Products", 2], ["request", "Product Page", 2],
   ]);
   assert.equal(rows[3].parent, `${e.key}#products`);
 });
@@ -50,19 +50,20 @@ test("keys: move, fold, unfold, parent, run, run many, pickers, file, leave", ()
   const open = new Set([e.key]);
   const rows = buildRows({ entries: [e], loaded: new Map([[e.key, { collection: shop }]]), isOpen: (k) => open.has(k) });
   const folder = rows.findIndex((r) => r.kind === "folder");
+  const req = rows.findIndex((r) => r.kind === "request");
   assert.deepEqual(keyAction("down", rows, 0), { act: "move", to: 1 });
   assert.deepEqual(keyAction("up", rows, 0), { act: "move", to: 0 });
   assert.deepEqual(keyAction("left", rows, 0), { act: "fold", key: e.key, open: false });
-  assert.deepEqual(keyAction("left", rows, 1), { act: "move", to: 0 });
+  assert.deepEqual(keyAction("left", rows, req), { act: "move", to: 0 });
   assert.deepEqual(keyAction("right", rows, folder), { act: "fold", key: rows[folder].key, open: true });
   assert.deepEqual(keyAction("enter", rows, folder), { act: "fold", key: rows[folder].key, open: true });
-  assert.equal(keyAction("enter", rows, 1).act, "run");
+  assert.equal(keyAction("enter", rows, req).act, "run");
   assert.equal(keyAction("r", rows, folder).act, "runMany");
   assert.equal(keyAction("r", rows, 0).act, "runMany");
-  assert.equal(keyAction("e", rows, 1).act, "env");
-  assert.equal(keyAction("o", rows, 1).act, "file");
+  assert.equal(keyAction("e", rows, req).act, "env");
+  assert.equal(keyAction("o", rows, req).act, "file");
   assert.equal(keyAction("o", rows, 0), null);
-  assert.equal(keyAction("b", rows, 1).act, "bruno");
+  assert.equal(keyAction("b", rows, req).act, "bruno");
   assert.deepEqual(keyAction("escape", rows, 0), { act: "leave" });
 });
 

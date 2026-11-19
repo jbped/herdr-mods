@@ -51,12 +51,12 @@ test("both fixture formats give the same tree", () => {
   assert.deepEqual(shape(bru.children), shape(yaml.children));
 });
 
-test("the YAML fixture tree has the expected order, names and methods", () => {
-  assert.deepEqual(names(yaml.children), ["Get Health", "Products", "Orders"]);
-  const products = yaml.children[1];
-  assert.deepEqual(names(products.children), ["List Products", "Missing Product", "Product Page", "top sellers"]);
-  assert.deepEqual(names(yaml.children[2].children), ["Create Order", "Closed Port", "slow-order"]);
-  assert.deepEqual(yaml.children[2].children[0], {
+test("the YAML fixture tree has Bruno's sidebar order, names and methods", () => {
+  assert.deepEqual(names(yaml.children), ["Products", "Orders", "Get Health"]);
+  const products = yaml.children[0];
+  assert.deepEqual(names(products.children), ["top sellers", "List Products", "Product Page", "Missing Product"]);
+  assert.deepEqual(names(yaml.children[1].children), ["Create Order", "slow-order", "Closed Port"]);
+  assert.deepEqual(yaml.children[1].children[0], {
     kind: "request", name: "Create Order", path: "orders/Create Order.yml", seq: 1, type: "http", method: "POST", url: "{{baseUrl}}/orders",
   });
   assert.equal(products.children[2].method, "GET", "a lower-case method is upper-cased");
@@ -104,6 +104,15 @@ test("bru Environments skip disabled vars and read a one-line secret list", () =
   assert.deepEqual(c.environments[1].variables, [{ name: "host", secret: false }, { name: "token", secret: true }, { name: "key", secret: true }]);
 });
 
+test("bru Environments with extends, color and annotations parse, names only", () => {
+  const c = p.parseCollection({ root: "/c", files: {
+    "bruno.json": '{"name":"B"}',
+    "environments/qa.bru": "extends: base\nvars {\n  @description('has: a colon')\n  host: x\n}\nvars:secret [\n  @description('d')\n  token\n]\ncolor: #ff0000\n",
+  } });
+  assert.deepEqual(c.errors, []);
+  assert.deepEqual(c.environments[0].variables, [{ name: "host", secret: false }, { name: "token", secret: true }]);
+});
+
 test("a malformed Request file goes in errors and the rest of the tree stays", () => {
   for (const c of [yaml, bru]) {
     assert.equal(c.errors.length, 1);
@@ -114,7 +123,7 @@ test("a malformed Request file goes in errors and the rest of the tree stays", (
   }
 });
 
-test("order: by seq, items without seq after, ties and no-seq by name ignoring case", () => {
+test("order: folders first by name then placed by seq, then Requests by seq (none counts as 1), ties by name ignoring case", () => {
   const c = p.parseCollection({ root: "/c", files: yamlFiles({
     "zeta.yml": request("zeta", null),
     "Alpha.yml": request("Alpha", null),
@@ -126,11 +135,20 @@ test("order: by seq, items without seq after, ties and no-seq by name ignoring c
     "nodir/x.yml": request("x", 1),
     "10.yml": request("ten", 10),
   }) });
-  assert.deepEqual(names(c.children), ["delta", "beta", "Gamma", "Dir", "ten", "Alpha", "nodir", "zeta"]);
+  assert.deepEqual(names(c.children), ["nodir", "Dir", "Alpha", "delta", "zeta", "beta", "Gamma", "ten"]);
+});
+
+test("folder order follows Bruno's sortByNameThenSequence: seq places a folder, equal seqs stay together", () => {
+  const folder = (dir, name, seq) => ({ [`${dir}/folder.yml`]: `info:\n  name: ${name}\n  type: folder\n${seq ? `  seq: ${seq}\n` : ""}` });
+  const c = p.parseCollection({ root: "/c", files: yamlFiles({
+    ...folder("a", "alpha", null), ...folder("b", "bravo", 1), ...folder("c", "charlie", null),
+    ...folder("d", "delta", 1), ...folder("e", "echo", 5), "r.yml": request("r", 1),
+  }) });
+  assert.deepEqual(names(c.children), ["bravo", "delta", "alpha", "charlie", "echo", "r"]);
 });
 
 test("name fallbacks: a folder without a folder file uses the directory, a Request without a name uses the file", () => {
-  const top = yaml.children[1].children[3];
+  const top = yaml.children[0].children[0];
   assert.equal(top.kind, "folder");
   assert.equal(top.name, "top sellers");
   assert.equal(top.seq, null);
@@ -141,7 +159,7 @@ test("name fallbacks: a folder without a folder file uses the directory, a Reque
   assert.equal(blank.children[0].name, "a");
 });
 
-test("empty directories and directories with only non-request files are not nodes", () => {
+test("a folder with only a folder file is a node; directories with only non-request files are not", () => {
   assert.equal(p.findNode(yaml, "notes"), null);
   const c = p.parseCollection({ root: "/c", files: yamlFiles({
     "only-folder/folder.yml": "info:\n  name: Empty\n  type: folder\n",
@@ -149,7 +167,8 @@ test("empty directories and directories with only non-request files are not node
     "scripts/setup.yml": "info:\n  name: setup\n  type: script\n",
     "a.yml": request("a", 1),
   }) });
-  assert.deepEqual(names(c.children), ["a"]);
+  assert.deepEqual(names(c.children), ["Empty", "a"]);
+  assert.deepEqual(p.findNode(c, "only-folder").children, []);
   assert.deepEqual(c.errors, []);
 });
 

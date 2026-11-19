@@ -129,6 +129,7 @@ function bruVariables(text) {
   };
   for (const key of Object.keys(dictLines(blocks.vars))) add(key, false);
   for (const line of blocks["vars:secret"] ?? []) {
+    if (line.trim().startsWith("@")) continue;
     for (const part of line.split(",")) add(part.trim(), true);
   }
   return out;
@@ -149,9 +150,18 @@ function readFolder(format, path, text, errors) {
   }
 }
 
+/**
+ * `{ name, seq, type, method, url }` read from one Request file's text, or null for a YAML item that
+ * is not a Request (a folder, script or app). Throws an Error naming the problem when the text
+ * does not read as a Request.
+ */
+export function readRequestText(text, format) {
+  return format === "yaml" ? yamlRequest(text) : bruRequest(text);
+}
+
 function readRequest(format, path, text, errors) {
   try {
-    const r = format === "yaml" ? yamlRequest(text) : bruRequest(text);
+    const r = readRequestText(text, format);
     if (!r) return null;
     const type = r.type || "http";
     const method = /^[A-Za-z]+$/.test(r.method) ? r.method.toUpperCase() : type.toUpperCase();
@@ -220,6 +230,8 @@ function readBruBlocks(text) {
       return;
     }
     if (line.trim() === "") return;
+    // Top-level `key: value` lines, such as an Environment's `extends` and `color`, are not blocks.
+    if (/^[^\s{[]+:(\s|$)/.test(line) && !/[{[]\s*$/.test(line)) return;
     const inline = /^(\S+)\s*\[(.*)\]\s*$/.exec(line);
     if (inline) {
       blocks[inline[1]] = [inline[2]];
@@ -239,7 +251,8 @@ function dictLines(lines) {
   for (const line of lines ?? []) {
     const t = line.trim();
     const at = t.indexOf(":");
-    if (!t || at <= 0) continue;
+    // `@name(…)` lines are annotations of the next entry, such as a variable's description.
+    if (!t || at <= 0 || t.startsWith("@")) continue;
     out[t.slice(0, at).trim()] = t.slice(at + 1).trim();
   }
   return out;
@@ -257,14 +270,42 @@ function byName(a, b) {
   return x < y ? -1 : x > y ? 1 : a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Order within one level: by seq, items without seq last, then by name ignoring case. */
-function bySeqThenName(a, b) {
-  if (a.seq !== null && b.seq !== null && a.seq !== b.seq) return a.seq - b.seq;
-  if ((a.seq === null) !== (b.seq === null)) return a.seq === null ? 1 : -1;
-  return byName(a.name, b.name) || byName(a.path, b.path);
+/**
+ * Bruno's sortByNameThenSequence (bruno-common collection/index.ts): sort by name, then move each
+ * item with a whole seq above 0 to place seq; items on the same seq stay together.
+ */
+export function sortByNameThenSequence(items, seqOf = (n) => n.seq) {
+  const valid = (s) => Number.isInteger(s) && s > 0;
+  const sorted = [...items].sort((a, b) => (a.name && b.name && a.name.localeCompare(b.name)) || 0);
+  const out = sorted.filter((n) => !valid(seqOf(n)));
+  for (const n of sorted.filter((x) => valid(seqOf(x))).sort((a, b) => seqOf(a) - seqOf(b))) {
+    const at = seqOf(n) - 1;
+    const there = out[at];
+    const same = Array.isArray(there) ? seqOf(there[0]) === seqOf(n) : there !== undefined && seqOf(there) === seqOf(n);
+    if (same) out.splice(at, 1, [].concat(there, n));
+    else out.splice(at, 0, n);
+  }
+  return out.flat();
 }
 
-/** Folders from the Requests' directories. A directory with no Request under it is not a node. */
+/** A Request's seq as Bruno reads it: a missing or zero seq is 1. */
+export const requestSeq = (n) => n.seq || 1;
+
+/**
+ * Bruno's sidebar order within one folder: folders first by sortByNameThenSequence, then Requests
+ * by seq (a missing one counting as 1), ties by name ignoring case, then path.
+ */
+function sidebarOrder(children) {
+  const folders = sortByNameThenSequence(children.filter((c) => c.kind === "folder"));
+  const requests = children.filter((c) => c.kind !== "folder")
+    .sort((a, b) => requestSeq(a) - requestSeq(b) || byName(a.name, b.name) || byName(a.path, b.path));
+  return [...folders, ...requests];
+}
+
+/**
+ * Folders from the Requests' directories and from folder files. A directory with neither a
+ * Request under it nor a folder file is not a node.
+ */
 function buildTree(requests, folders) {
   const top = { children: [] };
   const dirs = { "": top };
@@ -277,9 +318,10 @@ function buildTree(requests, folders) {
     dirs[dir] = node;
     return node;
   };
+  for (const dir of Object.keys(folders).sort()) if (dir) ensure(dir);
   for (const r of requests) ensure(dirName(r.path)).children.push(r);
   const sort = (node) => {
-    node.children.sort(bySeqThenName);
+    node.children = sidebarOrder(node.children);
     node.children.forEach((c) => c.kind === "folder" && sort(c));
   };
   sort(top);
