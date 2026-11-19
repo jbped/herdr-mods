@@ -10,7 +10,7 @@ const SEP = 9;
 
 export const menuHeight = (items) => 12 + items.reduce((n, i) => n + (i.sep ? SEP : ITEM), 0);
 /** A picker's height: its title and options, at most 440px; a longer list scrolls. */
-export const pickerHeight = (options) => Math.min(440, 52 + options.reduce((n, o) => n + (o.warn ? 44 : ITEM), 0));
+export const pickerHeight = (options) => Math.min(440, 52 + options.reduce((n, o) => n + (o.warn ? 66 : ITEM), 0));
 const LINE = 40;
 const linesHeight = (d) => (d.lines?.length ? 12 + Math.min(5, d.lines.length) * LINE : 0);
 /** A dialog's height: title, detail, up to 5 lines (each may wrap once; more scroll), buttons. */
@@ -42,7 +42,9 @@ function choose(self, cx, i) {
   if (self.picker) {
     const o = self.picker.options[i];
     if (!usable(o)) return;
-    store.ask({ kind: self.picker.kind, key: self.picker.key, value: o.value ?? null });
+    // The Environment picker's "Manage Environments…" opens the editor. Only names and paths are sent.
+    if (o.action === "manage") store.ask({ kind: "editEnv", key: self.picker.key, path: null });
+    else store.ask({ kind: self.picker.kind, key: self.picker.key, value: o.value ?? null });
     return close();
   }
   const item = self.menu.items[i];
@@ -83,13 +85,16 @@ export function render(self) {
       .child(div().flex_1().min_w(0).truncate().font_semibold().child(p.title)).child(div().text_size(10.5).text_color(t.dim).child("Esc")));
     // Move to's folders are indented by depth, and a long list scrolls.
     return root.child(v_flex().id("brunr-picker-list").flex_1().min_h(0).overflow_y_scrollbar().children(p.options.map((o, i) => {
-      const on = (o.value ?? null) === (p.current ?? null);
+      const on = !o.action && (o.value ?? null) === (p.current ?? null);
       return v_flex().id(`opt-${i}`).w_full().flex_none().pl(8 + (o.depth ?? 0) * 14).pr(8).py(5).gap(2).rounded(5)
         .when(!o.disabled, (el) => el.cursor_pointer().hover((s) => s.bg(t.selected)).on_click((_e, cx) => choose(self, cx, i)))
         .when(i === self.at && !o.disabled, (el) => el.bg(t.selected))
         .child(h_flex().h(18).gap(8).items_center()
           .child(div().w(12).flex_none().text_color(t.accent).child(on ? "✓" : ""))
           .child(div().flex_1().min_w(0).truncate().text_color(o.disabled ? t.dim : o.value == null ? t.muted : t.foreground).when(Boolean(o.header), (el) => el.font_semibold()).child(o.label))
+          .when(Boolean(o.edit), (el) => el.child(div().id(`opt-edit-${i}`).flex_none().px(6).rounded(4).text_size(11).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+            .on_click((_e, cx) => { cx.stop_propagation(); store.ask({ kind: "editEnv", key: self.picker.key, path: o.edit }); close(); })
+            .child("Edit…")))
           .when(Boolean(o.warn), (el) => el.child(svg("mods/brunr/icons/warning.svg").size(12).flex_none().text_color(t.ansi3))))
         .when(Boolean(o.warn), (el) => el.child(div().pl(20).text_size(10.5).text_color(t.ansi3).child(o.warn)));
     })));

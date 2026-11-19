@@ -156,7 +156,8 @@ test("rowMenu: the entries and keys for each row, nothing to edit on another Mac
   assert.deepEqual(labels(rowMenu(R("products"), { up: true })), [
     "Run folder [r]", "New Request [n]", "New folder [Shift+N]", "Rename [F2]", "Move to… [m]", "Move up [Alt+Up]", "Move down [Alt+Down] (off)", "Delete [Del]",
   ]);
-  assert.deepEqual(labels(rowMenu(R(""))), ["Run Collection [r]", "New Request [n]", "New folder [Shift+N]"]);
+  assert.deepEqual(labels(rowMenu(R(""))), ["Run Collection [r]", "New Request [n]", "New folder [Shift+N]", "Edit Environments…", "Edit .env…"]);
+  assert.deepEqual(labels(rowMenu(R("", { machine: "box" }), { canRun: false })), ["Run Collection [r] (off)"]);
   assert.deepEqual(labels(rowMenu(R("Broken.yml"))), ["Open [o]", "Rename [F2]", "Move to… [m]", "Delete [Del]"]);
   assert.deepEqual(labels(rowMenu(R("products/Product Page.yml", { machine: "box" }), { canRun: false })), ["Open [o]", "Run [Enter] (off)"]);
   assert.ok(rowMenu(R("products"), { busy: true, up: true, down: true }).filter((i) => i.action !== "runMany").every((i) => i.disabled));

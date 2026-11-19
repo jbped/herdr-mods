@@ -6,13 +6,19 @@ import { splitLines } from "./lines.js";
 
 const lineOf = (message) => Number(/line (\d+)/.exec(message)?.[1] ?? 0) || null;
 
-/** `[{ line, message }]` sorted by line, empty for a clean file. `line` is 1-based, or null for the whole file. */
+/**
+ * `[{ line, message, broken? }]` sorted by line, empty for a clean file. `line` is 1-based, or null
+ * for the whole file. `broken` marks the warning that the text does not read as a Request at all.
+ */
 export function lintRequest(text, format) {
   const out = format === "yaml" ? yamlPitfalls(text) : [];
   const parseIssue = readIssue(text, format);
   if (parseIssue && !out.some((w) => w.line === parseIssue.line)) out.push(parseIssue);
   return out.sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 }
+
+/** True when saving these warnings anyway leaves a file the tree lists as broken and Runs leave out. */
+export const breaksRequest = (warnings) => (warnings ?? []).some((w) => w.broken);
 
 function readIssue(text, format) {
   try {
@@ -21,7 +27,7 @@ function readIssue(text, format) {
     return null;
   } catch (e) {
     const message = String(e.message).replace(/^line \d+: /, "");
-    return { line: lineOf(e.message), message: `This does not read as a Request: ${message}.` };
+    return { line: lineOf(e.message), message: `This does not read as a Request: ${message}.`, broken: true };
   }
 }
 

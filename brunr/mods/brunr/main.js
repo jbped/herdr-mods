@@ -4,6 +4,7 @@
 //   { picker } / { menu }       a popup over the panel or the pane (popup.js)
 //   { dialog }                  a save, Run or delete question (popup.js, saveflow.js)
 //   { form }                    New Request, New folder, Rename or Clone (forms.js, actions.js)
+//   { envEditor } / { dotenvEditor }  the Environment and .env editors, as windows (envedit.js, dotedit.js)
 //   { overlay } alone           opened by its key (mod.open): toggles the panel, closes
 //   none                        the panel (panel.js)
 // Config: brunr.json in the app home. Nothing from a Response is written to disk. Request files
@@ -22,6 +23,10 @@ import * as drafts from "./drafts.js";
 import * as saveflow from "./saveflow.js";
 import * as actions from "./actions.js";
 import * as forms from "./forms.js";
+import * as envedit from "./envedit.js";
+import * as envview from "./envview.js";
+import * as dotedit from "./dotedit.js";
+import * as dotview from "./dotview.js";
 import { findNode } from "./parser.js";
 import { planRun, plannedRequests } from "./plan.js";
 import { parseProgress, progressOf } from "./progress.js";
@@ -38,6 +43,8 @@ export default class Brunr extends View {
     if (p.menu) { this.mode = "menu"; return popup.init(this, cx); }
     if (p.dialog) { this.mode = "dialog"; return popup.init(this, cx); }
     if (p.form) { this.mode = "form"; return forms.init(this, cx); }
+    if (p.envEditor) { this.mode = "envEditor"; return envedit.init(this, cx); }
+    if (p.dotenvEditor) { this.mode = "dotenvEditor"; return dotedit.init(this, cx); }
     if (p.overlay != null) {
       // Opened by its key: a hidden panel hears no commands, and mod.open always runs.
       this.mode = "pass";
@@ -98,6 +105,8 @@ export default class Brunr extends View {
   async close() {
     if (this.mode === "response") return response.close(this);
     if (this.mode === "form") return forms.close(this);
+    if (this.mode === "envEditor") return envedit.close(this);
+    if (this.mode === "dotenvEditor") return dotedit.close(this);
     if (this.mode === "panel") store.setRequestRunner(null);
     for (const w of this.watches?.values() ?? []) w.cancel();
     this.watches?.clear();
@@ -107,6 +116,8 @@ export default class Brunr extends View {
     if (this.mode === "response") return response.render(this, cx);
     if (this.mode === "picker" || this.mode === "menu" || this.mode === "dialog") return popup.render(this, cx);
     if (this.mode === "form") return forms.render(this, cx);
+    if (this.mode === "envEditor") return envview.render(this, cx);
+    if (this.mode === "dotenvEditor") return dotview.render(this, cx);
     if (this.mode === "pass") return panel.empty();
     const a = store.takeAsk(this.seenAsk);
     if (a) { this.seenAsk = a.n; this.takeAsk(cx, a); }
@@ -315,10 +326,11 @@ export default class Brunr extends View {
     const entry = this.entry(row.ck), c = this.collection(row.ck);
     if (!entry || !c) return;
     const current = this.envOf(entry, c).name;
+    const local = entry.machine == null;
     const options = [{ label: "No Environment", value: null }, ...c.environments.map((env) => {
       const secrets = env.variables.filter((v) => v.secret).map((v) => v.name);
-      return { label: env.name, value: env.name, warn: tree.secretWarning(secrets) };
-    })];
+      return { label: env.name, value: env.name, warn: tree.secretWarning(secrets), edit: local ? env.path : undefined };
+    }), ...(local ? [{ label: "Manage Environments…", action: "manage" }] : [])];
     openOverlay({ mod: "brunr", kind: byKey ? "dialog" : "popup", width: 300, height: popup.pickerHeight(options), props: { picker: { kind: "env", key: entry.key, title: `Environment of ${c.name}`, options, current } } });
   }
 

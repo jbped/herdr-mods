@@ -37,3 +37,22 @@ export const watchFolder = () => { const p = new Promise(() => {}); p.cancel = (
 export const shared = (k) => state.shared[k];
 export const setShared = (k, v) => { state.shared[k] = v; return null; };
 export const hc = async () => ({ code: 0, stdout: "", stderr: "" });
+
+// What views use. Each call that could carry text out of a copy is recorded, so a test can check
+// that no value from an editor reached it.
+export const overlays = [];
+export const closed = [];
+export const notices = [];
+export const ran = [];
+export const props = () => state.props ?? null;
+export const openOverlay = (spec) => { overlays.push(spec); return `overlay-${overlays.length}`; };
+export const closeOverlay = (id) => { closed.push(id); return null; };
+export const notify = (n) => { notices.push(n); return `notice-${notices.length}`; };
+export const run = (name, args) => { ran.push({ name, args }); return null; };
+export const nextCommand = () => new Promise(() => {});
+export const theme = () => new Proxy({}, { get: (_t, k) => (typeof k === "string" ? "#808080" : undefined) });
+export const settings = () => ({});
+export const panes = () => [];
+export const focused = () => null;
+export const layout = () => null;
+export const checking = () => false;

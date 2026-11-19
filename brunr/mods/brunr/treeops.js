@@ -184,6 +184,9 @@ export function rowMenu(row, { canRun = true, up = false, down = false, busy = f
     return [item("Run folder", "runMany", "r", !canRun), ...edit("New Request", "newRequest", "n"), ...edit("New folder", "newFolder", "Shift+N"),
       ...edit("Rename", "rename", "F2"), ...order, ...edit("Delete", "delete", "Del")];
   }
-  if (row.kind === "collection") return [item("Run Collection", "runMany", "r", !canRun), ...edit("New Request", "newRequest", "n"), ...edit("New folder", "newFolder", "Shift+N")];
+  if (row.kind === "collection") {
+    return [item("Run Collection", "runMany", "r", !canRun), ...edit("New Request", "newRequest", "n"), ...edit("New folder", "newFolder", "Shift+N"),
+      ...(local ? [item("Edit Environments…", "editEnvs"), item("Edit .env…", "editDotenv")] : [])];
+  }
   return [];
 }

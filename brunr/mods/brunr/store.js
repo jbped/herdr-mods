@@ -28,6 +28,8 @@ export class Saved {
   /** The chosen Environment of a Collection: a name, null for "No Environment", undefined when never chosen. */
   env(collectionKey) { return collectionKey in this.envs ? this.envs[collectionKey] : undefined; }
   setEnv(collectionKey, name) { this.envs[collectionKey] = name ?? null; this.write("envs", this.envs); }
+  /** Forgets the choice: the Collection's default Environment applies again. */
+  clearEnv(collectionKey) { delete this.envs[collectionKey]; this.write("envs", this.envs); }
 
   /** The chosen Global environment of a workspace file, or null. */
   globalEnv(workspacePath) { return this.globals[workspacePath] ?? null; }

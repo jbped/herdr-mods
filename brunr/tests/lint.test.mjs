@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lintRequest } from "../mods/brunr/lint.js";
+import { lintRequest, breaksRequest } from "../mods/brunr/lint.js";
 import { readTree } from "./helpers.mjs";
 
 const lines = (warnings) => warnings.map((w) => w.line);
@@ -56,4 +56,12 @@ test("tab indentation, duplicate keys and values starting with @ or * are warnin
 test("block scalars and quoted values are not checked for pitfalls", () => {
   const t = yaml("  url: x\nruntime:\n  scripts:\n    - type: tests\n      code: |-\n        const a = { b: 1 };\n        @decorator: here\n\n        {{not yaml}}\ndocs: >\n  text: with colon\n");
   assert.deepEqual(lintRequest(t, "yaml"), []);
+});
+
+test("breaksRequest: only text that does not read as a Request at all", () => {
+  assert.equal(breaksRequest(lintRequest("info:\n  name: A\n", "yaml")), true);
+  assert.equal(breaksRequest(lintRequest("meta {\n  name: A\n}\n", "bru")), true);
+  assert.equal(breaksRequest(lintRequest("info:\n  name: F\n  type: folder\n", "yaml")), false);
+  assert.equal(breaksRequest(lintRequest(yaml("  url: x\n  x: a: b\n"), "yaml")), false);
+  assert.equal(breaksRequest([]), false);
 });

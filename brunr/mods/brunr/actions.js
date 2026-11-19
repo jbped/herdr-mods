@@ -14,6 +14,7 @@ import { parentOf, baseOf, stripExt, EXT } from "./collpaths.js";
 import { cloneName } from "./names.js";
 import { carryDraft, derivedFile, dropAction, moveTargets, rowMenu, stepIndex } from "./treeops.js";
 import { formHeight } from "./forms.js";
+import * as envedit from "./envedit.js";
 
 const EDITS = new Set(["newRequest", "newFolder", "rename", "clone", "delete", "moveUp", "moveDown", "moveTo"]);
 let counter = 0;
@@ -43,6 +44,7 @@ export function menu(self, row) {
 
 /** An edit act from a key or the menu. True when it was one. */
 export function act(self, cx, a) {
+  if (a.act === "editEnvs" || a.act === "editDotenv") return openEditor(self, a.act, a.row?.ck, null), true;
   if (!EDITS.has(a.act)) return false;
   const row = a.row;
   if (!row?.ck || row.machine != null) return true;
@@ -65,6 +67,8 @@ export function act(self, cx, a) {
 /** An ask for the tree: a form's values, or Move to's choice. True when it was one. */
 export function takeAsk(self, cx, a) {
   if (a.kind === "form") { submitForm(self, cx, a.flow); return true; }
+  if (a.kind === "editEnv") { openEditor(self, "editEnvs", a.key, a.path ?? null); return true; }
+  if (a.kind === "envGone") { envGone(self, cx, a); return true; }
   if (a.kind === "moveTo") {
     const row = self.rowFor(a.key);
     const at = String(a.value ?? "").indexOf("#");
@@ -124,6 +128,30 @@ function submitForm(self, cx, id) {
     args = { path: row.path, name: kind === "renameFile" ? null : v.name, fileName: fileName === ctx.initialFile ? null : fileName };
   }
   perform(self, cx, { op, ck: row.ck, args, form: id, open: kind === "newRequest" });
+}
+
+// ---- the Environment and .env editors --------------------------------------------------------------
+
+/** Opens an editor window for a Collection on this computer. Its props: the Machine, the root and a relative path. */
+function openEditor(self, which, ck, path) {
+  const entry = ck ? self.entry(ck) : null;
+  if (!entry) return;
+  if (entry.machine != null) { notify({ title: "Brunr", body: "Editing works on this computer only.", level: "info" }); return; }
+  if (which === "editEnvs") envedit.open(entry.root, path);
+  else openOverlay({ mod: "brunr", kind: "window", width: envedit.WIDTH, height: envedit.HEIGHT, props: { dotenvEditor: { machine: null, root: entry.root, path: ".env" } } });
+}
+
+/**
+ * An Environment was renamed (`newName`) or deleted (`newName` null): the Collection's remembered
+ * choice follows. (An ask's `to` is its address, so the new name is not called that.)
+ */
+function envGone(self, cx, a) {
+  if (self.saved.env(a.key) === a.name) {
+    if (a.newName) self.saved.setEnv(a.key, a.newName);
+    else self.saved.clearEnv(a.key);
+  }
+  const e = self.entry(a.key);
+  if (e) cx.spawn(async (cx) => { await self.loadOne(cx, e); });
 }
 
 // ---- Move to -------------------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import { notify, openOverlay } from "herdr";
 import * as drafts from "./drafts.js";
 import { saveDraft } from "./save.js";
 import { dialogHeight } from "./popup.js";
+import { breaksRequest } from "./lint.js";
 
 let counter = 0;
 
@@ -68,7 +69,7 @@ function next(o, cx, flow, options) {
     if (r.status === "lint") {
       ask(o, {
         title: `Save "${t.name}" with ${r.warnings.length === 1 ? "a warning" : `${r.warnings.length} warnings`}?`,
-        detail: "The Bruno CLI may not read this Request as you expect.",
+        detail: `The Bruno CLI may not read this Request as you expect.${breaksRequest(r.warnings) ? " Brunr will list it as a broken file and leave it out of Runs." : ""}`,
         lines: r.warnings.map((w) => ({ line: w.line, text: w.message })),
         choices: [{ id: "cancel", label: "Cancel" }, { id: "anyway", label: "Save anyway", primary: true }],
       }, (cx, choice) => (choice === "anyway" ? next(o, cx, flow, { force: true }) : stopped(o, cx, flow, t, "")));

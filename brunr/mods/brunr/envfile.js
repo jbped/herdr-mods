@@ -193,9 +193,12 @@ function writeBru(rows, previousText) {
   return out;
 }
 
-/** The rows with the secret `name` rewritten as a normal variable whose value is `{{process.env.NAME}}`. */
-export function moveSecretToDotenv(rows, name) {
-  return (rows ?? []).map((r) => (r.name === name ? { ...r, secret: false, value: `{{process.env.${name}}}` } : r));
+/**
+ * The rows with the secret `name` rewritten as a normal variable whose value is
+ * `{{process.env.<envName>}}`. `envName`: the name in `.env`, `name` by default.
+ */
+export function moveSecretToDotenv(rows, name, envName = name) {
+  return (rows ?? []).map((r) => (r.name === name ? { ...r, secret: false, value: `{{process.env.${envName}}}` } : r));
 }
 
 /** The `extends` reference of an Environment file when it is a single name, else null. */
