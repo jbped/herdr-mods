@@ -61,7 +61,7 @@ test("keys: move, fold, unfold, parent, run, run many, pickers, file, leave", ()
   assert.equal(keyAction("r", rows, folder).act, "runMany");
   assert.equal(keyAction("r", rows, 0).act, "runMany");
   assert.equal(keyAction("e", rows, req).act, "env");
-  assert.equal(keyAction("o", rows, req).act, "file");
+  assert.equal(keyAction("o", rows, req).act, "open");
   assert.equal(keyAction("o", rows, 0), null);
   assert.equal(keyAction("b", rows, req).act, "bruno");
   assert.deepEqual(keyAction("escape", rows, 0), { act: "leave" });

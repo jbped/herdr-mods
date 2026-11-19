@@ -6,7 +6,7 @@
   "overlay": { "kind": "popup", "at": "top", "offset": 0, "width": 1, "height": 1, "frame": "none" },
   "palette": [
     { "title": "Brunr: Toggle", "command": "layout.toggle", "args": { "id": "brunr" }, "about": "Show or hide the Brunr panel" },
-    { "title": "Brunr: Keys", "command": "mod.open", "args": { "name": "brunr" }, "about": "Show Brunr and give it the keyboard, or hide it when it is shown (ctrl-shift-u). Up/Down move, Enter runs or folds, r runs a folder, e Environment, o open file, Esc leaves" },
+    { "title": "Brunr: Keys", "command": "mod.open", "args": { "name": "brunr" }, "about": "Show Brunr and give it the keyboard, or hide it when it is shown (ctrl-shift-u). Up/Down move, Enter runs or folds, r runs a folder, e Environment, o opens a Request in the pane, Esc leaves" },
     { "title": "Brunr: Reload", "command": "brunr.reload", "about": "Read brunr.json, the Bruno workspace, every Collection and the Bruno CLI check again" }
   ]
 }

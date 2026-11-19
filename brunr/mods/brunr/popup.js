@@ -1,5 +1,5 @@
-// Popups over the panel: the Environment pickers and a row's menu. Each hands its choice to the
-// panel copy through store.ask, in memory, and closes.
+// Popups over the panel and the pane: the Environment pickers, a row's menu, the method menu and
+// the save dialogs. Each hands its choice to the copy that opened it through store.ask and closes.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { closeOverlay, props, theme } from "herdr";
@@ -10,6 +10,10 @@ const SEP = 9;
 
 export const menuHeight = (items) => 12 + items.reduce((n, i) => n + (i.sep ? SEP : ITEM), 0);
 export const pickerHeight = (options) => 52 + options.reduce((n, o) => n + (o.warn ? 44 : ITEM), 0);
+const LINE = 40;
+const linesHeight = (d) => (d.lines?.length ? 12 + Math.min(5, d.lines.length) * LINE : 0);
+/** A dialog's height: title, detail, up to 5 lines (each may wrap once; more scroll), buttons. */
+export const dialogHeight = (d) => 120 + (d.detail ? 44 : 0) + (d.lines?.length ? linesHeight(d) + 8 : 0);
 
 const usable = (i) => i && !i.sep && !i.disabled;
 
@@ -17,6 +21,8 @@ export function init(self) {
   const p = props();
   self.menu = p.menu ?? null;
   self.picker = p.picker ?? null;
+  self.dialog = p.dialog ?? null;
+  if (self.dialog) { self.at = Math.max(0, self.dialog.choices.findIndex((c) => c.primary)); self.handle.focus(); return; }
   const list = self.menu ? self.menu.items : self.picker.options;
   const current = self.picker ? list.findIndex((o) => o.value === (self.picker.current ?? null)) : -1;
   self.at = current >= 0 ? current : Math.max(0, list.findIndex(usable));
@@ -26,6 +32,12 @@ export function init(self) {
 const close = () => closeOverlay(props().overlay);
 
 function choose(self, cx, i) {
+  if (self.dialog) {
+    const c = self.dialog.choices[i];
+    if (!c) return;
+    store.ask({ to: self.dialog.to, kind: "dialog", flow: self.dialog.flow, choice: c.id });
+    return close();
+  }
   if (self.picker) {
     const o = self.picker.options[i];
     if (!o) return;
@@ -35,11 +47,13 @@ function choose(self, cx, i) {
   const item = self.menu.items[i];
   if (!usable(item)) return;
   if (item.copy != null) cx.write_to_clipboard(item.copy);
+  else if (item.ask) store.ask(item.ask);
   else store.ask({ kind: "act", key: self.menu.key, action: item.action });
   close();
 }
 
 function step(self, by) {
+  if (self.dialog) { const n = self.dialog.choices.length; self.at = (self.at + by + n) % n; return; }
   const list = self.menu ? self.menu.items : self.picker.options;
   let i = self.at;
   for (let n = 0; n < list.length; n++) {
@@ -54,13 +68,14 @@ export function render(self) {
   const root = v_flex().id("brunr-popup").track_focus(self.handle).size_full().p(5).bg(t.popover).text_color(t.foreground).text_size(12.5)
     .on_key_down((e, cx) => {
       if (e.key === "escape") close();
-      else if (e.key === "down") step(self, 1);
-      else if (e.key === "up") step(self, -1);
+      else if (e.key === "down" || (self.dialog && (e.key === "right" || e.key === "tab"))) step(self, 1);
+      else if (e.key === "up" || (self.dialog && e.key === "left")) step(self, -1);
       else if (e.key === "enter") choose(self, cx, self.at);
       else return;
       cx.stop_propagation();
       cx.notify();
     });
+  if (self.dialog) return dialogView(self, t, root);
   if (self.picker) {
     const p = self.picker;
     root.child(h_flex().h(34).px(8).items_center().border_b(1).border_color(t.border).mb(4)
@@ -86,4 +101,23 @@ export function render(self) {
       .child(div().flex_1().min_w(0).truncate().child(item.label))
       .when(Boolean(item.hint), (el) => el.child(div().flex_none().text_size(10.5).text_color(t.dim).child(item.hint)));
   }));
+}
+
+/** A question with buttons: a title, an optional detail, numbered lines (warnings) and the choices. */
+function dialogView(self, t, root) {
+  const d = self.dialog;
+  return root.p(14).gap(8)
+    .child(div().font_semibold().text_size(13.5).child(d.title))
+    .when(Boolean(d.detail), (el) => el.child(div().text_color(t.muted).child(d.detail)))
+    .when(Boolean(d.lines?.length), (el) => el.child(v_flex().id("brunr-dialog-lines").flex_none().h(linesHeight(d)).overflow_y_scrollbar().gap(2).px(8).py(6).rounded(5).bg(t.surface).text_size(11.5)
+      .children(d.lines.map((l, i) => h_flex().id(`dl-${i}`).flex_none().gap(8).items_start()
+        .child(div().w(52).flex_none().text_color(t.dim).child(l.line == null ? "file" : `line ${l.line}`))
+        .child(div().flex_1().min_w(0).text_color(t.ansi3).child(l.text))))))
+    .child(div().flex_1())
+    .child(h_flex().flex_none().gap(8).justify_end().children(d.choices.map((c, i) => div().id(`dc-${c.id}`).h(28).px(12).flex().items_center().rounded(5).cursor_pointer()
+      .border_1().border_color(i === self.at ? t.accent : t.border)
+      .when(Boolean(c.primary), (el) => el.bg(t.solid).text_color(t.solid_foreground))
+      .when(!c.primary, (el) => el.hover((s) => s.bg(t.hover)))
+      .on_click((_e, cx) => choose(self, cx, i))
+      .child(c.label))));
 }

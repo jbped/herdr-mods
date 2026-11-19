@@ -105,15 +105,37 @@ export function finishRun(tab, result) {
   changed();
 }
 
-/** Shows a Collection file in a tab's Response pane: `{ path, text, language }`. */
-export function showFile(tab, file) {
-  runs.set(tab, { kind: "file", file, n: Date.now() });
+// The Request each tab's pane shows: `{ key, ck, machine, root, path, format, name }`, in memory.
+// Its text lives in drafts.js.
+const shownRequests = new Map();
+
+/** Shows a Request on the Request side of a tab's pane. */
+export function showRequest(tab, req) {
+  shownRequests.set(tab, { ...req, n: Date.now() });
   changed();
 }
 
-// Asks from the mod's popups (picker, menu, the key's pass-through copy) to the panel copy. As in
-// Dockr, they go through shared state and the panel takes them when it draws: a popup closes at
-// once, and work started from its turn would belong to it. An ask holds names and row keys only.
+/** The Request a tab's pane shows, or null. */
+export const shownRequest = (tab) => shownRequests.get(tab) ?? null;
+
+// The panel copy's Run of one Request, for the pane's Run button. A hidden panel does not draw, so
+// it would take an ask only when shown again. The pane calls it with its own cx instead.
+let requestRunner = null;
+
+/** The panel sets `run(cx, key)`, or null when it closes. */
+export function setRequestRunner(run) { requestRunner = run; }
+
+/** Runs a Request through the panel copy. False when no panel copy is alive. */
+export function runRequest(cx, key) {
+  if (!requestRunner) return false;
+  requestRunner(cx, key);
+  return true;
+}
+
+// Asks from the mod's popups (picker, menu, dialogs, the key's pass-through copy) to the panel copy
+// or a pane copy. As in Dockr, they go through shared state and the copy takes them when it draws:
+// a popup closes at once, and work started from its turn would belong to it. An ask holds names,
+// row keys and choice ids only, never Request text. `to`: "panel" (the default) or "pane:<tab>".
 
 export const REQUEST = "brunr.request";
 
@@ -125,13 +147,14 @@ export function ask(req) {
 /** The latest ask's id, or null. */
 export const lastAsk = () => shared(REQUEST)?.n ?? null;
 
-/** The latest ask when it is newer than `seen`, else null. */
-export function takeAsk(seen) {
+/** The latest ask when it is newer than `seen`, else null. `to`: the copy asking ("panel" or "pane:<tab>"). */
+export function takeAsk(seen, to = "panel") {
   const req = shared(REQUEST);
-  return req?.n && req.n !== seen ? req : null;
+  return req?.n && req.n !== seen && (req.to ?? "panel") === to ? req : null;
 }
 
-/** Forgets a tab's Run, when its pane closes. */
+/** Forgets a tab's Run and shown Request, when its pane closes. Drafts stay. */
 export function clearView(tab) {
-  if (runs.delete(tab)) changed();
+  const a = runs.delete(tab), b = shownRequests.delete(tab);
+  if (a || b) changed();
 }

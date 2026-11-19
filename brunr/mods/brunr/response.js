@@ -1,18 +1,23 @@
-// The Response pane, laid out like Bruno's response area: a top line with the Request, status,
-// time and size, then Response, Headers, Timeline and Tests. A folder or Collection Run lists its
+// The Request and Response pane. The Request side (request.js) is beside the Response side when the
+// pane is at least 900px wide, above it when narrower. The Response side is laid out like Bruno's
+// response area: a top line with the Request, status, time and size, then Response, Headers,
+// Timeline and Tests. A folder or Collection Run lists its
 // Requests on the left, under the folders they belong to (runtree.js), with a toolbar that filters
 // and sorts them (runfilter.js). Its data lives only in memory (store.js) and goes when the pane
 // closes. The filters and sort stay in this pane copy across Runs.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, Input, InputState } from "gpui-base";
-import { focused, panes, props, settings, theme } from "herdr";
+import { focused, nextCommand, panes, props, settings, theme } from "herdr";
 import * as store from "./store.js";
+import * as request from "./request.js";
+import * as saveflow from "./saveflow.js";
 import { formatSize, formatTime } from "./report.js";
 import { methodBadge } from "./panel.js";
 import { runRows, unfoldFor } from "./runtree.js";
 import { activeFilter, filterRun, keepMethod, keepSelection, methodValues, nextValue, LABELS, NO_FILTER, RESULTS, SORTS, STATUSES } from "./runfilter.js";
 
 const MAX_TEXT = 400000;
+const WIDE = 900;
 const PARTS = ["response", "headers", "timeline", "tests"];
 const INDENT = 14;
 const mono = () => String(settings()?.font_family ?? settings()?.font ?? "JetBrains Mono");
@@ -30,11 +35,35 @@ export function init(self, cx) {
   self.filter = { ...NO_FILTER };  // the toolbar's filters and sort, kept across Runs
   self.filterInput = InputState.new({ placeholder: "Search" });
   self.filterInput.on("change", (_e, cx) => { setFilter(self, { text: self.filterInput.value() }); cx.notify(); });
+  self.seenAsk = store.lastAsk();
+  request.init(self, cx);
   sync(self);
-  cx.spawn(async (cx) => { for (;;) { await store.nextChange(); sync(self); cx.notify(); } });
+  cx.spawn(async (cx) => { for (;;) { await store.nextChange(); sync(self); request.syncRequest(self, cx); cx.notify(); } });
+  cx.spawn(async (cx) => {
+    for (;;) {
+      const c = await nextCommand();
+      // ctrl-s reaches every shown brunr copy as "save": only the pane holding the keyboard saves.
+      // A failing command must not end the loop, or the pane would hear no more keys.
+      try {
+        if (c === "save" && request.hasKeyboard(self)) request.save(self, cx);
+        else if (c === "focus") self.reqEditor?.focus();
+      } catch (e) { console.log(`brunr: ${c}: ${e?.message ?? e}`); }
+      cx.notify();
+    }
+  });
+}
+
+/** An ask for this pane copy: a dialog's answer or the method menu's choice. */
+function takeAsk(self, cx) {
+  const a = store.takeAsk(self.seenAsk, self.addr);
+  if (!a) return;
+  self.seenAsk = a.n;
+  if (a.kind === "dialog") saveflow.answer(self, cx, a);
+  else if (a.kind === "method" && a.key === self.req?.key) request.methodChosen(self, a.value);
 }
 
 export function close(self) {
+  request.close(self);
   self.editor?.release();
   self.editor = null;
   self.filterInput?.release();
@@ -52,7 +81,6 @@ function sync(self) {
   if (v.n === self.seen) return;
   self.seen = v.n;
   self.v = v;
-  if (v.kind === "file") { setEditor(self, { language: v.file.language, value: v.file.text }); return; }
   if (v.id !== self.runId) { self.runId = v.id; self.folded = new Set(); }
   const list = v.result?.responses ?? [];
   if (v.state === "done") self.filter = { ...self.filter, method: keepMethod(self.filter.method, list) };
@@ -111,18 +139,22 @@ export function statusColor(t, status) {
 
 const lines = (text) => String(text ?? "").replace(/\r\n/g, "\n").split("\n");
 
-export function render(self) {
+export function render(self, cx) {
   const t = theme();
-  const root = v_flex().id("brunr-response").size_full().min_h(0).overflow_hidden().bg(t.background).text_color(t.foreground).text_size(12.5)
+  takeAsk(self, cx);
+  const width = self.size?.width ?? 0;
+  const wide = width >= WIDE;
+  self.respWidth = wide ? width / 2 : width;
+  const root = (wide ? h_flex().items_stretch() : v_flex()).id("brunr-response").size_full().min_h(0).overflow_hidden().bg(t.background).text_color(t.foreground).text_size(12.5)
     .on_size_change((size, cx) => { self.size = size; cx.notify(); });
+  const side = v_flex().id("brunr-response-side").flex_1().min_w(0).min_h(0).overflow_hidden()
+    .when(wide, (el) => el.border_l(1).border_color(t.border)).when(!wide, (el) => el.border_t(1).border_color(t.border));
+  return root.child(request.render(self, t, !store.running())).child(responseSide(self, t, side));
+}
+
+function responseSide(self, t, root) {
   const v = self.v;
-  if (!v) return root.child(center(t, "No Response here yet. Run a Request from the Brunr panel."));
-  if (v.kind === "file") {
-    return root.child(h_flex().h(36).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
-      .child(div().text_size(11).text_color(t.dim).child("Read only"))
-      .child(div().flex_1().min_w(0).truncate().text_ellipsis_start().font_family(mono()).text_size(11.5).child(v.file.path)))
-      .child(self.editor ? Editor.new(self.editor).flex_1().min_h(0) : center(t, "Empty file"));
-  }
+  if (!v) return root.child(center(t, "No Response here yet. Run a Request from the Brunr panel or with Run."));
   const info = v.info;
   if (v.state === "running") {
     const waiting = v_flex().flex_1().items_center().justify_center().gap(10).text_color(t.muted)
@@ -191,7 +223,7 @@ const spinner = (t, size) => svg("mods/brunr/icons/spinner.svg").size(size).flex
 
 /** The list of Requests beside the views. Wide: on the left. Narrow: on top, so the views keep the pane's width. */
 function withList(self, t, rows, detail) {
-  const wide = (self.size?.width ?? 0) >= 720;
+  const wide = (self.respWidth ?? 0) >= 720;
   const listBox = v_flex().id("brunr-runlist").flex_none().min_h(0).overflow_y_scrollbar().p(4).border_color(t.border)
     .when(wide, (el) => el.w(240).border_r(1)).when(!wide, (el) => el.w_full().max_h(Math.min(180, 12 + rows.length * 28)).border_b(1));
   return (wide ? h_flex() : v_flex()).flex_1().min_h(0).items_stretch()

@@ -4,6 +4,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { settings, theme } from "herdr";
 import * as store from "./store.js";
+import * as drafts from "./drafts.js";
 import * as sources from "./sources.js";
 import { foldable, runMark, runsMany, secretWarning } from "./tree.js";
 
@@ -133,6 +134,7 @@ function rowView(self, t, r, i) {
     el.child(svg(ICON("folder")).size(13).flex_none().text_color(t.muted)).child(div().flex_1().min_w(0).truncate().child(r.name));
   } else {
     el.child(div().w(14).flex_none()).child(methodBadge(t, r.method)).child(div().flex_1().min_w(0).truncate().child(r.name));
+    if (drafts.has(r.key)) el.child(div().size(7).flex_none().rounded(4).bg(t.ansi3).tooltip("Unsaved changes"));
   }
   if (mark.count) el.child(div().flex_none().text_size(10.5).text_color(t.muted).child(mark.count));
   if (mark.spinner) return el.child(div().size(18).flex_none().flex().items_center().justify_center().child(svg(ICON("spinner")).size(12).text_color(t.working).spin(900)));
@@ -162,7 +164,7 @@ function footer(self, t, r) {
   if (now) box.child(h_flex().gap(6).items_center().text_color(t.muted)
     .child(svg(ICON("spinner")).size(11).flex_none().text_color(t.working).spin(900))
     .child(div().flex_1().min_w(0).truncate().child(`Running: ${now.name}`)));
-  if (!r || r.kind === "machine") return box.child(dim("Click selects. Double-click or Enter runs a Request."));
+  if (!r || r.kind === "machine") return box.child(dim("Click shows a Request in the pane. o opens it. Double-click or Enter runs it."));
   const coll = r.ck ? self.rows.find((x) => x.key === r.ck) : null;
   if (r.kind === "request") {
     box.child(h_flex().gap(6).items_start().child(methodBadge(t, r.method, 40)).child(div().flex_1().min_w(0).font_family(mono()).text_size(11).text_color(t.foreground).child(r.url || "(no URL)")));

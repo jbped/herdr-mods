@@ -1,10 +1,12 @@
 // Brunr: Bruno Collections in a side panel, run with the Bruno CLI, Responses in a pane.
 // One mod draws every part. The copy is chosen by its props:
-//   { view: "response", tab }  the Response pane of a tab (response.js)
-//   { picker } / { menu }       a popup over the panel (popup.js)
+//   { view: "response", tab }  the Request and Response pane of a tab (response.js, request.js)
+//   { picker } / { menu }       a popup over the panel or the pane (popup.js)
+//   { dialog }                  a save or Run question (popup.js, saveflow.js)
 //   { overlay } alone           opened by its key (mod.open): toggles the panel, closes
 //   none                        the panel (panel.js)
-// Config: brunr.json in the app home. Nothing from a Response is written to disk.
+// Config: brunr.json in the app home. Nothing from a Response is written to disk. Request files
+// are changed only through effects.js, and Drafts live in memory (drafts.js).
 import { View } from "gpui-kit";
 import { ScrollHandle } from "gpui-base";
 import { checking, closeOverlay, focused, layout, nextCommand, notify, openOverlay, panes, props, run } from "herdr";
@@ -15,6 +17,9 @@ import * as tree from "./tree.js";
 import * as panel from "./panel.js";
 import * as response from "./response.js";
 import * as popup from "./popup.js";
+import * as drafts from "./drafts.js";
+import * as saveflow from "./saveflow.js";
+import { findNode } from "./parser.js";
 import { planRun, plannedRequests } from "./plan.js";
 import { parseProgress, progressOf } from "./progress.js";
 
@@ -28,6 +33,7 @@ export default class Brunr extends View {
     if (p.view === "response") { this.mode = "response"; return response.init(this, cx); }
     if (p.picker) { this.mode = "picker"; return popup.init(this, cx); }
     if (p.menu) { this.mode = "menu"; return popup.init(this, cx); }
+    if (p.dialog) { this.mode = "dialog"; return popup.init(this, cx); }
     if (p.overlay != null) {
       // Opened by its key: a hidden panel hears no commands, and mod.open always runs.
       this.mode = "pass";
@@ -42,6 +48,9 @@ export default class Brunr extends View {
       return;
     }
     this.mode = "panel";
+    this.addr = "panel";
+    this.question = null;         // the open dialog's question (saveflow.js)
+    this.saving = null;           // the save in progress (saveflow.js)
     this.saved = new store.Saved(globalThis.localStorage);
     this.found = null;            // discover()'s result
     this.loaded = new Map();      // Collection key -> { collection?, error?, loading? }
@@ -59,6 +68,8 @@ export default class Brunr extends View {
     this.loadingAll = true;
     this.seenAsk = store.lastAsk();
     if (checking()) return;
+    // The pane's Run: the pane has saved its Draft first, by the same save path.
+    store.setRequestRunner((cx, key) => this.runKey(cx, key, false, true));
 
     cx.spawn(async (cx) => { await machine.clearLocalReports().catch(() => {}); await this.reload(cx); });
     cx.spawn(async (cx) => {
@@ -72,18 +83,20 @@ export default class Brunr extends View {
       }
     });
     cx.spawn(async (cx) => { for (;;) { await store.nextChange(); cx.notify(); } });
+    cx.spawn(async (cx) => { for (;;) { await drafts.nextChange(); cx.notify(); } });
     cx.timer.every(REMOTE_REFRESH, (cx) => this.refreshRemote(cx));
   }
 
   async close() {
     if (this.mode === "response") return response.close(this);
+    if (this.mode === "panel") store.setRequestRunner(null);
     for (const w of this.watches?.values() ?? []) w.cancel();
     this.watches?.clear();
   }
 
   render(cx) {
     if (this.mode === "response") return response.render(this, cx);
-    if (this.mode === "picker" || this.mode === "menu") return popup.render(this, cx);
+    if (this.mode === "picker" || this.mode === "menu" || this.mode === "dialog") return popup.render(this, cx);
     if (this.mode === "pass") return panel.empty();
     const a = store.takeAsk(this.seenAsk);
     if (a) { this.seenAsk = a.n; this.takeAsk(cx, a); }
@@ -109,7 +122,9 @@ export default class Brunr extends View {
   async loadOne(cx, entry) {
     const prev = this.loaded.get(entry.key) ?? {};
     this.loaded.set(entry.key, { ...prev, loading: true });
-    const r = await sources.loadCollection(entry);
+    const { files, ...r } = await sources.loadCollection(entry);
+    // The texts just read tell the Drafts whether a shown Request changed on disk. They are not kept.
+    if (files) drafts.collectionRead(entry.key, files);
     this.loaded.set(entry.key, { ...r, loading: false });
     cx.notify();
   }
@@ -242,7 +257,7 @@ export default class Brunr extends View {
     else if (a.act === "run" || a.act === "runMany") this.runKey(cx, a.row.key, false);
     else if (a.act === "env") this.openEnvPicker(a.row, true);
     else if (a.act === "global") this.openGlobalPicker(a.row, true);
-    else if (a.act === "file") this.openFile(cx, a.row);
+    else if (a.act === "open") this.openRequest(a.row);
     else if (a.act === "bruno") this.openBruno(cx);
   }
 
@@ -251,10 +266,11 @@ export default class Brunr extends View {
     if (a.kind === "hide") return this.kb ? this.hidePanel() : this.hideOnly();
     if (a.kind === "env") return this.saved.setEnv(a.key, a.value);
     if (a.kind === "global") return this.saved.setGlobalEnv(a.key, a.value);
+    if (a.kind === "dialog") return saveflow.answer(this, cx, a);
     if (a.kind === "act") {
-      const row = this.buildRows().find((r) => r.key === a.key);
+      const row = this.rowFor(a.key);
       if (!row) return;
-      this.sel = row.key;
+      if (this.rows.some((r) => r.key === row.key)) this.sel = row.key;
       if (a.action === "reload") return void cx.spawn(async (cx) => { await this.reload(cx); });
       this.act(cx, { act: a.action, row });
     }
@@ -265,6 +281,11 @@ export default class Brunr extends View {
   clickRow(cx, row, e) {
     this.sel = row.key;
     this.gone = false;
+    if (row.kind === "request" && e?.click_count !== 2) {
+      // A click shows the Request in this tab's pane when there is one. It never opens a pane.
+      const tab = this.paneTab();
+      if (tab) store.showRequest(tab, this.requestInfo(row));
+    }
     if (e?.click_count === 2 && row.kind === "request") this.runKey(cx, row.key, false);
     else if (e?.click_count === 2 && tree.foldable(row)) this.saved.setOpen(row.key, !row.open);
     else if (row.kind === "global") this.openGlobalPicker(row);
@@ -277,7 +298,7 @@ export default class Brunr extends View {
     this.sel = row.key;
     const items = [];
     const local = row.machine == null;
-    if (row.kind === "request") items.push({ label: "Run", action: "run", hint: "Enter", disabled: !this.canRun(row) }, { label: "Open file", action: "file", hint: "o" });
+    if (row.kind === "request") items.push({ label: "Run", action: "run", hint: "Enter", disabled: !this.canRun(row) }, { label: "Open", action: "open", hint: "o" });
     if (tree.runsMany(row)) items.push({ label: row.kind === "folder" ? "Run folder" : "Run Collection", action: "runMany", hint: "r", disabled: !this.canRun(row) });
     if (row.ck) items.push({ label: "Environment", action: "env", hint: "e" });
     if (row.kind === "global") items.push({ label: "Global environment", action: "global", hint: "e" });
@@ -308,8 +329,8 @@ export default class Brunr extends View {
   // Runs
 
   /** Runs the row: a Request at once, a folder or Collection after a confirmation. */
-  runKey(cx, key, confirmed) {
-    const row = this.buildRows().find((r) => r.key === key);
+  runKey(cx, key, confirmed, saved = false) {
+    const row = this.rowFor(key);
     if (!row || !row.ck || !this.canRun(row)) return;
     const entry = this.entry(row.ck), c = this.collection(row.ck);
     if (!entry || !c) return;
@@ -317,6 +338,12 @@ export default class Brunr extends View {
     const environment = this.envOf(entry, c).name;
     const ws = entry.workspace && this.found?.workspace?.path === entry.workspace ? this.found.workspace : null;
     const globalEnvironment = ws ? this.globalOf(ws.path) : null;
+    // A Run uses what the pane shows: a Request's Draft is saved first, by the same save path.
+    if (target.kind === "request" && !saved && drafts.has(row.key)) {
+      saveflow.saveAll(this, cx, [this.requestInfo(row)], (cx, ok) => { if (ok) this.runKey(cx, key, confirmed, true); });
+      return;
+    }
+    if (target.kind !== "request" && !confirmed && this.askDrafts(cx, row, entry, c, target, environment)) return;
     if (target.kind !== "request" && !confirmed) {
       const plan = planRun({ collection: c, target, environment, reportPath: "" });
       if (!plan.count) { notify({ title: "Nothing to run", body: `"${row.name}" has no Requests.`, level: "info" }); return; }
@@ -330,6 +357,7 @@ export default class Brunr extends View {
     }
     const tab = this.responseTab();
     if (!tab) { notify({ title: "Brunr", body: "No tab to show the Response in.", level: "warning" }); return; }
+    if (target.kind === "request") store.showRequest(tab, this.requestInfo(row));
     // The Requests the CLI is expected to send, in its order, so the progress can name the next one.
     // A single Request Run looks as it always did, so it has no progress.
     const many = target.kind !== "request";
@@ -357,18 +385,55 @@ export default class Brunr extends View {
     return focused()?.tab ?? null;
   }
 
-  openFile(cx, row) {
-    const entry = this.entry(row.ck);
-    if (!entry || row.kind !== "request") return;
-    const path = `${entry.root}/${row.path}`;
-    cx.spawn(async (cx) => {
-      const text = await machine.readText(entry.machine, path);
-      if (text == null) { notify({ title: "Cannot open the file", body: path, level: "warning" }); return; }
-      const tab = this.responseTab();
-      if (!tab) return;
-      store.showFile(tab, { path, text, language: /\.ya?ml$/i.test(path) ? "yaml" : "text", machine: entry.machine ?? null });
-      cx.notify();
+  /**
+   * A folder or Collection Run with Drafts in it asks first: save them and run, run without saving,
+   * or cancel. True when it asked.
+   */
+  askDrafts(cx, row, entry, c, target, environment) {
+    const withDrafts = plannedRequests(c, target).map((n) => ({ ...n, key: `${entry.key}#${n.path}` })).filter((n) => drafts.has(n.key));
+    if (!withDrafts.length) return false;
+    const n = withDrafts.length;
+    const count = planRun({ collection: c, target, environment, reportPath: "" }).count;
+    saveflow.ask(this, {
+      title: `${n} ${n === 1 ? "Request has" : "Requests have"} unsaved changes.`,
+      detail: `Save them and run, run without saving, or cancel. ${tree.confirmText(count, row.name, environment)}`,
+      choices: [{ id: "cancel", label: "Cancel" }, { id: "run", label: "Run without saving" }, { id: "save", label: "Save and run", primary: true }],
+    }, (cx, choice) => {
+      if (choice === "run") this.runKey(cx, row.key, true);
+      else if (choice === "save") saveflow.saveAll(this, cx, withDrafts.map((r) => this.requestInfo({ ...r, ck: entry.key })), (cx, ok) => { if (ok) this.runKey(cx, row.key, true); });
     });
+    return true;
+  }
+
+  /** A row by key: the visible one, or one built from the Collection for a Request in a folded folder. */
+  rowFor(key) {
+    const row = this.buildRows().find((r) => r.key === key);
+    if (row) return row;
+    const entry = this.found?.entries.find((e) => key.startsWith(`${e.key}#`));
+    const c = entry && this.collection(entry.key);
+    const n = c && findNode(c, key.slice(entry.key.length + 1));
+    if (!n) return null;
+    const base = { key, kind: n.kind, ck: entry.key, machine: entry.machine ?? null, path: n.path, name: n.name, depth: 0, parent: null };
+    return n.kind === "folder" ? { ...base, open: false, count: 0 } : { ...base, method: n.method, url: n.url, type: n.type };
+  }
+
+  /** What the pane needs to show a Request: `{ key, ck, machine, root, path, format, name }`. */
+  requestInfo(row) {
+    const entry = this.entry(row.ck), c = this.collection(row.ck);
+    return { key: row.key, ck: row.ck, machine: entry?.machine ?? null, root: entry?.root ?? "", path: row.path, format: c?.format ?? "yaml", name: row.name };
+  }
+
+  /** The focused tab when it has a Brunr pane, else null. */
+  paneTab() {
+    const tab = focused()?.tab ?? null;
+    return tab && panes().some((p) => p.mod === "brunr" && p.tab === tab) ? tab : null;
+  }
+
+  /** "Open": shows the Request in the pane, opening the pane when the tab has none. */
+  openRequest(row) {
+    if (row?.kind !== "request" || !this.entry(row.ck)) return;
+    const tab = this.responseTab();
+    if (tab) store.showRequest(tab, this.requestInfo(row));
   }
 
   openBruno(cx) {

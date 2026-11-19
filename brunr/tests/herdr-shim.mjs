@@ -1,11 +1,12 @@
 // Stands in for the "herdr" module under Node. Programs really run, on this computer: `on` is
 // recorded and otherwise ignored, so another Machine's scripts run here through `sh`.
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 
 export const state = { appHome: "/nonexistent", home: "/nonexistent", platform: "linux", shared: {}, path: null, maxTimeout: Infinity };
 export const calls = [];
 export const reads = [];
+export const writes = [];
 
 /** Like Herdr's exec: resolves with the exit code, rejects when the program cannot start or times out. */
 export const exec = (cmd, args = [], opts = {}) => {
@@ -20,6 +21,15 @@ export const exec = (cmd, args = [], opts = {}) => {
 };
 
 export const readTextFile = (path, opts = {}) => { reads.push({ path, on: opts.on ?? null }); return readFile(path, "utf8").catch(() => null); };
+/** Like Herdr's writeTextFile: rejects when the file's text is not `expected` (null: when it exists). */
+export const writeTextFile = async (path, text, expected) => {
+  writes.push({ path, text, expected });
+  if (state.failWrite) throw new Error(state.failWrite);
+  const current = await readFile(path, "utf8").catch(() => null);
+  if (expected === null ? current !== null : current !== expected) throw new Error("stale snapshot");
+  await writeFile(path, text);
+  return null;
+};
 export const appHome = () => state.appHome;
 export const home = () => state.home;
 export const window = () => ({ platform: state.platform });

@@ -3,6 +3,7 @@
     "ctrl-shift-u": "mod.open:brunr"
   },
   "mod:brunr": {
-    "ctrl-shift-u": "brunr.hide"
+    "ctrl-shift-u": "brunr.hide",
+    "ctrl-s": "brunr.save"
   }
 }

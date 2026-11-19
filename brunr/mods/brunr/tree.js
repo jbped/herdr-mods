@@ -61,7 +61,7 @@ export const runsMany = foldable;
 /**
  * What a key does on the selected row: `{ act, ... }` or null.
  * Acts: move (`to`, an index), fold (`key`, `open`), run (`row`), runMany (`row`), env (`row`),
- * global (`row`), file (`row`), bruno (`row`), leave.
+ * global (`row`), open (`row`: show it in the pane), bruno (`row`), leave.
  */
 export function keyAction(keystroke, rows, at) {
   const row = rows[at] ?? null;
@@ -95,7 +95,7 @@ export function keyAction(keystroke, rows, at) {
     case "e":
       if (row.kind === "global") return { act: "global", row };
       return row.ck ? { act: "env", row } : null;
-    case "o": return row.kind === "request" ? { act: "file", row } : null;
+    case "o": return row.kind === "request" ? { act: "open", row } : null;
     case "b": return row.ck && row.machine == null ? { act: "bruno", row } : null;
   }
   return null;

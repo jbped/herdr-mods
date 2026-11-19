@@ -110,13 +110,16 @@ function absolute(path, dir) {
   return `${dir}/${p.replace(/^\.\//, "")}`;
 }
 
-/** One Collection's tree: `parseCollection`'s result, or `{ error }` when its folder cannot be read. */
+/**
+ * One Collection: `{ collection, files }`, `collection` being `parseCollection`'s result and `files`
+ * the texts it was parsed from, or `{ error }` when its folder cannot be read.
+ */
 export async function loadCollection(entry) {
   try {
     const files = await machine.readCollection(entry.machine, entry.root);
     const collection = parseCollection({ root: entry.root, files });
     if (!collection.format) return { error: "Not a Bruno Collection: no opencollection.yml or bruno.json" };
-    return { collection };
+    return { collection, files };
   } catch (e) {
     return { error: `Cannot read the Collection: ${e?.message ?? e}` };
   }
