@@ -154,6 +154,14 @@ export const form = (id) => forms.get(id) ?? null;
 
 export function dropForm(id) { if (forms.delete(id)) changed(); }
 
+// The Environment and .env editor windows that are open, in memory only. While one is open, ctrl-s
+// ("brunr.save", which reaches every shown brunr copy) saves that editor and not the pane's Draft.
+const editorWindows = new Set();
+
+export function editorOpened(window) { editorWindows.add(window); }
+export function editorClosed(window) { editorWindows.delete(window); }
+export const editorOpen = () => editorWindows.size > 0;
+
 // The panel copy's Run of one Request, for the pane's Run button. A hidden panel does not draw, so
 // it would take an ask only when shown again. The pane calls it with its own cx instead.
 let requestRunner = null;

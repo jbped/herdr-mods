@@ -43,8 +43,8 @@ export default class Brunr extends View {
     if (p.menu) { this.mode = "menu"; return popup.init(this, cx); }
     if (p.dialog) { this.mode = "dialog"; return popup.init(this, cx); }
     if (p.form) { this.mode = "form"; return forms.init(this, cx); }
-    if (p.envEditor) { this.mode = "envEditor"; return envedit.init(this, cx); }
-    if (p.dotenvEditor) { this.mode = "dotenvEditor"; return dotedit.init(this, cx); }
+    if (p.envEditor) { this.mode = "envEditor"; store.editorOpened(this); return envedit.init(this, cx); }
+    if (p.dotenvEditor) { this.mode = "dotenvEditor"; store.editorOpened(this); return dotedit.init(this, cx); }
     if (p.overlay != null) {
       // Opened by its key: a hidden panel hears no commands, and mod.open always runs.
       this.mode = "pass";
@@ -105,8 +105,8 @@ export default class Brunr extends View {
   async close() {
     if (this.mode === "response") return response.close(this);
     if (this.mode === "form") return forms.close(this);
-    if (this.mode === "envEditor") return envedit.close(this);
-    if (this.mode === "dotenvEditor") return dotedit.close(this);
+    if (this.mode === "envEditor") { store.editorClosed(this); return envedit.close(this); }
+    if (this.mode === "dotenvEditor") { store.editorClosed(this); return dotedit.close(this); }
     if (this.mode === "panel") store.setRequestRunner(null);
     for (const w of this.watches?.values() ?? []) w.cancel();
     this.watches?.clear();

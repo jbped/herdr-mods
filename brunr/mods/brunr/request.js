@@ -174,6 +174,9 @@ function goToLine(self, line) {
   try { self.reqEditor.set_selected_range({ start: at, end: at }); self.reqEditor.focus(); } catch {}
 }
 
+/** Whether the pane saves its Draft on a command: only "save", with no editor window open, while it holds the keyboard. */
+export const paneSaves = (command, editorOpen, keyboard) => command === "save" && !editorOpen && keyboard;
+
 /** True while the pane copy holds the keyboard: its pane is the focused one. */
 export function hasKeyboard(self) {
   return panes().some((p) => p.mod === "brunr" && p.tab === self.tab && p.focused);

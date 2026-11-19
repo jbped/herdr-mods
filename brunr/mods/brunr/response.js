@@ -42,10 +42,11 @@ export function init(self, cx) {
   cx.spawn(async (cx) => {
     for (;;) {
       const c = await nextCommand();
-      // ctrl-s reaches every shown brunr copy as "save": only the pane holding the keyboard saves.
+      // ctrl-s reaches every shown brunr copy as "save": only the pane holding the keyboard saves, and
+      // not while an Environment or .env editor window is open, which saves itself.
       // A failing command must not end the loop, or the pane would hear no more keys.
       try {
-        if (c === "save" && request.hasKeyboard(self)) request.save(self, cx);
+        if (request.paneSaves(c, store.editorOpen(), request.hasKeyboard(self))) request.save(self, cx);
         else if (c === "focus") self.reqEditor?.focus();
       } catch (e) { console.log(`brunr: ${c}: ${e?.message ?? e}`); }
       cx.notify();

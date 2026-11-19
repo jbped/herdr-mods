@@ -6,7 +6,7 @@ Mods for the [Herdr](https://herdr.dev) desktop app. Each folder is one mod, and
 | | |
 |---|---|
 | [<img src="agents-plus/preview.png" width="360" alt="agents-plus">](agents-plus/) | **[agents-plus](agents-plus/)**<br>Herdr's Agents list with Claude Code's in-process subagents nested under the session that started them. |
-| [<img src="brunr/preview.png" width="360" alt="Brunr">](brunr/) | **[Brunr](brunr/)**<br>A side panel that lists your Bruno Collections as a tree, runs their Requests with the Bruno CLI and shows each Response in a pane. |
+| [<img src="brunr/preview.png" width="360" alt="Brunr">](brunr/) | **[Brunr](brunr/)**<br>A side panel that lists your Bruno Collections as a tree, edits and runs their Requests with the Bruno CLI and shows each Response in a pane. |
 | [<img src="dockr/preview.png" width="360" alt="Dockr">](dockr/) | **[Dockr](dockr/)**<br>A dialog that lists Docker containers and sets which checkout each compose service runs from: the main checkout or a git worktree. |
 | [<img src="gitr/preview.png" width="360" alt="Gitr">](gitr/) | **[Gitr](gitr/)**<br>One Repo at a glance: its Main checkout, Worktrees and Branches, the spaces on each, and one key to go to, start or clean up work. |
 | [<img src="notifyr/preview.png" width="360" alt="Notifyr">](notifyr/) | **[Notifyr](notifyr/)**<br>A log of every notification Herdr shows, with a bell that counts the new ones and a list to read them later. |
