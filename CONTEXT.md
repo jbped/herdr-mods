@@ -197,6 +197,27 @@ _Avoid_: PR check, code review session
 Starting a new Herdr space from a Ticket, with a worktree for each repo the Ticket touches and the Ticket as the agent's opening prompt.
 _Avoid_: kick off, spawn
 
+### Moddr
+
+**Moddr**:
+The mod that lists the user's own mods, the Mod source each was installed from, and whether it has changed since.
+
+**Tracked mod**:
+A mod folder the user gave a Mod source. Herdr's shipped mods are never tracked.
+_Avoid_: watched mod, followed mod
+
+**Mod source**:
+The GitHub folder a Tracked mod was installed from: owner, repo, branch and the path of the mod's own folder.
+_Avoid_: upstream, origin, remote
+
+**Installed version**:
+The newest upstream commit touching the Mod source whose files equal the local mod files.
+_Avoid_: baseline, installed commit
+
+**Update**:
+A commit that touched the Mod source after the Installed version.
+_Avoid_: new version, release
+
 ### Tiling
 
 **Dwindle**:

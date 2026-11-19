@@ -1,0 +1,19 @@
+{
+  "place": "none",
+  "title": "Moddr",
+  "overlay": {
+    "kind": "dialog",
+    "width": 560,
+    "height": 0.7
+  },
+  "palette": [
+    {
+      "title": "Moddr: Open",
+      "command": "mod.open",
+      "args": {
+        "name": "moddr"
+      },
+      "about": "List your mods and whether their GitHub source has updates (ctrl-shift-g). Again closes it"
+    }
+  ]
+}
