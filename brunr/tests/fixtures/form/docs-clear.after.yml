@@ -1,0 +1,113 @@
+info:
+  name: Full Order
+  type: http
+  seq: 3
+  tags:
+    - smoke
+  description: Every tab.
+
+http:
+  method: POST
+  url: "{{baseUrl}}/orders/:shop?verbose=1&lang={{lang}}"
+  headers:
+    - name: content-type
+      value: application/json
+    - name: x-trace
+      value: full-1
+      description: trace id
+    - name: x-off
+      value: no
+      disabled: true
+  params:
+    - name: verbose
+      value: "1"
+      type: query
+    - name: lang
+      value: "{{lang}}"
+      type: query
+      description: language
+    - name: debug
+      value: "true"
+      type: query
+      disabled: true
+    - name: shop
+      value: "7"
+      type: path
+  body:
+    type: json
+    data: |-
+      {
+        "productId": 1,
+        "quantity": 2
+      }
+  auth:
+    type: bearer
+    token: "{{token}}"
+
+runtime:
+  variables:
+    - name: orderSource
+      value: form
+    - name: unused
+      value: "x: y"
+      description: kept off
+      disabled: true
+  scripts:
+    - type: before-request
+      code: req.setHeader("x-pre", "1");
+    - type: after-response
+      code: |-
+        bru.setVar("seen", true);
+        // done
+    - type: tests
+      code: |-
+        test("created", () => {
+          expect(res.status).to.equal(201);
+        });
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "201"
+    - expression: res.body.id
+      operator: isNumber
+    - expression: res.body.items
+      operator: isEmpty
+      disabled: true
+  actions:
+    - type: set-variable
+      phase: after-response
+      selector:
+        expression: res.body.id
+        method: jsonq
+      variable:
+        name: orderId
+        scope: runtime
+    - type: set-variable
+      phase: after-response
+      selector:
+        expression: res.body.note
+        method: jsonq
+      variable:
+        name: localNote
+        scope: request
+      disabled: true
+
+settings:
+  encodeUrl: false
+  timeout: 3000
+  followRedirects: false
+  maxRedirects: 2
+  forwardAuthorizationHeader: false
+  omitHeaders:
+    - user-agent
+
+examples:
+  - name: Created
+    request:
+      url: "{{baseUrl}}/orders"
+      method: POST
+    response:
+      status: 201
+      body:
+        type: json
+        data: '{"id":7}'

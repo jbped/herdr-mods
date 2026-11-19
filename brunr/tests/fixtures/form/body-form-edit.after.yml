@@ -1,0 +1,25 @@
+info:
+  name: Form Order
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/products"
+  body:
+    type: form-urlencoded
+    data:
+      - name: a
+        value: "11"
+        description: first
+      - name: c
+        value: "3"
+      - name: d
+        value: "4"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: true
