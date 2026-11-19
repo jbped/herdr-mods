@@ -21,11 +21,13 @@ export function abs(collection, rel) {
 
 export const folderFile = (format, dir) => join(dir, `folder${EXT[format]}`);
 
-/** The child nodes of a folder path, or of the Collection for "". null when there is no such folder. */
+/**
+ * The child nodes of a folder path, or of the Collection for "". null when there is no such folder.
+ * A Request file that does not parse is left out: Bruno neither counts nor numbers it.
+ */
 export function childrenOf(collection, dir) {
-  if (!dir) return collection.children ?? [];
-  const node = findNode(collection, dir);
-  return node?.kind === "folder" ? node.children : null;
+  const list = !dir ? collection.children ?? [] : findNode(collection, dir)?.kind === "folder" ? findNode(collection, dir).children : null;
+  return list && list.filter((n) => !n.broken);
 }
 
 /** A node's seq as Bruno holds it: a Request without one is 1, a folder without one has none. */

@@ -14,7 +14,7 @@ const METHOD_TYPES = new Set(["http", "graphql"]);
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A top-level `key:` block: `{ head, start, end }` line indexes, or null. */
-function yamlSection(lines, key) {
+export function yamlSection(lines, key) {
   const re = new RegExp(`^${esc(key)}:\\s*(#.*)?$`);
   const head = lines.findIndex((l) => re.test(bare(l)));
   if (head < 0) return null;
@@ -23,7 +23,7 @@ function yamlSection(lines, key) {
   return { head, start: head + 1, end };
 }
 
-function childIndent(lines, sec) {
+export function childIndent(lines, sec) {
   for (let i = sec.start; i < sec.end; i++) if (!isBlankOrComment(lines[i].body)) return indentOf(lines[i].body);
   return 2;
 }
@@ -36,7 +36,7 @@ function sectionTail(lines, sec) {
 }
 
 /** A child `key:` of a section: `{ line, end, indent }` where end closes its value's lines, or null. */
-function yamlChild(lines, sec, key) {
+export function yamlChild(lines, sec, key) {
   if (!sec) return null;
   const ci = childIndent(lines, sec);
   if (ci === 0) return null;
@@ -69,7 +69,7 @@ function yamlEntry(indent, key, value) {
   return `${pad}${key}: ${typeof value === "number" ? value : yamlScalar(value, pad + "  ")}`.split("\n");
 }
 
-function yamlType(lines) {
+export function yamlType(lines) {
   const t = yamlValue(lines, yamlChild(lines, yamlSection(lines, "info"), "type"));
   return typeof t === "string" && t.trim() ? t.trim() : "http";
 }
@@ -101,7 +101,7 @@ function firstChild(lines, sec) {
 // ---- bru structure --------------------------------------------------------------------------
 
 /** Top-level bru blocks: `[{ name, open, close }]`; a one-line `name [ … ]` has open === close. */
-function bruBlocks(lines) {
+export function bruBlocks(lines) {
   const out = [];
   for (let i = 0; i < lines.length; i++) {
     const body = bare(lines[i]);
@@ -140,14 +140,14 @@ function bruEntry(lines, block, key) {
   return null;
 }
 
-function bruMeta(lines) {
+export function bruMeta(lines) {
   const meta = findBlock(bruBlocks(lines), "meta");
   const get = (k) => bruEntry(lines, meta, k);
   return { meta, get, type: get("type")?.value || "http" };
 }
 
 /** The block that holds the method and URL: a verb block, `http`, or the type's own block. */
-function bruMethodBlock(lines, type) {
+export function bruMethodBlock(lines, type) {
   const blocks = bruBlocks(lines);
   const verb = blocks.find((b) => VERBS.includes(b.name) && b.open !== b.close);
   if (verb) return { block: verb, verb: verb.name };

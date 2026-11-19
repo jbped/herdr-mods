@@ -184,3 +184,43 @@ test("asks reach only the copy they are addressed to, and the pane's Run goes to
   store.setRequestRunner(null);
   assert.deepEqual(ran, ["k"]);
 });
+
+test("rekey, rebase and drop: a Draft follows its file through a rename, a move and a delete", async () => {
+  const { followShown, showRequest, shownRequest, setForm, form, dropForm } = await import("../mods/brunr/store.js");
+  drafts.clear();
+  const k = (p) => `|/c/Shop#${p}`;
+  drafts.open(k("products/List.yml"), DISK);
+  drafts.edit(k("products/List.yml"), DISK + "# mine\n");
+  drafts.open(k("products/Other.yml"), DISK);
+  drafts.open(k("productsX/Same prefix.yml"), DISK);
+  drafts.edit(k("productsX/Same prefix.yml"), DISK + "x");
+  assert.deepEqual(drafts.draftsUnder(k("products")), [k("products/List.yml")], "a sibling directory with the same prefix is not under it");
+  drafts.rekey(k("products"), k("catalog"));
+  assert.equal(drafts.has(k("catalog/List.yml")), true);
+  assert.equal(drafts.get(k("catalog/Other.yml")).text, DISK);
+  assert.equal(drafts.get(k("products/List.yml")), null);
+  assert.equal(drafts.has(k("productsX/Same prefix.yml")), true);
+  const written = DISK.replace("name: List", "name: Renamed");
+  drafts.rebase(k("catalog/List.yml"), written, written + "# mine\n");
+  assert.deepEqual(drafts.get(k("catalog/List.yml")), { base: written, text: written + "# mine\n", changed: null, kept: null });
+  drafts.rebase(k("catalog/Other.yml"), written, written);
+  assert.equal(drafts.has(k("catalog/Other.yml")), false, "no Draft stays no Draft");
+  drafts.drop(k("catalog"));
+  assert.deepEqual(drafts.keys(), [k("productsX/Same prefix.yml")]);
+
+  showRequest("t1", { key: k("a/List.yml"), ck: "|/c/Shop", machine: null, root: "/c/Shop", path: "a/List.yml", format: "yaml", name: "List" });
+  showRequest("t2", { key: k("b.yml"), ck: "|/c/Shop", machine: null, root: "/c/Shop", path: "b.yml", format: "yaml", name: "B" });
+  followShown(k("a"), "|/c/Other#z/a", { ck: "|/c/Other", root: "/c/Other" });
+  assert.deepEqual([shownRequest("t1").key, shownRequest("t1").path, shownRequest("t1").ck], ["|/c/Other#z/a/List.yml", "z/a/List.yml", "|/c/Shop"], "a Request under a moved folder follows it");
+  followShown(k("b.yml"), k("c.yml"), { name: "C" });
+  assert.deepEqual([shownRequest("t2").path, shownRequest("t2").name], ["c.yml", "C"]);
+  followShown(k("c.yml"), null);
+  assert.equal(shownRequest("t2"), null, "the pane empties when its Request is deleted");
+
+  setForm("f1", { values: { name: "n", url: `https://x.test/?token=${TOKEN}` } });
+  assert.equal(form("f1").values.name, "n");
+  assert.equal(JSON.stringify(state.shared).includes(TOKEN), false, "what a form holds is never in shared state");
+  dropForm("f1");
+  assert.equal(form("f1"), null);
+  drafts.clear();
+});

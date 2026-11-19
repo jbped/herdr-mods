@@ -9,7 +9,8 @@ const ITEM = 28;
 const SEP = 9;
 
 export const menuHeight = (items) => 12 + items.reduce((n, i) => n + (i.sep ? SEP : ITEM), 0);
-export const pickerHeight = (options) => 52 + options.reduce((n, o) => n + (o.warn ? 44 : ITEM), 0);
+/** A picker's height: its title and options, at most 440px; a longer list scrolls. */
+export const pickerHeight = (options) => Math.min(440, 52 + options.reduce((n, o) => n + (o.warn ? 44 : ITEM), 0));
 const LINE = 40;
 const linesHeight = (d) => (d.lines?.length ? 12 + Math.min(5, d.lines.length) * LINE : 0);
 /** A dialog's height: title, detail, up to 5 lines (each may wrap once; more scroll), buttons. */
@@ -40,7 +41,7 @@ function choose(self, cx, i) {
   }
   if (self.picker) {
     const o = self.picker.options[i];
-    if (!o) return;
+    if (!usable(o)) return;
     store.ask({ kind: self.picker.kind, key: self.picker.key, value: o.value ?? null });
     return close();
   }
@@ -58,7 +59,7 @@ function step(self, by) {
   let i = self.at;
   for (let n = 0; n < list.length; n++) {
     i = (i + by + list.length) % list.length;
-    if (self.picker || usable(list[i])) break;
+    if (usable(list[i])) break;
   }
   self.at = i;
 }
@@ -80,17 +81,18 @@ export function render(self) {
     const p = self.picker;
     root.child(h_flex().h(34).px(8).items_center().border_b(1).border_color(t.border).mb(4)
       .child(div().flex_1().min_w(0).truncate().font_semibold().child(p.title)).child(div().text_size(10.5).text_color(t.dim).child("Esc")));
-    return root.children(p.options.map((o, i) => {
+    // Move to's folders are indented by depth, and a long list scrolls.
+    return root.child(v_flex().id("brunr-picker-list").flex_1().min_h(0).overflow_y_scrollbar().children(p.options.map((o, i) => {
       const on = (o.value ?? null) === (p.current ?? null);
-      return v_flex().id(`opt-${i}`).w_full().flex_none().px(8).py(5).gap(2).rounded(5).cursor_pointer()
-        .when(i === self.at, (el) => el.bg(t.selected)).hover((s) => s.bg(t.selected))
-        .on_click((_e, cx) => choose(self, cx, i))
+      return v_flex().id(`opt-${i}`).w_full().flex_none().pl(8 + (o.depth ?? 0) * 14).pr(8).py(5).gap(2).rounded(5)
+        .when(!o.disabled, (el) => el.cursor_pointer().hover((s) => s.bg(t.selected)).on_click((_e, cx) => choose(self, cx, i)))
+        .when(i === self.at && !o.disabled, (el) => el.bg(t.selected))
         .child(h_flex().h(18).gap(8).items_center()
           .child(div().w(12).flex_none().text_color(t.accent).child(on ? "✓" : ""))
-          .child(div().flex_1().min_w(0).truncate().text_color(o.value == null ? t.muted : t.foreground).child(o.label))
+          .child(div().flex_1().min_w(0).truncate().text_color(o.disabled ? t.dim : o.value == null ? t.muted : t.foreground).when(Boolean(o.header), (el) => el.font_semibold()).child(o.label))
           .when(Boolean(o.warn), (el) => el.child(svg("mods/brunr/icons/warning.svg").size(12).flex_none().text_color(t.ansi3))))
         .when(Boolean(o.warn), (el) => el.child(div().pl(20).text_size(10.5).text_color(t.ansi3).child(o.warn)));
-    }));
+    })));
   }
   return root.children(self.menu.items.map((item, i) => {
     if (item.sep) return div().w_full().h(1).my(4).bg(t.border);

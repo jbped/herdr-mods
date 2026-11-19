@@ -170,8 +170,10 @@ function readRequest(format, path, text, errors) {
       seq: toSeq(r.seq), type, method, url: str(r.url),
     };
   } catch (e) {
+    // As in Bruno's sidebar, a file that does not parse stays in the tree under its file name. It
+    // is also listed in errors. It is never part of a Run or of a folder's numbering.
     errors.push({ path, message: e.message });
-    return null;
+    return { kind: "request", broken: true, error: e.message, name: baseName(path), path, seq: null, type: "http", method: "", url: "" };
   }
 }
 
@@ -328,10 +330,10 @@ function buildTree(requests, folders) {
   return top.children;
 }
 
-/** The number of Request nodes under a node or a Collection. */
+/** The number of Request nodes under a node or a Collection. A file that does not parse is not counted. */
 export function countRequests(node) {
   if (!node) return 0;
-  if (node.kind === "request") return 1;
+  if (node.kind === "request") return node.broken ? 0 : 1;
   return (node.children ?? []).reduce((n, c) => n + countRequests(c), 0);
 }
 

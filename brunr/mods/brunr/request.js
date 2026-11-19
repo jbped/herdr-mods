@@ -9,8 +9,10 @@ import * as store from "./store.js";
 import * as drafts from "./drafts.js";
 import * as machine from "./machine.js";
 import * as saveflow from "./saveflow.js";
-import { canSetMethod, canSetUrl, readHead, setMethod, setUrl } from "./edit.js";
+import { canSetMethod, canSetUrl, readHead, setMethod } from "./edit.js";
+import { setUrlFromBar } from "./urlsync.js";
 import { lintRequest } from "./lint.js";
+import { readRequestText } from "./parser.js";
 import { menuHeight } from "./popup.js";
 import { methodColor } from "./panel.js";
 
@@ -45,6 +47,14 @@ export function close(self) {
 /** Takes the tab's shown Request from the store. A new one is read from disk; the same one again is read again. */
 export function syncRequest(self, cx) {
   const req = store.shownRequest(self.tab);
+  if (!req && self.req) {
+    // The shown Request was deleted: the Request side empties.
+    self.req = null;
+    self.reqSeen = null;
+    self.reqError = null;
+    setText(self, null);
+    return;
+  }
   if (!req || req.n === self.reqSeen) return;
   self.reqSeen = req.n;
   const fresh = req.key !== self.req?.key;
@@ -92,10 +102,10 @@ export function editorChanged(self) {
   if (self.urlInput.value() !== url) { self.syncing = true; try { self.urlInput.set_value(url); } finally { self.syncing = false; } }
 }
 
-/** The URL field changed: its one line in the text changes. */
+/** The URL field changed: its line in the text changes, and the params follow it as in Bruno. */
 export function urlChanged(self) {
   if (self.syncing || !self.req || self.reqText == null || self.req.machine != null) return;
-  const text = setUrl(self.reqText, self.req.format, self.urlInput.value());
+  const text = setUrlFromBar(self.reqText, self.req.format, self.urlInput.value());
   if (text !== self.reqText) replaceText(self, text);
 }
 
@@ -171,9 +181,16 @@ export function hasKeyboard(self) {
 
 function warnings(self) {
   if (self.reqText == null || !self.req) return [];
-  if (self.lint.text !== self.reqText) self.lint = { text: self.reqText, warnings: lintRequest(self.reqText, self.req.format) };
+  if (self.lint.text !== self.reqText) {
+    let parses = true;
+    try { readRequestText(self.reqText, self.req.format); } catch { parses = false; }
+    self.lint = { text: self.reqText, warnings: lintRequest(self.reqText, self.req.format), parses };
+  }
   return self.lint.warnings;
 }
+
+/** False when the text does not parse as a Request: such a file cannot run until it is fixed. */
+const parses = (self) => (warnings(self), self.lint.parses !== false);
 
 const button = (t, id, label, enabled, click, primary = false) => div().id(id).h(24).px(10).flex_none().flex().items_center().rounded(5).text_size(11.5).border_1()
   .border_color(primary && enabled ? t.solid : t.border)
@@ -205,7 +222,7 @@ export function render(self, t, canRun) {
     ? Input.new(self.urlInput).flex_1().min_w(0).h(28).px(8).items_center().rounded(5).border(1).border_color(t.border).bg(t.background).text_color(t.foreground).font_family(mono()).text_size(11.5)
     : div().flex_1().min_w(0).h(28).px(8).flex().items_center().rounded(5).border_1().border_color(t.border).font_family(mono()).text_size(11.5).text_color(t.muted).truncate().child(head?.url ?? "");
   const bar = h_flex().id("brunr-request-bar").h(44).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
-    .child(methodBtn).child(urlField).child(button(t, "brunr-run", "Run", canRun && !self.saving, (cx) => runShown(self, cx), true));
+    .child(methodBtn).child(urlField).child(button(t, "brunr-run", "Run", canRun && !self.saving && (text == null || parses(self)), (cx) => runShown(self, cx), true));
 
   const info = h_flex().id("brunr-request-info").h(30).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border).text_size(11.5)
     .child(div().flex_none().max_w(200).truncate().font_semibold().child(head?.name ?? req.name ?? ""))

@@ -118,6 +118,40 @@ export function showRequest(tab, req) {
 /** The Request a tab's pane shows, or null. */
 export const shownRequest = (tab) => shownRequests.get(tab) ?? null;
 
+/**
+ * A file or folder of the tree moved or was renamed (`to`: its new key, `info`: the fields of the
+ * shown Request that change) or was deleted (`to` null). Every pane showing it, or a Request under
+ * a folder, follows the file or empties.
+ */
+export function followShown(from, to, info = {}) {
+  let any = false;
+  for (const [tab, req] of [...shownRequests]) {
+    if (req.key !== from && !req.key.startsWith(`${from}/`)) continue;
+    any = true;
+    if (to == null) { shownRequests.delete(tab); continue; }
+    const key = to + req.key.slice(from.length);
+    const own = req.key === from;
+    const path = key.slice(key.indexOf("#") + 1);
+    shownRequests.set(tab, { ...req, ...(own ? info : {}), key, ck: own && info.ck ? info.ck : req.ck, path, n: Date.now() });
+  }
+  if (any) changed();
+}
+
+// Dialog forms (New Request, New folder, Rename, Clone): what the person typed, and the panel's
+// answer. In memory only, by the form's id: an ask in shared state carries only that id, so a URL
+// or a name typed into a form is never written to disk.
+const forms = new Map();
+
+/** The form's values as the dialog sends them, and later the panel's `error` or `busy`. */
+export function setForm(id, patch) {
+  forms.set(id, { ...(forms.get(id) ?? {}), ...patch });
+  changed();
+}
+
+export const form = (id) => forms.get(id) ?? null;
+
+export function dropForm(id) { if (forms.delete(id)) changed(); }
+
 // The panel copy's Run of one Request, for the pane's Run button. A hidden panel does not draw, so
 // it would take an ask only when shown again. The pane calls it with its own cx instead.
 let requestRunner = null;

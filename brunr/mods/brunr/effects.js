@@ -139,8 +139,8 @@ export async function deletePermanently(path, { machine = null, root } = {}) {
 
 /**
  * Performs `effects` in order on this computer and stops at the first failure.
- * `options.machine`: the Collection's Machine (null here). `options.root`: its root; every path
- * must be inside it. Returns `{ ok, ran, failed }`: `ran` lists the effects that completed, and
+ * `options.machine`: the Collection's Machine (null here). `options.root`: its root, or the roots
+ * of the two Collections of a move between them; every path must be inside one of them. Returns `{ ok, ran, failed }`: `ran` lists the effects that completed, and
  * `failed` is null or `{ effect, index, kind, message, current? }`.
  * `kind`: "remote" (another Machine: nothing runs), "outside" (a path outside the root: nothing
  * runs), "conflict" (a write whose expected text is stale; `current` is the text on disk),
@@ -151,7 +151,8 @@ export async function deletePermanently(path, { machine = null, root } = {}) {
 export async function runEffects(effects, { machine = null, root = null } = {}) {
   const list = effects ?? [];
   if (machine != null) return { ok: false, ran: [], failed: failure(list[0] ?? null, 0, "remote", "Editing works on this computer only.") };
-  const bad = list.findIndex((e) => !["write", "mkdir", "move", "trash"].includes(e?.op) || !pathsOf(e).every((p) => insideRoot(root, p)));
+  const roots = [].concat(root ?? []);
+  const bad = list.findIndex((e) => !["write", "mkdir", "move", "trash"].includes(e?.op) || !pathsOf(e).every((p) => roots.some((r) => insideRoot(r, p))));
   if (bad >= 0) return { ok: false, ran: [], failed: failure(list[bad], bad, "outside", "Brunr changes files only inside the Collection.") };
   const ran = [];
   for (let i = 0; i < list.length; i++) {

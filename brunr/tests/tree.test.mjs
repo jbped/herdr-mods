@@ -50,7 +50,7 @@ test("keys: move, fold, unfold, parent, run, run many, pickers, file, leave", ()
   const open = new Set([e.key]);
   const rows = buildRows({ entries: [e], loaded: new Map([[e.key, { collection: shop }]]), isOpen: (k) => open.has(k) });
   const folder = rows.findIndex((r) => r.kind === "folder");
-  const req = rows.findIndex((r) => r.kind === "request");
+  const req = rows.findIndex((r) => r.kind === "request" && !r.broken);
   assert.deepEqual(keyAction("down", rows, 0), { act: "move", to: 1 });
   assert.deepEqual(keyAction("up", rows, 0), { act: "move", to: 0 });
   assert.deepEqual(keyAction("left", rows, 0), { act: "fold", key: e.key, open: false });
@@ -97,4 +97,22 @@ test("runMark: the running folder shows a spinner and its count, the running Req
   assert.deepEqual(runMark(list, { ...run, progress: { ...run.progress, running: null } }), { spinner: false, count: null });
   assert.deepEqual(runMark(folder, null), { spinner: false, count: null });
   assert.deepEqual(runMark(list, { key: list.key, ck: "c", progress: null }), { spinner: true, count: null }, "a single Request Run");
+});
+
+test("edit keys: n, shift-n, f2, delete, alt-up, alt-down and m on this computer only", () => {
+  const e = entry(null, "/c/shop");
+  const open = new Set([e.key, `${e.key}#products`]);
+  const rows = buildRows({ entries: [e], loaded: new Map([[e.key, { collection: shop }]]), isOpen: (k) => open.has(k) });
+  const at = (path) => rows.findIndex((r) => r.path === path);
+  const req = at("products/List Products.yml"), folder = at("products"), broken = at("Broken.yml");
+  assert.deepEqual(["n", "shift-n", "N", "f2", "delete", "alt-up", "alt-down", "m"].map((k) => keyAction(k, rows, req)?.act),
+    ["newRequest", "newFolder", "newFolder", "rename", "delete", "moveUp", "moveDown", "moveTo"]);
+  assert.deepEqual(["n", "shift-n", "f2", "delete", "m"].map((k) => keyAction(k, rows, folder)?.act), ["newRequest", "newFolder", "rename", "delete", "moveTo"]);
+  assert.deepEqual(["n", "shift-n", "f2", "delete", "m", "alt-up"].map((k) => keyAction(k, rows, 0)?.act ?? null), ["newRequest", "newFolder", null, null, null, null], "a Collection row: new items only");
+  assert.deepEqual(["alt-up", "alt-down", "enter", "r"].map((k) => keyAction(k, rows, broken)), [null, null, null, null], "a file that does not parse is not reordered or run");
+  assert.equal(keyAction("f2", rows, broken).act, "rename");
+  assert.equal(keyAction("o", rows, broken).act, "open");
+  const remote = buildRows({ entries: [entry("box", "/srv/shop")], loaded: new Map([["box|/srv/shop", { collection: shop }]]), isOpen: () => true });
+  const r = remote.findIndex((x) => x.kind === "request" && !x.broken);
+  assert.deepEqual(["n", "f2", "delete", "m", "alt-up"].map((k) => keyAction(k, remote, r)), [null, null, null, null, null]);
 });

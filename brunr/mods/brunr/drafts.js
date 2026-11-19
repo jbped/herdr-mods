@@ -121,5 +121,40 @@ export function collectionRead(collectionKey, files) {
   }
 }
 
+/** The keys of `key` and of everything under it when it is a folder (`<key>/…`). */
+const under = (key) => [...records.keys()].filter((k) => k === key || k.startsWith(`${key}/`));
+
+/**
+ * A file or folder was renamed or moved: its records, and the records under a folder, take the
+ * new key. A record already at a new key is replaced.
+ */
+export function rekey(from, to) {
+  const moved = under(from);
+  for (const k of moved) {
+    const rec = records.get(k);
+    records.delete(k);
+    records.set(to + k.slice(from.length), rec);
+  }
+  if (moved.length) changed();
+}
+
+/** An operation wrote `base` over the file under a record: its Draft becomes `text` on top of it. */
+export function rebase(key, base, text) {
+  const rec = records.get(key);
+  if (!rec) return;
+  records.set(key, text === base ? { base, text: base, changed: null, kept: null } : { ...rec, base, text, changed: null, kept: null });
+  changed();
+}
+
+/** A file or folder was deleted: its records, and those under a folder, go. */
+export function drop(key) {
+  const gone = under(key);
+  for (const k of gone) records.delete(k);
+  if (gone.length) changed();
+}
+
+/** The keys with a Draft at `key` or under it. */
+export const draftsUnder = (key) => under(key).filter((k) => isDraft(records.get(k)));
+
 /** Forgets every record. For tests. */
 export function clear() { records.clear(); }

@@ -7,6 +7,7 @@ import * as store from "./store.js";
 import * as drafts from "./drafts.js";
 import * as sources from "./sources.js";
 import { foldable, runMark, runsMany, secretWarning } from "./tree.js";
+import * as actions from "./actions.js";
 
 const ICON = (name) => `mods/brunr/icons/${name}.svg`;
 const METHOD_COLOR = { GET: "ansi2", POST: "ansi5", PUT: "ansi3", PATCH: "ansi6", DELETE: "ansi1" };
@@ -48,6 +49,8 @@ export function render(self, cx) {
     .on_key_down((e, cx) => self.panelKey(e, cx))
     .on_mouse_down("left", (_e, cx) => { self.gone = false; self.handle.focus(); cx.notify(); })
     .on_mouse_down_out((_e, cx) => { if (!self.gone) { self.gone = true; cx.notify(); } })
+    // A release that no row took ends a drag with no drop.
+    .on_mouse_up("left", (_e, cx) => { if (actions.cancelDrag(self)) cx.notify(); })
     .child(header(self, t))
     .children(notices(self, t))
     .child(body)
@@ -58,7 +61,7 @@ function header(self, t) {
   return h_flex().h(38).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
     .child(div().font_semibold().text_size(13).child("Brunr"))
     .child(div().flex_1())
-    .when(self.loadingAll, (el) => el.child(svg(ICON("spinner")).size(13).text_color(t.dim).spin(900)))
+    .when(self.loadingAll || self.busy, (el) => el.child(svg(ICON("spinner")).size(13).text_color(t.dim).spin(900)))
     .child(iconButton(t, "brunr-reload", "reload", "Read brunr.json, the workspace and every Collection again", (cx) => cx.spawn(async (cx) => { await self.reload(cx); })));
 }
 
@@ -104,11 +107,19 @@ function rowView(self, t, r, i) {
   const hovered = r.key === self.hover;
   const running = store.running();
   const mark = runMark(r, running);
-  const el = h_flex().id(`row-${i}-${r.key}`).h(ROW).flex_none().w_full().pl(6 + r.depth * INDENT).pr(4).gap(6).items_center().rounded(5).cursor_pointer()
+  // Drag and drop: the row is the handle. The rules are in treeops.js; this only reports the pointer.
+  const drag = actions.dragMark(self, r);
+  const el = h_flex().id(`row-${i}-${r.key}`).relative().h(ROW).flex_none().w_full().pl(6 + r.depth * INDENT).pr(4).gap(6).items_center().rounded(5).cursor_pointer()
     .when(sel, (e) => e.bg(self.kb ? t.selected : t.hover))
     .hover((s) => s.bg(sel ? t.selected : t.hover))
+    .when(drag === "inside", (e) => e.bg(t.selected).border_1().border_color(t.accent))
+    .when(drag === "dragged", (e) => e.opacity(0.5))
+    .when(drag === "above" || drag === "below", (e) => e.child(div().absolute().left(0).right(0).h(2).bg(t.accent).when(drag === "below", (l) => l.bottom(0)).when(drag === "above", (l) => l.top(0))))
     .on_hover((h, cx) => { if (h) self.hover = r.key; else if (self.hover === r.key) self.hover = null; cx.notify(); })
     .on_click((e, cx) => self.clickRow(cx, r, e))
+    .on_mouse_down("left", () => actions.press(self, r))
+    .on_mouse_move((e, cx) => actions.hover(self, r, e, cx))
+    .on_mouse_up("left", (_e, cx) => { actions.release(self, r, cx); cx.notify(); })
     .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); self.openMenu(r); cx.notify(); });
 
   if (r.kind === "machine") {
@@ -132,6 +143,10 @@ function rowView(self, t, r, i) {
     if (!r.error && !r.loading) el.child(chip(self, t, `env-${r.key}`, r.env, "No Environment", r.secrets.length > 0, (cx) => { self.sel = r.key; self.openEnvPicker(r); cx.notify(); }));
   } else if (r.kind === "folder") {
     el.child(svg(ICON("folder")).size(13).flex_none().text_color(t.muted)).child(div().flex_1().min_w(0).truncate().child(r.name));
+  } else if (r.broken) {
+    // A file that does not parse: its file name, a warning mark and no method.
+    el.child(div().w(14).flex_none()).child(div().w(34).flex_none().child(svg(ICON("warning")).size(12).text_color(t.blocked)))
+      .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(r.name));
   } else {
     el.child(div().w(14).flex_none()).child(methodBadge(t, r.method)).child(div().flex_1().min_w(0).truncate().child(r.name));
     if (drafts.has(r.key)) el.child(div().size(7).flex_none().rounded(4).bg(t.ansi3).tooltip("Unsaved changes"));
@@ -166,7 +181,10 @@ function footer(self, t, r) {
     .child(div().flex_1().min_w(0).truncate().child(`Running: ${now.name}`)));
   if (!r || r.kind === "machine") return box.child(dim("Click shows a Request in the pane. o opens it. Double-click or Enter runs it."));
   const coll = r.ck ? self.rows.find((x) => x.key === r.ck) : null;
-  if (r.kind === "request") {
+  if (r.kind === "request" && r.broken) {
+    box.child(div().text_color(t.blocked).child(`${r.path} does not parse: ${r.error}`));
+    box.child(dim("o opens it as text. It cannot run until it parses."));
+  } else if (r.kind === "request") {
     box.child(h_flex().gap(6).items_start().child(methodBadge(t, r.method, 40)).child(div().flex_1().min_w(0).font_family(mono()).text_size(11).text_color(t.foreground).child(r.url || "(no URL)")));
   } else if (r.kind === "global") {
     box.child(dim(`Applies to every Collection of this workspace. ${r.env ? `Now: ${r.env}.` : "None chosen."}`));

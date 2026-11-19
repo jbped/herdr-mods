@@ -138,7 +138,8 @@ test("loadCollection gives the same tree from this computer and from another Mac
   assert.deepEqual(there.collection, here.collection);
   const bru = await loadCollection({ machine: null, root: `${fx}/bru` });
   assert.equal(bru.collection.format, "bru");
-  assert.deepEqual(bru.collection.children.map((n) => n.name), here.collection.children.map((n) => n.name));
+  const noExt = (n) => n.name.replace(/\.(yml|bru)$/, "");
+  assert.deepEqual(bru.collection.children.map(noExt), here.collection.children.map(noExt));
 });
 
 test("loadCollection names a folder that is not a Collection or cannot be read", async () => {

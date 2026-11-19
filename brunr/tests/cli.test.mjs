@@ -10,6 +10,7 @@ import { FIXTURES } from "./helpers.mjs";
 import { parseCollection, isCollectionFile } from "../mods/brunr/parser.js";
 import * as ops from "../mods/brunr/fileops.js";
 import { setUrl, setMethod } from "../mods/brunr/edit.js";
+import { setUrlFromBar } from "../mods/brunr/urlsync.js";
 import { readEnvironment, writeEnvironment } from "../mods/brunr/envfile.js";
 
 const PORT = 47915;
@@ -153,6 +154,23 @@ for (const format of ["yaml", "bru"]) {
       assert.equal(result.response.status, 200);
       const names = bru(to, ["orders", "-r", "--env-var", `baseUrl=http://127.0.0.1:${PORT}`]).map((r) => r.test.filename).filter((f) => f.startsWith("orders/"));
       assert.equal(names[1], `orders/Product Page.${x}`, "placed second");
+    });
+  });
+}
+
+for (const format of ["yaml", "bru"]) {
+  test(`${format}: after URL bar edits that add and remove query params, bru sends the URL the bar shows`, { skip: !realBru && "bru is not on PATH" }, async () => {
+    await withServer(async () => {
+      const root = copyFixture(format);
+      const file = join(root, `products/List Products.${EXT[format]}`);
+      let text = readFileSync(file, "utf8");
+      text = setUrlFromBar(text, format, "{{baseUrl}}/products?shop={{shopId}}&limit=2");
+      text = setUrlFromBar(text, format, "{{baseUrl}}/products?limit=2&page=1");
+      writeFileSync(file, text);
+      const [result] = bru(root, [`products/List Products.${EXT[format]}`, "--env-var", `baseUrl=http://127.0.0.1:${PORT}`, "--env-var", "shopId=1"]);
+      assert.equal(result.error ?? null, null, result.error);
+      assert.equal(result.request.url, `http://127.0.0.1:${PORT}/products?limit=2&page=1`);
+      assert.equal(result.response.status, 200);
     });
   });
 }

@@ -237,3 +237,23 @@ test("an operation given too few texts returns an error instead of guessing", ()
   assert.match(ops.cloneRequest({ collection, texts: {}, path: "Get Health.yml" }).error, /needs the current text of Get Health.yml/);
   assert.match(ops.deleteItem({ collection, texts: {}, path: "products" }).error, /needs the current text/);
 });
+
+for (const format of ["yaml", "bru"]) {
+  const x = EXT[format];
+  test(`${format}: a Request file that does not parse is renamed by file name, moved and deleted, never cloned, reordered or numbered`, () => {
+    const s = shop(format);
+    const broken = `Broken.${x}`;
+    assert.match(call("cloneRequest", { path: broken }, s).error, /does not parse/);
+    assert.match(call("reorder", { path: broken, index: 0 }, s).error, /does not parse/);
+    const renamed = call("renameItem", { path: broken, name: "ignored", fileName: "Fixed later" }, s);
+    assert.deepEqual(brief(format, renamed.effects), [["move", broken, `Fixed later.${x}`]], "its text is not read or written");
+    assert.deepEqual(renamed.texts, {});
+    assert.deepEqual(renamed.result, { path: `Fixed later.${x}`, name: `Fixed later.${x}` });
+    const moved = call("move", { path: broken, to: "orders", index: 0 }, s);
+    assert.deepEqual(brief(format, moved.effects), [["move", broken, `orders/Broken.${x}`]], "moved to the end, nothing renumbered");
+    const del = call("deleteItem", { path: broken }, s);
+    assert.deepEqual(brief(format, del.effects), [["trash", broken]], "its siblings keep their numbers");
+    assert.equal(ops.sequenceOrder(s.collection, "").some((n) => n.broken), false);
+    assert.equal(call("newRequest", { name: "Ping" }, s).effects[0].text.includes(format === "yaml" ? "seq: 4" : "seq: 4"), true, "not counted for a new number");
+  });
+}

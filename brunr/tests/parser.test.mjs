@@ -11,6 +11,7 @@ const bru = load("bru");
 /** A tree with file extensions removed, so the two formats compare equal. */
 const shape = (nodes) => nodes.map((n) => ({
   ...n,
+  ...(n.broken ? { name: n.name.replace(/\.(yml|bru)$/, ""), error: "(differs by format)" } : {}),
   path: n.kind === "request" ? n.path.replace(/\.(yml|bru)$/, "") : n.path,
   ...(n.kind === "folder" ? { children: shape(n.children) } : {}),
 }));
@@ -52,7 +53,7 @@ test("both fixture formats give the same tree", () => {
 });
 
 test("the YAML fixture tree has Bruno's sidebar order, names and methods", () => {
-  assert.deepEqual(names(yaml.children), ["Products", "Orders", "Get Health"]);
+  assert.deepEqual(names(yaml.children), ["Products", "Orders", "Broken.yml", "Get Health"]);
   const products = yaml.children[0];
   assert.deepEqual(names(products.children), ["top sellers", "List Products", "Product Page", "Missing Product"]);
   assert.deepEqual(names(yaml.children[1].children), ["Create Order", "slow-order", "Closed Port"]);
@@ -113,13 +114,15 @@ test("bru Environments with extends, color and annotations parse, names only", (
   assert.deepEqual(c.environments[0].variables, [{ name: "host", secret: false }, { name: "token", secret: true }]);
 });
 
-test("a malformed Request file goes in errors and the rest of the tree stays", () => {
+test("a malformed Request file goes in errors and stays in the tree as Bruno shows it, out of every count", () => {
   for (const c of [yaml, bru]) {
     assert.equal(c.errors.length, 1);
     assert.match(c.errors[0].path, /^Broken\.(yml|bru)$/);
     assert.match(c.errors[0].message, /line \d+|not closed/);
-    assert.equal(p.findNode(c, c.errors[0].path), null);
+    const n = p.findNode(c, c.errors[0].path);
+    assert.deepEqual(n, { kind: "request", broken: true, error: c.errors[0].message, name: c.errors[0].path, path: c.errors[0].path, seq: null, type: "http", method: "", url: "" });
     assert.equal(p.countRequests(c), 8);
+    assert.equal(p.countRequests(n), 0);
   }
 });
 
@@ -208,7 +211,8 @@ test("Request files that are not requests go in errors without dropping others",
     "ok.yml": request("ok", 1),
   }) });
   assert.deepEqual(c.errors.map((e) => e.path).sort(), ["list.yml", "no-info.yml", "no-method.yml", "no-type.yml"]);
-  assert.deepEqual(names(c.children), ["ok"]);
+  assert.deepEqual(c.children.filter((n) => !n.broken).map((n) => n.name), ["ok"]);
+  assert.deepEqual(c.children.filter((n) => n.broken).map((n) => n.name).sort(), ["list.yml", "no-info.yml", "no-method.yml", "no-type.yml"]);
 });
 
 test("long nested sections, block scalars and comments in a request are skipped", () => {

@@ -2,7 +2,8 @@
 // One mod draws every part. The copy is chosen by its props:
 //   { view: "response", tab }  the Request and Response pane of a tab (response.js, request.js)
 //   { picker } / { menu }       a popup over the panel or the pane (popup.js)
-//   { dialog }                  a save or Run question (popup.js, saveflow.js)
+//   { dialog }                  a save, Run or delete question (popup.js, saveflow.js)
+//   { form }                    New Request, New folder, Rename or Clone (forms.js, actions.js)
 //   { overlay } alone           opened by its key (mod.open): toggles the panel, closes
 //   none                        the panel (panel.js)
 // Config: brunr.json in the app home. Nothing from a Response is written to disk. Request files
@@ -19,6 +20,8 @@ import * as response from "./response.js";
 import * as popup from "./popup.js";
 import * as drafts from "./drafts.js";
 import * as saveflow from "./saveflow.js";
+import * as actions from "./actions.js";
+import * as forms from "./forms.js";
 import { findNode } from "./parser.js";
 import { planRun, plannedRequests } from "./plan.js";
 import { parseProgress, progressOf } from "./progress.js";
@@ -34,6 +37,7 @@ export default class Brunr extends View {
     if (p.picker) { this.mode = "picker"; return popup.init(this, cx); }
     if (p.menu) { this.mode = "menu"; return popup.init(this, cx); }
     if (p.dialog) { this.mode = "dialog"; return popup.init(this, cx); }
+    if (p.form) { this.mode = "form"; return forms.init(this, cx); }
     if (p.overlay != null) {
       // Opened by its key: a hidden panel hears no commands, and mod.open always runs.
       this.mode = "pass";
@@ -66,6 +70,10 @@ export default class Brunr extends View {
     this.heldAt = 0;
     this.pending = null;          // the folder or Collection Run a confirmation asks about
     this.loadingAll = true;
+    this.busy = false;            // a tree action is running (actions.js)
+    this.forms = new Map();       // open forms by id: { kind, row, parent, initialFile }
+    this.pressed = null;          // the row pressed for a drag
+    this.over = null;             // the drop under the pointer: { key, zone, drop }
     this.seenAsk = store.lastAsk();
     if (checking()) return;
     // The pane's Run: the pane has saved its Draft first, by the same save path.
@@ -89,6 +97,7 @@ export default class Brunr extends View {
 
   async close() {
     if (this.mode === "response") return response.close(this);
+    if (this.mode === "form") return forms.close(this);
     if (this.mode === "panel") store.setRequestRunner(null);
     for (const w of this.watches?.values() ?? []) w.cancel();
     this.watches?.clear();
@@ -97,6 +106,7 @@ export default class Brunr extends View {
   render(cx) {
     if (this.mode === "response") return response.render(this, cx);
     if (this.mode === "picker" || this.mode === "menu" || this.mode === "dialog") return popup.render(this, cx);
+    if (this.mode === "form") return forms.render(this, cx);
     if (this.mode === "pass") return panel.empty();
     const a = store.takeAsk(this.seenAsk);
     if (a) { this.seenAsk = a.n; this.takeAsk(cx, a); }
@@ -240,8 +250,10 @@ export default class Brunr extends View {
   }
 
   panelKey(e, cx) {
+    if (e.key === "escape" && actions.cancelDrag(this)) { cx.stop_propagation(); cx.notify(); return; }
     if (!this.kb) return;
-    if (e.modifiers.control || e.modifiers.alt || e.modifiers.platform) return;
+    const altArrow = e.keystroke === "alt-up" || e.keystroke === "alt-down";
+    if (e.modifiers.control || (e.modifiers.alt && !altArrow) || e.modifiers.platform) return;
     const at = Math.max(0, this.rows.findIndex((r) => r.key === this.sel));
     const a = tree.keyAction(e.key === "enter" ? "enter" : e.keystroke, this.rows, at);
     if (!a) return;
@@ -259,6 +271,7 @@ export default class Brunr extends View {
     else if (a.act === "global") this.openGlobalPicker(a.row, true);
     else if (a.act === "open") this.openRequest(a.row);
     else if (a.act === "bruno") this.openBruno(cx);
+    else actions.act(this, cx, a);
   }
 
   takeAsk(cx, a) {
@@ -267,6 +280,7 @@ export default class Brunr extends View {
     if (a.kind === "env") return this.saved.setEnv(a.key, a.value);
     if (a.kind === "global") return this.saved.setGlobalEnv(a.key, a.value);
     if (a.kind === "dialog") return saveflow.answer(this, cx, a);
+    if (actions.takeAsk(this, cx, a)) return;
     if (a.kind === "act") {
       const row = this.rowFor(a.key);
       if (!row) return;
@@ -294,20 +308,7 @@ export default class Brunr extends View {
 
   toggle(cx, row) { this.sel = row.key; this.saved.setOpen(row.key, !row.open); cx.notify(); }
 
-  openMenu(row) {
-    this.sel = row.key;
-    const items = [];
-    const local = row.machine == null;
-    if (row.kind === "request") items.push({ label: "Run", action: "run", hint: "Enter", disabled: !this.canRun(row) }, { label: "Open", action: "open", hint: "o" });
-    if (tree.runsMany(row)) items.push({ label: row.kind === "folder" ? "Run folder" : "Run Collection", action: "runMany", hint: "r", disabled: !this.canRun(row) });
-    if (row.ck) items.push({ label: "Environment", action: "env", hint: "e" });
-    if (row.kind === "global") items.push({ label: "Global environment", action: "global", hint: "e" });
-    if (row.ck && local) items.push({ label: "Open Bruno", action: "bruno", hint: "b" });
-    if (row.kind === "request" && row.url) items.push({ sep: true }, { label: "Copy URL", copy: row.url });
-    if (row.ck) items.push({ label: "Copy path", copy: row.path ? `${this.entry(row.ck)?.root}/${row.path}` : this.entry(row.ck)?.root });
-    items.push({ sep: true }, { label: "Reload", action: "reload" });
-    openOverlay({ mod: "brunr", kind: "popup", width: 220, height: popup.menuHeight(items), props: { menu: { key: row.key, items } } });
-  }
+  openMenu(row) { actions.menu(this, row); }
 
   /** A picker opened by a key is a dialog in the middle; by a click, a popup at the pointer. */
   openEnvPicker(row, byKey = false) {
@@ -331,7 +332,7 @@ export default class Brunr extends View {
   /** Runs the row: a Request at once, a folder or Collection after a confirmation. */
   runKey(cx, key, confirmed, saved = false) {
     const row = this.rowFor(key);
-    if (!row || !row.ck || !this.canRun(row)) return;
+    if (!row || !row.ck || !this.canRun(row) || row.broken) return;
     const entry = this.entry(row.ck), c = this.collection(row.ck);
     if (!entry || !c) return;
     const target = row.kind === "request" ? { kind: "request", path: row.path } : row.kind === "folder" ? { kind: "folder", path: row.path } : { kind: "collection" };
@@ -414,7 +415,7 @@ export default class Brunr extends View {
     const n = c && findNode(c, key.slice(entry.key.length + 1));
     if (!n) return null;
     const base = { key, kind: n.kind, ck: entry.key, machine: entry.machine ?? null, path: n.path, name: n.name, depth: 0, parent: null };
-    return n.kind === "folder" ? { ...base, open: false, count: 0 } : { ...base, method: n.method, url: n.url, type: n.type };
+    return n.kind === "folder" ? { ...base, open: false, count: 0 } : { ...base, method: n.method, url: n.url, type: n.type, ...(n.broken ? { broken: true, error: n.error } : {}) };
   }
 
   /** What the pane needs to show a Request: `{ key, ck, machine, root, path, format, name }`. */

@@ -58,6 +58,7 @@ function planNewRequest({ collection, parent = "", name, method = "GET", url = "
 function planCloneRequest({ collection, path, name, fileName }, texts) {
   const node = findNode(collection, path);
   if (node?.kind !== "request") return fail(`There is no Request ${path} in this Collection.`);
+  if (node.broken) return fail(`"${node.name}" does not parse as a Request, so it cannot be cloned.`);
   const dir = parentOf(node.path);
   const siblings = childrenOf(collection, dir);
   const newName = String(name ?? cloneName(siblings.map((n) => n.name), node.name)).trim();
@@ -103,6 +104,7 @@ function planNewFolder({ collection, parent = "", name, dirName }, texts) {
 function planRename({ collection, path, name, fileName }, texts) {
   const node = findNode(collection, path);
   if (!node) return fail(`There is no item ${path} in this Collection.`);
+  if (node.broken) return planRenameFile(collection, node, fileName, texts);
   const newName = String(name ?? node.name).trim();
   const bad = checkName(newName);
   if (bad) return fail(bad);
@@ -136,6 +138,24 @@ function planRename({ collection, path, name, fileName }, texts) {
   return { reads: [textPath], effects: [...move, ...write], result };
 }
 
+/** A Request file that does not parse is renamed by its file name only. Its text is not touched. */
+function planRenameFile(collection, node, fileName, texts) {
+  const dir = parentOf(node.path);
+  const current = stripExt(baseOf(node.path));
+  const wanted = fileName == null ? current : String(fileName).trim();
+  if (wanted !== current) {
+    const invalid = validateName(wanted);
+    if (invalid) return fail(invalid);
+  }
+  const own = baseOf(node.path).toLowerCase();
+  const taken = [...namesIn(collection, dir, texts)].filter((n) => n.toLowerCase() !== own);
+  const file = wanted === current ? baseOf(node.path) : uniqueName(taken, wanted, EXT[collection.format]);
+  if (!file) return tooMany(wanted);
+  const to = join(dir, file);
+  const effects = to !== node.path ? [{ op: "move", from: abs(collection, node.path), to: abs(collection, to) }] : [];
+  return { reads: [], effects, result: { path: to, name: file } };
+}
+
 function planDelete({ collection, path }, texts) {
   const node = findNode(collection, path);
   if (!node) return fail(`There is no item ${path} in this Collection.`);
@@ -152,6 +172,7 @@ const clampIndex = (index, length) => Math.max(0, Math.min(length, Math.trunc(Nu
 function planReorder({ collection, path, index }, texts) {
   const node = findNode(collection, path);
   if (!node) return fail(`There is no item ${path} in this Collection.`);
+  if (node.broken) return fail(`"${node.name}" does not parse as a Request, so it has no place in the order.`);
   const list = sequenceOrder(collection, parentOf(node.path)).filter((n) => n.path !== node.path);
   list.splice(clampIndex(index, list.length), 0, node);
   const r = renumber(collection, list, texts);
@@ -166,9 +187,11 @@ function isInside(folder, dir) {
  * A move of `path` from `source` into folder `to` of `target` (the same Collection for `move`).
  * Source siblings are renumbered; with an index the target's are too, the item placed there.
  */
-function planMoveInto({ source, target, path, to, index }, texts, targetTexts) {
+function planMoveInto({ source, target, path, to, index: wanted }, texts, targetTexts) {
   const node = findNode(source, path);
   if (!node) return fail(`There is no item ${path} in this Collection.`);
+  // A file that does not parse has no number, so it moves to the end of the target's items.
+  const index = node.broken ? null : wanted;
   const dir = folderAt(target, to ?? "");
   if (dir === null) return fail(`There is no folder ${to} to move into.`);
   const same = source === target || source.root === target.root;
