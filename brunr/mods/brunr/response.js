@@ -37,6 +37,8 @@ export function init(self, cx) {
   self.filterInput.on("change", (_e, cx) => { setFilter(self, { text: self.filterInput.value() }); cx.notify(); });
   self.seenAsk = store.lastAsk();
   request.init(self, cx);
+  // Asks to this copy are taken when they are made, not while drawing: a form menu's choice can make new fields.
+  cx.spawn(async (cx) => { for (;;) { await store.nextAsk(); takeAsk(self, cx); cx.notify(); } });
   sync(self);
   cx.spawn(async (cx) => { for (;;) { await store.nextChange(); sync(self); request.syncRequest(self, cx); cx.notify(); } });
   cx.spawn(async (cx) => {
@@ -54,13 +56,14 @@ export function init(self, cx) {
   });
 }
 
-/** An ask for this pane copy: a dialog's answer or the method menu's choice. */
+/** An ask for this pane copy: a dialog's answer, the method menu's choice or a form menu's choice. */
 function takeAsk(self, cx) {
   const a = store.takeAsk(self.seenAsk, self.addr);
   if (!a) return;
   self.seenAsk = a.n;
   if (a.kind === "dialog") saveflow.answer(self, cx, a);
   else if (a.kind === "method" && a.key === self.req?.key) request.methodChosen(self, a.value);
+  else if (a.kind === "form") request.formMenuChosen(self, a);
 }
 
 export function close(self) {
@@ -142,7 +145,6 @@ const lines = (text) => String(text ?? "").replace(/\r\n/g, "\n").split("\n");
 
 export function render(self, cx) {
   const t = theme();
-  takeAsk(self, cx);
   const width = self.size?.width ?? 0;
   const wide = width >= WIDE;
   self.respWidth = wide ? width / 2 : width;

@@ -186,7 +186,18 @@ export const REQUEST = "brunr.request";
 /** Hands an ask to the panel: `{ kind, ... }`. */
 export function ask(req) {
   setShared(REQUEST, { ...req, n: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
+  const w = askWaiters;
+  askWaiters = [];
+  for (const resolve of w) resolve();
 }
+
+let askWaiters = [];
+
+/**
+ * Resolves after the next ask, outside any copy's drawing. A pane copy takes its form menu choices
+ * here, because they can make new fields, which cannot be made while drawing.
+ */
+export function nextAsk() { return new Promise((resolve) => askWaiters.push(resolve)); }
 
 /** The latest ask's id, or null. */
 export const lastAsk = () => shared(REQUEST)?.n ?? null;

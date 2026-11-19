@@ -8,7 +8,8 @@ import * as store from "./store.js";
 const ITEM = 28;
 const SEP = 9;
 
-export const menuHeight = (items) => 12 + items.reduce((n, i) => n + (i.sep ? SEP : ITEM), 0);
+/** A menu's height: its items, at most 440px; a longer menu scrolls (the assertion operators). */
+export const menuHeight = (items) => Math.min(440, 12 + items.reduce((n, i) => n + (i.sep ? SEP : ITEM), 0));
 /** A picker's height: its title and options, at most 440px; a longer list scrolls. */
 export const pickerHeight = (options) => Math.min(440, 52 + options.reduce((n, o) => n + (o.warn ? 66 : ITEM), 0));
 const LINE = 40;
@@ -99,15 +100,15 @@ export function render(self) {
         .when(Boolean(o.warn), (el) => el.child(div().pl(20).text_size(10.5).text_color(t.ansi3).child(o.warn)));
     })));
   }
-  return root.children(self.menu.items.map((item, i) => {
-    if (item.sep) return div().w_full().h(1).my(4).bg(t.border);
+  return root.child(v_flex().id("brunr-menu-list").h(menuHeight(self.menu.items) - 12).flex_none().overflow_y_scrollbar().children(self.menu.items.map((item, i) => {
+    if (item.sep) return div().w_full().h(1).flex_none().my(4).bg(t.border);
     return h_flex().id(`menu-${i}`).w_full().h(ITEM).flex_none().px(8).gap(8).items_center().rounded(5)
       .text_color(item.disabled ? t.dim : t.foreground)
       .when(!item.disabled, (el) => el.cursor_pointer().hover((s) => s.bg(t.selected)).on_click((_e, cx) => choose(self, cx, i)))
       .when(i === self.at && !item.disabled, (el) => el.bg(t.selected))
       .child(div().flex_1().min_w(0).truncate().child(item.label))
       .when(Boolean(item.hint), (el) => el.child(div().flex_none().text_size(10.5).text_color(t.dim).child(item.hint)));
-  }));
+  })));
 }
 
 /** A question with buttons: a title, an optional detail, numbered lines (warnings) and the choices. */

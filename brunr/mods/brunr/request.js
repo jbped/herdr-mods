@@ -1,7 +1,9 @@
 // The Request side of the pane: a bar with the method menu, the URL field and Run, a line with the
-// Request's name, path, unsaved mark, Save and Discard, the file as text in an editor, and lint
-// warnings. The text is the Draft in drafts.js; this file draws it and turns input into calls.
-// Rules live in edit.js, lint.js, drafts.js and saveflow.js.
+// Request's name, path, unsaved mark, Save and Discard, Bruno's tabs for a YAML HTTP Request (the
+// form tabs in formpanes.js and formui.js, and File, the file as text in an editor), and lint
+// warnings. The text is the Draft in drafts.js and the only state of truth; this file draws it and
+// turns input into calls. Rules live in edit.js, lint.js, drafts.js, saveflow.js, form.js and
+// formview.js.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, Input, InputState } from "gpui-base";
 import { openOverlay, panes, settings, theme } from "herdr";
@@ -15,6 +17,9 @@ import { lintRequest } from "./lint.js";
 import { readRequestText } from "./parser.js";
 import { menuHeight } from "./popup.js";
 import { methodColor } from "./panel.js";
+import * as formui from "./formui.js";
+import * as formpanes from "./formpanes.js";
+import { FILE, FORM_NOTE } from "./formview.js";
 
 export const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const mono = () => String(settings()?.font_family ?? settings()?.font ?? "JetBrains Mono");
@@ -33,11 +38,13 @@ export function init(self, cx) {
   self.syncing = false;
   self.urlInput = InputState.new({ placeholder: "URL" });
   self.urlInput.on("change", (_e, cx) => { urlChanged(self); cx.notify(); });
+  formui.initForm(self, (text) => applyText(self, text));
   syncRequest(self, cx);
   cx.spawn(async (cx) => { for (;;) { await drafts.nextChange(); draftChanged(self); cx.notify(); } });
 }
 
 export function close(self) {
+  formui.releaseForm(self);
   self.reqEditor?.release();
   self.reqEditor = null;
   self.urlInput?.release();
@@ -73,7 +80,7 @@ export function syncRequest(self, cx) {
 
 /** Puts `text` in the editor (a new editor for a new Request) and the bar. Change events it causes are ignored. */
 function setText(self, text) {
-  if (text == null) { self.reqEditor?.release(); self.reqEditor = null; self.reqText = null; return; }
+  if (text == null) { self.reqEditor?.release(); self.reqEditor = null; self.reqText = null; formui.syncForm(self); return; }
   self.syncing = true;
   try {
     if (!self.reqEditor || self.reqEditorKey !== self.req.key) {
@@ -89,6 +96,7 @@ function setText(self, text) {
     const url = readHead(text, self.req.format).url ?? "";
     if (self.urlInput && self.urlInput.value() !== url) self.urlInput.set_value(url);
   } finally { self.syncing = false; }
+  formui.syncForm(self);
 }
 
 /** The editor's text changed: it becomes the Draft, and the bar follows it. */
@@ -100,6 +108,7 @@ export function editorChanged(self) {
   drafts.edit(self.req.key, text);
   const url = readHead(text, self.req.format).url ?? "";
   if (self.urlInput.value() !== url) { self.syncing = true; try { self.urlInput.set_value(url); } finally { self.syncing = false; } }
+  formui.syncForm(self);
 }
 
 /** The URL field changed: its line in the text changes, and the params follow it as in Bruno. */
@@ -121,7 +130,19 @@ function replaceText(self, text) {
   try { self.reqEditor?.set_value(text); } finally { self.syncing = false; }
   self.reqText = text;
   drafts.edit(self.req.key, text);
+  formui.syncForm(self);
 }
+
+/** A form tab's edit: the new text becomes the Draft by the File editor's path, and the URL bar follows it. */
+function applyText(self, text) {
+  if (!self.req || self.req.machine != null) return;
+  const url = readHead(text, self.req.format).url ?? "";
+  if (self.urlInput && self.urlInput.value() !== url) { self.syncing = true; try { self.urlInput.set_value(url); } finally { self.syncing = false; } }
+  replaceText(self, text);
+}
+
+/** A form menu's choice (body or auth mode, API key placement, assertion operator), from the pane's asks. */
+export const formMenuChosen = (self, a) => formui.menuChosen(self, a);
 
 /** A Draft changed elsewhere (saved, discarded, reloaded, the file changed on disk). */
 function draftChanged(self) {
@@ -168,6 +189,7 @@ function openMethodMenu(self) {
 /** Moves the editor's cursor to the start of a 1-based line. */
 function goToLine(self, line) {
   if (!self.reqEditor || !line || self.reqText == null) return;
+  formui.selectTab(self, FILE);
   let at = 0;
   const lines = self.reqText.split("\n");
   for (let i = 0; i < line - 1 && i < lines.length; i++) at += lines[i].length + 1;
@@ -243,7 +265,14 @@ export function render(self, t, canRun) {
       .child(button(t, "brunr-reload-disk", "Reload", true, (cx) => discard(self, cx)))
       .child(button(t, "brunr-keep-mine", "Keep mine", true, (cx) => { drafts.keep(req.key); cx.notify(); })));
   }
-  box.child(self.reqEditor ? Editor.new(self.reqEditor).flex_1().min_h(0) : v_flex().flex_1().items_center().justify_center().text_color(t.dim).child(div().child(self.reqError ? "" : "Reading…")));
+  const fileView = () => (self.reqEditor ? Editor.new(self.reqEditor).flex_1().min_h(0) : v_flex().flex_1().items_center().justify_center().text_color(t.dim).child(div().child(self.reqError ? "" : "Reading…")));
+  if (formui.tabsOf(self).length) {
+    // Bruno's tabs. The notes above and the lint warnings below stay the same on every tab.
+    box.child(formui.strip(self, t)).child(formui.onForm(self) ? formpanes.render(self, t, local) : fileView());
+  } else {
+    if (text != null) box.child(div().flex_none().px(12).py(6).text_size(11.5).text_color(t.dim).child(FORM_NOTE));
+    box.child(fileView());
+  }
   const ws = local ? warnings(self) : [];
   if (ws.length) {
     box.child(v_flex().id("brunr-lint").flex_none().max_h(120).overflow_y_scrollbar().px(10).py(6).gap(2).border_t(1).border_color(t.border).text_size(11.5)
