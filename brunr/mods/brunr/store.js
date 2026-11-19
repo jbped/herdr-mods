@@ -183,21 +183,26 @@ export function runRequest(cx, key) {
 
 export const REQUEST = "brunr.request";
 
-/** Hands an ask to the panel: `{ kind, ... }`. */
+/** Hands an ask to the panel or a pane copy: `{ to?, kind, ... }`. */
 export function ask(req) {
-  setShared(REQUEST, { ...req, n: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
-  const w = askWaiters;
-  askWaiters = [];
-  for (const resolve of w) resolve();
+  const a = { ...req, n: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
+  setShared(REQUEST, a);
+  // Pane copies read asks from this in-memory log (module code is shared by every copy), so two
+  // asks made before a pane draws are both taken, in order, and never read from a slot the next
+  // ask has already overwritten.
+  askLog.push({ seq: ++askCount, ask: a });
+  if (askLog.length > ASK_LOG) askLog.shift();
 }
 
-let askWaiters = [];
+const ASK_LOG = 50;
+let askLog = [];
+let askCount = 0;
 
-/**
- * Resolves after the next ask, outside any copy's drawing. A pane copy takes its form menu choices
- * here, because they can make new fields, which cannot be made while drawing.
- */
-export function nextAsk() { return new Promise((resolve) => askWaiters.push(resolve)); }
+/** The number of the latest ask, for asksAfter. */
+export const askSeq = () => askCount;
+
+/** The asks made after number `after`, `[{ seq, ask }]` in order. Pane copies take theirs here. */
+export const asksSince = (after) => askLog.filter((e) => e.seq > after);
 
 /** The latest ask's id, or null. */
 export const lastAsk = () => shared(REQUEST)?.n ?? null;

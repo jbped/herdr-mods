@@ -15,6 +15,7 @@ export const errors = [];
 export const cx = {
   spawn(fn) { Promise.resolve().then(() => fn(cx)).catch((e) => errors.push(e)); },
   notify() {}, stop_propagation() {}, write_to_clipboard() {},
+  sleep: (ms) => (cx.hold ? cx.hold : new Promise((r) => setTimeout(r, ms))),
   focus_handle: () => ({ focus() {}, is_focused: () => false, release: () => true }),
   timer: { every() {}, after() {} },
 };
@@ -73,9 +74,10 @@ export async function choose(self, buttonId, value) {
   if (!spec) throw new Error(`no menu opened by ${buttonId}`);
   const item = spec.props.menu.items.find((i) => i.ask?.value === value);
   if (!item) throw new Error(`no ${value} in the menu`);
-  // The pane takes the ask when it is made, without drawing (store.nextAsk).
+  // The pane takes the ask when it draws, and applies it after cx.sleep(0).
   const text = self.reqText;
   store.ask(item.ask);
+  draw(self);
   await waitFor(() => self.reqText !== text || errors.length, `the ${value} choice`);
   draw(self);
 }

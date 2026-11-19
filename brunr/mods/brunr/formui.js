@@ -168,7 +168,7 @@ export function toggleReveal(self, id) {
 export function openMenu(self, field, row, options, labels, current, width = 200) {
   const items = options.map((v) => (v == null ? { sep: true } : {
     label: labels[v] ?? v, hint: v === current ? "✓" : "",
-    ask: { to: self.addr, kind: "form", key: self.req.key, tab: self.form.tab, field, row, value: v },
+    ask: { to: self.addr, kind: "formMenu", key: self.req.key, tab: self.form.tab, field, row, value: v },
   }));
   openOverlay({ mod: "brunr", kind: "popup", width, height: menuHeight(items), props: { menu: { key: self.req.key, items } } });
 }

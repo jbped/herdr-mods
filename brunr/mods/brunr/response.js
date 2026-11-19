@@ -35,10 +35,8 @@ export function init(self, cx) {
   self.filter = { ...NO_FILTER };  // the toolbar's filters and sort, kept across Runs
   self.filterInput = InputState.new({ placeholder: "Search" });
   self.filterInput.on("change", (_e, cx) => { setFilter(self, { text: self.filterInput.value() }); cx.notify(); });
-  self.seenAsk = store.lastAsk();
+  self.askSeq = store.askSeq();
   request.init(self, cx);
-  // Asks to this copy are taken when they are made, not while drawing: a form menu's choice can make new fields.
-  cx.spawn(async (cx) => { for (;;) { await store.nextAsk(); takeAsk(self, cx); cx.notify(); } });
   sync(self);
   cx.spawn(async (cx) => { for (;;) { await store.nextChange(); sync(self); request.syncRequest(self, cx); cx.notify(); } });
   cx.spawn(async (cx) => {
@@ -56,14 +54,30 @@ export function init(self, cx) {
   });
 }
 
-/** An ask for this pane copy: a dialog's answer, the method menu's choice or a form menu's choice. */
-function takeAsk(self, cx) {
-  const a = store.takeAsk(self.seenAsk, self.addr);
-  if (!a) return;
-  self.seenAsk = a.n;
-  if (a.kind === "dialog") saveflow.answer(self, cx, a);
-  else if (a.kind === "method" && a.key === self.req?.key) request.methodChosen(self, a.value);
-  else if (a.kind === "form") request.formMenuChosen(self, a);
+/**
+ * The asks for this pane copy, taken when it draws: a dialog's answer, the method menu's choice, a
+ * form menu's choice. Each is taken once, in order, from store's in-memory log, so two asks made
+ * before a draw are both taken and an ask to another pane copy is left alone.
+ * They are taken while this copy draws, never in the asking popup's turn: the popup closes at once,
+ * and host calls started in its turn are cancelled with it (a save's write would never answer).
+ * A choice that changes the text waits for cx.sleep(0), because it can make new fields, which
+ * cannot be made while drawing.
+ */
+function takeAsks(self, cx) {
+  for (const e of store.asksSince(self.askSeq)) {
+    self.askSeq = e.seq;
+    const a = e.ask;
+    if ((a.to ?? "panel") !== self.addr) continue;
+    if (a.kind === "dialog") saveflow.answer(self, cx, a);
+    else if (a.kind === "method" || a.kind === "formMenu") {
+      cx.spawn(async (cx) => {
+        await cx.sleep(0);
+        if (a.kind === "method" && a.key === self.req?.key) request.methodChosen(self, a.value);
+        if (a.kind === "formMenu") request.formMenuChosen(self, a);
+        cx.notify();
+      });
+    }
+  }
 }
 
 export function close(self) {
@@ -145,6 +159,7 @@ const lines = (text) => String(text ?? "").replace(/\r\n/g, "\n").split("\n");
 
 export function render(self, cx) {
   const t = theme();
+  takeAsks(self, cx);
   const width = self.size?.width ?? 0;
   const wide = width >= WIDE;
   self.respWidth = wide ? width / 2 : width;
