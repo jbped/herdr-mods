@@ -1,13 +1,12 @@
-// The Environment editor: a brunr copy opened as a window with props `{ envEditor: { machine, root,
-// path } }`, nothing else. It lists the Collection's Environments, edits the selected one in a table
-// and creates, clones, renames and deletes them. Values are read from the file when it is selected
-// and kept only in this copy's state (`self.ed`); a save writes the same file, change-checked
-// against the text read. No Draft: closing with unsaved edits asks, then discards. The drawing is
-// in envview.js; rules in envtable.js, envfile.js and fileops.js.
+// The Environment editor, drawn inside the dialog (editors.js) for one Collection: `{ machine, root,
+// path }`. It lists the Collection's Environments, edits the selected one in a table and creates,
+// clones, renames and deletes them. Values are read from the file when it is selected and kept only
+// in the editor's state (`self.ed`); a save writes the same file, change-checked against the text
+// read. No Draft: closing with unsaved edits asks, then discards. A rename or delete tells the
+// dialog the Environment's names through `self.envGone(name, newName)`, never a value. The drawing
+// is in envview.js; rules in envtable.js, envfile.js and fileops.js.
 import { InputState } from "gpui-base";
-import { openOverlay, props } from "herdr";
 import * as machine from "./machine.js";
-import * as store from "./store.js";
 import * as ops from "./fileops.js";
 import * as tbl from "./envtable.js";
 import * as parts from "./editparts.js";
@@ -15,33 +14,23 @@ import { runEffects, readTexts, deletePermanently } from "./effects.js";
 import { readEnvironment, writeEnvironment, moveSecretToDotenv } from "./envfile.js";
 import { readDotenv, applyDotenv } from "./dotenv.js";
 import { collectionFormat } from "./parser.js";
-import { collectionKey } from "./sources.js";
 import { EXT } from "./collpaths.js";
 
-export const WIDTH = 760;
-export const HEIGHT = 540;
 const slash = (p) => String(p ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
 const fileOf = (path) => String(path ?? "").split("/").pop();
 const lineOf = (message) => Number(/line (\d+)/.exec(String(message))?.[1] ?? 0) || null;
 
-/** Opens the editor for a Collection on this computer, on Environment file `path` (relative) or the first. */
-export function open(root, path = null) {
-  openOverlay({ mod: "brunr", kind: "window", width: WIDTH, height: HEIGHT, props: { envEditor: { machine: null, root, path } } });
-}
-
-export function init(self, cx) {
-  const p = props()?.envEditor ?? {};
-  self.overlayId = props()?.overlay;
+/** Opens the editor on Environment file `p.path` (relative), or the first. @param {{ machine: string | null, root: string, path: string | null }} p */
+export function init(self, cx, p) {
   const ed = self.ed = {
     kind: "env", machine: p.machine ?? null, root: slash(p.root), format: null, list: [], sel: null,
     disk: null, envName: null, table: null, inputs: new Map(), error: null, conflict: null, ask: null,
-    busy: false, status: null, kb: false, loading: true,
+    busy: false, status: null, loading: true,
   };
   ed.dirty = () => Boolean(ed.table && tbl.isDirty(ed.table));
   ed.fileLabel = () => fileOf(ed.sel) || "this Environment";
   ed.save = (cx) => save(self, cx);
   self.handle.focus();
-  parts.commandLoop(self, cx, (cx) => save(self, cx));
   if (ed.machine != null) { ed.error = "Editing works on this computer only."; ed.loading = false; return; }
   cx.spawn(async (cx) => {
     await loadList(self);
@@ -52,7 +41,7 @@ export function init(self, cx) {
   });
 }
 
-/** The window goes (Close, Esc after the question, a layout switch, a reload): every value is dropped. */
+/** The editor goes (Close, Esc after the question, the dialog closing): every value is dropped. */
 export function close(self) {
   if (!self.ed) return;
   parts.closeAsk(self);
@@ -61,7 +50,6 @@ export function close(self) {
 }
 
 const abs = (self, rel) => `${self.ed.root}/${rel}`;
-export const ck = (self) => collectionKey(self.ed.machine, self.ed.root);
 /** What fileops needs of the Collection for the Environment operations. */
 const collection = (self) => ({ root: self.ed.root, format: self.ed.format, environments: self.ed.list });
 
@@ -168,13 +156,13 @@ export function startRename(self, env) {
   if (self.ed.busy) return;
   parts.guard(self, () => nameAsk(self, {
     title: `Rename "${env.name}"`, confirm: "Rename", value: env.name,
-    run: (cx, name, ask) => perform(self, cx, ask, "renameEnvironment", { name: env.name, newName: name }, (res) => store.ask({ kind: "envGone", key: ck(self), name: env.name, newName: res.name })),
+    run: (cx, name, ask) => perform(self, cx, ask, "renameEnvironment", { name: env.name, newName: name }, (res) => self.envGone(env.name, res.name)),
   }));
 }
 
 export function startDelete(self, env) {
   if (self.ed.busy) return;
-  const gone = () => store.ask({ kind: "envGone", key: ck(self), name: env.name, newName: null });
+  const gone = () => self.envGone(env.name, null);
   parts.guard(self, () => {
     const ask = {
       title: `Delete Environment "${env.name}"?`,
@@ -316,8 +304,8 @@ function move(self, cx, ask, varName, envName, value) {
   });
 }
 
-/** The link to the .env editor of the same Collection. */
+/** The link to the .env editor of the same Collection. Unsaved edits ask first. */
 export function openDotenv(self) {
-  openOverlay({ mod: "brunr", kind: "window", width: WIDTH, height: HEIGHT, props: { dotenvEditor: { machine: self.ed.machine, root: self.ed.root, path: ".env" } } });
+  parts.guard(self, () => self.openDotenv());
 }
 

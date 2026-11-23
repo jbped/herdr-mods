@@ -1,4 +1,5 @@
-// The tree's edit actions in the dialog (main.js, treeactions.js, treeform.js), opened through the herdr and gpui shims with a brunr.json that lists scratch copies
+// The tree's edit actions and the editors in the dialog (main.js, treeactions.js, treeform.js,
+// editors.js), opened through the herdr and gpui shims with a brunr.json that lists scratch copies
 // of the fixture Collections. Keys go through the dialog's key handler, menus and questions through
 // its pickers, forms through their inputs. Files are checked on disk after each action.
 import { test, before, after } from "node:test";
@@ -11,6 +12,8 @@ import { FIXTURES } from "./helpers.mjs";
 import { openDialog, draw, cx, waitFor, errors, press_key, herdr, drafts, setFocus } from "./dialoghelp.mjs";
 import { SHORTCUTS } from "../mods/brunr/treeactions.js";
 import * as actions from "../mods/brunr/treeactions.js";
+import { choose } from "../mods/brunr/editparts.js";
+import { select as selectEnv, startDelete } from "../mods/brunr/envedit.js";
 
 let dir, dialog;
 const ROOT = () => join(dir, "Shop");
@@ -89,6 +92,10 @@ test("the row menu lists the edit actions with their keys; a Collection on anoth
   dialog.openMenu(row(key(ROOT(), "products")));
   const labels = dialog.pickers.open.options.map((o) => `${o.label}${o.hint ? ` [${o.hint}]` : ""}`);
   for (const l of ["New Request [n]", "New folder [shift-n]", "Rename [f2]", "Move to… [m]", "Delete [delete]"]) assert.ok(labels.includes(l), `${l} in ${labels.join(", ")}`);
+  dialog.pickers.close();
+  dialog.openMenu(row(key(ROOT())));
+  assert.ok(dialog.pickers.open.options.some((o) => o.label === "Environments…"));
+  assert.ok(dialog.pickers.open.options.some((o) => o.label === "Edit .env…"));
   dialog.pickers.close();
   const remote = { ...row(key(ROOT())), machine: "box" };
   assert.deepEqual(actions.menuEntries(dialog, remote), []);
@@ -261,4 +268,70 @@ test("a file that does not parse is marked, shows on the File tab and does not r
   assert.equal(dialog.request.form.tab, "file");
   dialog.runKey(cx, k, false);
   assert.match(dialog.note?.text ?? "", /does not read as a Request/);
+});
+
+test("ctrl-s saves the open editor and not the Request's Draft; once it closes, ctrl-s saves the Draft", async () => {
+  const k = key(ROOT(), "Get Health.yml");
+  select(k);
+  await waitFor(() => dialog.request.req?.key === k && dialog.request.reqText != null, "the Request");
+  const disk = file(ROOT(), "Get Health.yml");
+  dialog.request.replaceText(dialog.request.reqText.replace("/health", "/health?x=1"));
+  assert.ok(drafts.has(k));
+  dialog.openMenu(row(key(ROOT())));
+  pick("environments");
+  const ed = dialog.editors.self;
+  await waitFor(() => ed.ed?.table && !ed.ed.loading, "the editor");
+  const id = ed.ed.table.rows.find((x) => x.name === "shopId").id;
+  setFocus(ed.ed.inputs.get(id).value, true, cx);
+  type(ed.ed.inputs.get(id).value, "7", cx);
+  assert.equal(press_key(dialog, "ctrl-s"), true);
+  await waitFor(() => ed.ed?.status?.ok, "the editor's save");
+  assert.match(file(ROOT(), "environments/local.yml"), /value: "?7"?/);
+  assert.equal(file(ROOT(), "Get Health.yml"), disk, "the Request file was not written");
+  assert.ok(drafts.has(k), "the Draft is still a Draft");
+  // Typed keys while the editor is open run nothing outside it.
+  const calls = herdr.calls.length;
+  for (const c of ["b", "y", "r", "n", "delete"]) press_key(dialog, c);
+  assert.equal(herdr.calls.length, calls);
+  assert.equal(dialog.pickers.open, null);
+  // esc closes it, asking first only when there are unsaved edits.
+  type(ed.ed.inputs.get(id).value, "8", cx);
+  dialog.steppedBack = 0;
+  press_key(dialog, "escape");
+  assert.equal(ed.ed.ask?.title, "Discard unsaved changes?");
+  press_key(dialog, "escape");
+  assert.ok(ed.ed.ask, "the same esc arriving twice does not answer the question");
+  dialog.steppedBack = 0;
+  press_key(dialog, "escape");
+  assert.equal(ed.ed.ask, null, "a second esc keeps editing");
+  draw(dialog);
+  dialog.steppedBack = 0;
+  press_key(dialog, "escape");
+  assert.equal(ed.ed.ask?.title, "Discard unsaved changes?");
+  choose(ed, cx, ed.ed.ask.choices.findIndex((c) => c.primary));
+  assert.equal(dialog.editors.open, false);
+  assert.match(file(ROOT(), "environments/local.yml"), /value: "?7"?/, "the discarded edit was not written");
+  press_key(dialog, "ctrl-s");
+  await waitFor(() => !drafts.has(k), "the Draft's save");
+  assert.match(file(ROOT(), "Get Health.yml"), /health\?x=1/);
+});
+
+test("an Environment deleted in the editor clears the Collection's remembered choice", async () => {
+  const ck = key(ROOT());
+  dialog.saved.setEnv(ck, "staging");
+  dialog.openEnvPicker(row(ck));
+  pick("Manage Environments…");
+  const ed = dialog.editors.self;
+  await waitFor(() => ed.ed?.table && !ed.ed.loading, "the editor");
+  const staging = ed.ed.list.find((e) => e.name === "staging");
+  selectEnv(ed, cx, staging.path);
+  await waitFor(() => ed.ed.sel === staging.path && ed.ed.table, "staging");
+  startDelete(ed, staging);
+  choose(ed, cx, 1);
+  await waitFor(() => ed.ed.ask?.title?.includes("cannot go to the trash"), "the permanent delete question");
+  choose(ed, cx, 1);
+  await waitFor(() => !existsSync(join(ROOT(), "environments/staging.yml")), "the delete");
+  await waitFor(() => dialog.saved.env(ck) === undefined, "the remembered choice to clear");
+  dialog.editors.close();
+  assert.deepEqual(errors, []);
 });

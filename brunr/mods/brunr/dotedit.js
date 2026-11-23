@@ -1,11 +1,11 @@
-// The .env editor: a brunr copy opened as a window with props `{ dotenvEditor: { machine, root,
-// path } }`, nothing else. It lists the .env files of the Collection root by name, and reads a file
-// only when it is selected. Two views, as in Bruno: a table of names and masked values, and Raw,
-// the text itself. A table save changes only the edited lines (dotenv.applyDotenv); a Raw save
-// writes the text as typed. Both are change-checked against the text read. Values live only in this
-// copy's state (`self.ed`). No Draft: closing with unsaved edits asks, then discards.
+// The .env editor, drawn inside the dialog (editors.js) for one Collection: `{ machine, root, path }`.
+// It lists the .env files of the Collection root by name, and reads a file only when it is
+// selected. Two views, as in Bruno: a table of names and masked values, and Raw, the text itself.
+// A table save changes only the edited lines (dotenv.applyDotenv); a Raw save writes the text as
+// typed. Both are change-checked against the text read. Values live only in the editor's state
+// (`self.ed`). No Draft: closing with unsaved edits asks, then discards.
 import { EditorState, InputState } from "gpui-base";
-import { props, theme } from "herdr";
+import { theme } from "herdr";
 import * as machine from "./machine.js";
 import * as tbl from "./envtable.js";
 import * as parts from "./editparts.js";
@@ -14,19 +14,17 @@ import { isDotenvFile, readDotenv, applyDotenv } from "./dotenv.js";
 
 const slash = (p) => String(p ?? "").replace(/\\/g, "/").replace(/\/+$/, "");
 
-export function init(self, cx) {
-  const p = props()?.dotenvEditor ?? {};
-  self.overlayId = props()?.overlay;
+/** Opens the editor on `p.path` (a file name in the root), or the first .env file. @param {{ machine: string | null, root: string, path: string | null }} p */
+export function init(self, cx, p) {
   const ed = self.ed = {
     kind: "dotenv", machine: p.machine ?? null, root: slash(p.root), files: [], sel: null, disk: null, text: null,
     table: null, view: "table", raw: null, rawText: null, inputs: new Map(), error: null, conflict: null, ask: null,
-    busy: false, status: null, kb: false, loading: true,
+    busy: false, status: null, loading: true,
   };
   ed.dirty = () => Boolean(ed.sel && ed.disk != null && (ed.view === "raw" ? ed.rawText !== ed.disk : ed.text !== ed.disk || (ed.table && tbl.isDirty(ed.table))));
   ed.fileLabel = () => ed.sel ?? ".env";
   ed.save = (cx) => save(self, cx);
   self.handle.focus();
-  parts.commandLoop(self, cx, (cx) => save(self, cx));
   if (ed.machine != null) { ed.error = "Editing works on this computer only."; ed.loading = false; return; }
   cx.spawn(async (cx) => {
     await loadList(self);
@@ -98,8 +96,6 @@ export function showRaw(self) {
   ed.raw = EditorState.new({ language: "text", value: text, font_family: parts.mono(), font_size: 12, soft_wrap: true, syntax: { comment: t.dim, string: t.ansi2 } });
   ed.rawText = text;
   ed.raw.on("change", (_e, cx) => { if (self.ed?.raw) { self.ed.rawText = self.ed.raw.value(); self.ed.status = null; } cx.notify(); });
-  ed.raw.on("focus", () => { if (self.ed) self.ed.kb = true; });
-  ed.raw.on("blur", () => { if (self.ed) self.ed.kb = false; });
   ed.view = "raw";
   ed.status = null;
 }

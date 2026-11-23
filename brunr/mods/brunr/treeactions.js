@@ -21,7 +21,7 @@ import { keyAction } from "./tree.js";
 
 /**
  * The keys of the edit actions, in the dialog's shortcuts registry, so the settings can turn each
- * off or move it. Clone is a menu entry and a command without a key.
+ * off or move it. Clone, Environments… and Edit .env… are menu entries and commands without a key.
  * @type {import("./kit/shortcuts.js").Shortcut[]}
  */
 export const SHORTCUTS = [
@@ -35,7 +35,7 @@ const TREE_KEYS = /** @type {Record<string, string>} */ ({ "new-request": "n", "
 /** treeops.rowMenu's actions, and the command each one is. */
 const COMMAND_OF = /** @type {Record<string, string>} */ ({
   newRequest: "new-request", newFolder: "new-folder", clone: "clone", rename: "rename", moveTo: "move-to",
-  moveUp: "move-up", moveDown: "move-down", delete: "delete",
+  moveUp: "move-up", moveDown: "move-down", delete: "delete", editEnvs: "environments", editDotenv: "edit-dotenv",
 });
 const ACT_OF = Object.fromEntries(Object.entries(COMMAND_OF).map(([a, c]) => [c, a]));
 
@@ -72,6 +72,8 @@ function run(self, cx, a) {
   const row = a.row;
   if (!row?.ck) return;
   if (row.machine != null) return self.say("Editing works on this computer only.");
+  if (a.act === "editEnvs") return self.openEditor("env", row.ck, null, cx);
+  if (a.act === "editDotenv") return self.openEditor("dotenv", row.ck, null, cx);
   if (self.busy) return self.say("Another change is still running.");
   const c = self.collection(row.ck);
   if (!c) return;

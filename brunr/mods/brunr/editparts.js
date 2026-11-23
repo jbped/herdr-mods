@@ -1,11 +1,12 @@
-// What the Environment editor and the .env editor share: the window frame, the table of rows with
-// masked values, the questions drawn inside the editor, buttons and notes. Each editor is a brunr
-// copy opened as a window, and `self.ed` is its state. A value lives only there: in the table
-// (envtable.js) and in the row's inputs. Nothing here writes to shared state, localStorage, a toast
-// or a log, and a message names a file, never a value. Rules live in envtable.js.
+// What the Environment editor and the .env editor share: the frame, the table of rows with masked
+// values, the questions drawn inside the editor, buttons and notes. Each editor is drawn inside the
+// dialog in place of its three columns (editors.js), and `self.ed` is its state. `self.handle` is
+// the dialog's keyboard and `self.closeEditor()` closes the editor. A value lives only in `self.ed`:
+// in the table (envtable.js) and in the row's inputs. Nothing here writes to shared state,
+// localStorage, a toast or a log, and a message names a file, never a value. Rules live in envtable.js.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState } from "gpui-base";
-import { closeOverlay, nextCommand, settings } from "herdr";
+import { settings } from "herdr";
 import * as tbl from "./envtable.js";
 
 export const mono = () => String(settings()?.font_family ?? settings()?.font ?? "JetBrains Mono");
@@ -43,18 +44,11 @@ export function syncInputs(self) {
       };
       inp.name.on("change", (_e, cx) => { rowEdited(self, id, "name"); cx.notify(); });
       inp.value.on("change", (_e, cx) => { rowEdited(self, id, "value"); cx.notify(); });
-      for (const i of [inp.name, inp.value]) watchFocus(self, i);
       ed.inputs.set(id, inp);
     }
     const masked = !tbl.isRevealed(t, id);
     if (inp.masked !== masked) { inp.value.set_masked(masked); inp.masked = masked; }
   }
-}
-
-/** Remembers whether one of the editor's inputs holds the keyboard, for ctrl-s. */
-export function watchFocus(self, input) {
-  input.on("focus", () => { if (self.ed) self.ed.kb = true; });
-  input.on("blur", () => { if (self.ed) self.ed.kb = false; });
 }
 
 /** A row input changed: its text goes into the table. */
@@ -78,26 +72,12 @@ export function change(self, fn) {
 
 // ---- keys, closing and questions ------------------------------------------------------------------
 
-/** ctrl-s reaches every shown brunr copy as "save": the editor saves only while it holds the keyboard. */
-export function commandLoop(self, cx, onSave) {
-  cx.spawn(async (cx) => {
-    for (;;) {
-      const c = await nextCommand();
-      if (!self.ed) return;
-      try { if (c === "save" && hasKeyboard(self)) onSave(cx); } catch {}
-      cx.notify();
-    }
-  });
-}
-
-export const hasKeyboard = (self) => Boolean(self.ed?.kb) || self.handle.is_focused();
-
-/** Close or Esc: a question open is cancelled; unsaved changes ask first; then the window closes. */
+/** Close or Esc: a question open is cancelled; unsaved changes ask first; then the editor closes. */
 export function requestClose(self) {
   const ed = self.ed;
   if (!ed) return;
   if (ed.ask) return closeAsk(self);
-  guard(self, () => closeOverlay(self.overlayId));
+  guard(self, () => self.closeEditor());
 }
 
 /** Runs `then` at once, or after "Discard unsaved changes?" when the editor has unsaved changes. */
@@ -118,7 +98,6 @@ export function guard(self, then) {
 export function openAsk(self, ask) {
   closeAsk(self);
   for (const f of ask.fields ?? []) {
-    watchFocus(self, f.input);
     f.input.on("change", (_e, cx) => { if (self.ed?.ask === ask) ask.error = null; cx.notify(); });
     f.input.on("submit", (_e, cx) => { choose(self, cx, ask.choices.findIndex((c) => c.primary)); cx.notify(); });
     if (f.mask) { f.input.set_masked(true); f.shown = false; }
@@ -133,7 +112,6 @@ export function closeAsk(self) {
   if (!ask) return;
   for (const f of ask.fields ?? []) { try { f.input.set_value(""); } catch {} f.input.release(); }
   self.ed.ask = null;
-  self.ed.kb = false;
   self.handle.focus();
 }
 
@@ -172,16 +150,15 @@ const field = (t, input, error, extra = {}) => Input.new(input).flex_1().min_w(0
   .border_color(error ? t.blocked : t.border).bg(t.background).text_color(t.foreground).text_size(12)
   .when(Boolean(extra.mono), (el) => el.font_family(mono()));
 
-/** The window: a title bar to drag it by, with Close, and the content, or the open question. */
+/**
+ * The editor in the dialog: a title line with Close, and the content, or the open question. Its
+ * keys are the dialog's: esc steps back (requestClose) and the save key saves (editors.js).
+ */
 export function frame(self, t, title, content) {
-  const root = v_flex().id("brunr-editor").track_focus(self.handle).size_full().bg(t.popover).text_color(t.foreground).text_size(12.5)
-    .on_key_down((e, cx) => {
-      if (e.key === "escape") requestClose(self);
-      else if ((e.keystroke === "ctrl-s" || e.keystroke === "cmd-s") && self.ed?.save) self.ed.save(cx);
-      else return;
-      cx.stop_propagation();
-      cx.notify();
-    });
+  const root = v_flex().id("brunr-editor").flex_1().min_w(0).min_h(0).overflow_hidden().rounded(8).border_1().border_color(t.border)
+    .bg(t.background).text_color(t.foreground).text_size(12.5)
+    // A press on the editor outside a field gives the keyboard back to the dialog, so esc and the save key reach it.
+    .on_mouse_down("left", (_e, cx) => { self.handle.focus(); cx.notify(); });
   root.child(h_flex().id("brunr-editor-title").h(36).flex_none().pl(14).pr(6).gap(8).items_center().border_b(1).border_color(t.border)
     .child(div().flex_1().min_w(0).truncate().font_semibold().text_size(13).child(title))
     .child(iconButton(t, "brunr-editor-close", "close", true, () => requestClose(self))));

@@ -168,17 +168,6 @@ test("saveDraft: no Draft, lint warnings, force, conflict, overwrite and another
   assert.match(r.message, /this computer only/);
 });
 
-test("asks stay in memory, in order, and never touch shared state", async () => {
-  const store = await import("../mods/brunr/store.js");
-  state.shared = {};
-  const from = store.askSeq();
-  store.ask({ kind: "envGone", key: "|/c/Shop", name: "local", newName: "copied" });
-  store.ask({ kind: "envGone", key: "|/c/Shop", name: "copied", newName: null });
-  assert.deepEqual(store.asksSince(from).map((e) => e.ask.newName), ["copied", null]);
-  assert.deepEqual(store.asksSince(store.askSeq()), []);
-  assert.deepEqual(state.shared, {});
-});
-
 test("rekey, rebase and drop: a Draft follows its file through a rename, a move and a delete", async () => {
   drafts.clear();
   const k = (p) => `|/c/Shop#${p}`;

@@ -1,11 +1,10 @@
 // @ts-nocheck
-// What Brunr keeps. Three parts:
+// What Brunr keeps. Two parts:
 // - Saved: fold state, the chosen Environments and the Request form's tab, in the storage the
 //   dialog passes (open-as.js's sharedStorage), keyed by Machine plus Collection root. Nothing from
 //   a Response or a Request's text is ever saved.
 // - The Run: the last Run, in memory only. Module code outlives the dialog, so closing and opening
 //   the dialog shows the last Response again.
-// - Asks: an in-memory log of names and keys a copy hands to another. Never Request text.
 // Pure: no Herdr, no Node APIs.
 
 const parse = (text, fallback) => { try { return JSON.parse(text ?? "null") ?? fallback; } catch { return fallback; } };
@@ -106,24 +105,3 @@ export function finishRun(result) {
   busy = null;
   changed();
 }
-
-// Asks, in memory. The Environment editor (envedit.js) tells the tree an Environment was renamed or
-// deleted (`{ kind: "envGone", key, name, newName }`). An ask holds names and keys only, never
-// Request text, and nothing is put in shared state. Each copy reads the log from its own cursor.
-
-const ASK_LOG = 50;
-let askLog = [];
-let askCount = 0;
-
-/** Adds an ask to the log: `{ kind, ... }`. */
-export function ask(req) {
-  askLog.push({ seq: ++askCount, ask: { ...req } });
-  if (askLog.length > ASK_LOG) askLog.shift();
-  changed();
-}
-
-/** The number of the latest ask. */
-export const askSeq = () => askCount;
-
-/** The asks made after number `after`, `[{ seq, ask }]` in order. */
-export const asksSince = (after) => askLog.filter((e) => e.seq > after);

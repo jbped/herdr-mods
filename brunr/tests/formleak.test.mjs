@@ -8,7 +8,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { scratch, openRequest, press, typeIn, choose, save, draw, herdr, errors, store } from "./dialoghelp.mjs";
+import { scratch, openRequest, press, typeIn, choose, save, draw, herdr, errors } from "./dialoghelp.mjs";
 
 const MARK = {
   header: "leak-marker-header-5150",
@@ -95,7 +95,7 @@ test("form values typed in every tab reach the saved file and nothing else", asy
     shared: herdr.state.shared, storage: [...storage], overlays: herdr.overlays, notices: herdr.notices,
     ran: herdr.ran, calls: herdr.calls.map((c) => [c.cmd, c.args, c.opts]), logs,
     pickers: pickers.map((p) => ({ title: p.title, detail: p.detail, lines: p.lines, options: p.options, current: p.current })),
-    asks: store.asksSince(0), note: self.note,
+    note: self.note,
   });
   for (const [name, mark] of Object.entries(MARK)) assert.ok(!outside.includes(mark), `the ${name} marker left the Request column`);
   assert.deepEqual([...storage], [], "the dialog's localStorage holds nothing");

@@ -1,7 +1,8 @@
 // Brunr: your Bruno Collections in one dialog. The tree of Collections, folders and Requests is
 // on the left, the selected Request in the middle (request.js) and the last Run's Response on the
 // right. A narrow dialog puts the Request above the Response. Requests are run with the Bruno CLI.
-// The tree's edit actions are in treeactions.js and treeform.js.
+// The tree's edit actions are in treeactions.js and treeform.js, and the Environment and .env
+// editors take the columns' place while open (editors.js).
 // Each key is also a command: `herdr-app do brunr.<command>`.
 //
 // The keyboard is on the tree, the Request or the Response. ctrl-h and ctrl-l move it left and
@@ -9,7 +10,7 @@
 // Keys: h/l fold and unfold, enter runs a Request or folds a folder, r runs the row (a folder or
 // Collection asks first), p runs a Request with other values for its URL's {{variables}}, e picks the Environment, o shows the Request's file, y copies its URL,
 // b opens Bruno desktop, 1-4 pick the Response's view, / searches a Run's Requests, f fills the
-// window, ctrl-s saves the shown Request's Draft, ctrl-r reads everything
+// window, ctrl-s saves the shown Request's Draft (or the open editor), ctrl-r reads everything
 // again, n, shift-n, f2, m, alt-up, alt-down and delete edit the tree, ? shows or hides the key
 // list, esc closes.
 //
@@ -41,6 +42,7 @@ import * as saveflow from "./saveflow.js";
 import { FILE } from "./formview.js";
 import * as actions from "./treeactions.js";
 import { TreeForm } from "./treeform.js";
+import { Editors } from "./editors.js";
 
 /** @typedef {import("gpui-kit").Context} Context */
 /** @typedef {import("gpui-kit").AsyncContext} AsyncContext */
@@ -175,6 +177,7 @@ export default class Brunr extends View {
       saved: this.saved,
     });
     this.treeForm = new TreeForm();
+    this.editors = new Editors({ handle: this.handle, envGone: (ck, name, newName, cx) => this.envGone(ck, name, newName, cx) });
     /** True while a tree action runs (treeactions.js). */
     this.busy = false;
     /** @type {{ pressed: Row | null, over: any } | null} a drag in the tree */
@@ -212,6 +215,7 @@ export default class Brunr extends View {
     this.response?.release();
     this.closeVars();
     this.treeForm?.close();
+    this.editors?.close();
   }
 
   /** Closes the dialog. Placed as a layout block there is nothing to close. */
@@ -344,7 +348,8 @@ export default class Brunr extends View {
     const k = ctrlOnly && /^[a-z]$/.test(e.key) ? `ctrl-${e.key}` : shiftOnly && /^[a-z]$/i.test(e.key) ? `shift-${e.key.toLowerCase()}` : e.keystroke;
     let c = "";
     if (this.pickers.open) c = PICKER_KEYS[k] ?? "";
-    // A form takes only esc and its own keys. Typed letters never reach a tree key.
+    // An editor or a form takes only esc and its own keys. Typed letters never reach a tree key.
+    else if (this.editors.open) c = k === "escape" ? "cancel" : this.shortcuts.matches("save", k) ? "save" : "";
     else if (this.treeForm.open) c = this.treeForm.keyCommand(k);
     else if (this.vars) c = k === "escape" ? "cancel" : k === "tab" || k === "down" ? "vars-next" : k === "shift-tab" || k === "up" ? "vars-prev" : "";
     else if (this.shortcuts.open) { this.shortcuts.key(e, cx); return; }
@@ -384,6 +389,7 @@ export default class Brunr extends View {
     this.note = null;
     if (c === "cancel") this.cancel(cx);
     else if (this.pickers.open) this.pickers.command(c, cx);
+    else if (this.editors.open) { if (c === "save") this.editors.save(cx); }
     else if (this.treeForm.open) this.treeForm.command(c, cx);
     else if (this.vars) this.varsCommand(c, cx);
     else if (this.shortcuts.command(c)) { /* the settings panel took it */ }
@@ -422,11 +428,11 @@ export default class Brunr extends View {
   cancel(cx) {
     if (actions.cancelDrag(this)) this.steppedBack = Date.now();
     else if (this.pickers.open) { this.pickers.close(cx); this.steppedBack = Date.now(); }
-    else if (this.treeForm.open) {
+    else if (this.editors.open || this.treeForm.open) {
       // One esc steps back once, even when it arrives twice.
       if (Date.now() - this.steppedBack <= ESC_GAP_MS) return;
-      this.treeForm.close();
-      this.handle.focus();
+      if (this.editors.open) this.editors.escape();
+      else { this.treeForm.close(); this.handle.focus(); }
       this.steppedBack = Date.now();
     }
     else if (this.vars) {
@@ -532,12 +538,14 @@ export default class Brunr extends View {
     const entry = this.entry(row.ck), c = this.collection(row.ck);
     if (!entry || !c) return;
     const current = this.envOf(entry, c).name;
+    const local = entry.machine == null;
+    const manage = { manage: true };
     /** @type {Choice[]} */
     const options = [{ label: "No Environment", value: null }, ...c.environments.map((/** @type {any} */ env) => {
       const secrets = env.variables.filter((/** @type {any} */ v) => v.secret).map((/** @type {any} */ v) => v.name);
-      return { label: env.name, value: env.name, warn: tree.secretWarning(secrets) };
-    })];
-    this.pickers.show({ title: `Environment of ${c.name}`, options, current, choose: (value) => this.saved.setEnv(entry.key, value) });
+      return { label: env.name, value: env.name, warn: tree.secretWarning(secrets), side: local ? { label: "Edit…", run: (/** @type {Context} */ cx) => this.openEditor("env", entry.key, env.path, cx) } : undefined };
+    }), ...(local ? [{ label: "Manage Environments…", value: manage }] : [])];
+    this.pickers.show({ title: `Environment of ${c.name}`, options, current, choose: (value, cx) => (value === manage ? this.openEditor("env", entry.key, null, cx) : this.saved.setEnv(entry.key, value)) });
   }
 
   /** @param {Row} row the Global environment row */
@@ -545,6 +553,27 @@ export default class Brunr extends View {
     /** @type {Choice[]} */
     const options = [{ label: "No Global environment", value: null }, ...row.options.map((/** @type {string} */ n) => ({ label: n, value: n }))];
     this.pickers.show({ title: "Global environment", options, current: row.env, choose: (value) => this.saved.setGlobalEnv(row.wsPath, value) });
+  }
+
+  // The Environment and .env editors
+
+  /** Opens an editor in place of the columns. `path`: the file to show first. @param {"env" | "dotenv"} kind @param {string} ck @param {string | null} path @param {Context | AsyncContext} cx */
+  openEditor(kind, ck, path, cx) {
+    const entry = this.entry(ck);
+    if (!entry) return;
+    if (entry.machine != null) return this.say("Editing works on this computer only.");
+    this.pickers.close();
+    this.editors.show(kind, entry, path, cx);
+  }
+
+  /** An Environment was renamed (`newName`) or deleted: the Collection's remembered choice follows, and the Collection is read again. @param {string} ck @param {string} name @param {string | null} newName @param {Context | AsyncContext} cx */
+  envGone(ck, name, newName, cx) {
+    if (this.saved.env(ck) === name) {
+      if (newName) this.saved.setEnv(ck, newName);
+      else this.saved.clearEnv(ck);
+    }
+    const e = this.entry(ck);
+    if (e) cx.spawn(async (cx) => { await this.loadOne(cx, e); });
   }
 
   // Run with values
@@ -925,6 +954,7 @@ export default class Brunr extends View {
         [this.shortcuts.keyFor(k.id), k.id === "full" ? (this.full ? "leave full screen" : "full screen") : k.what])),
       [",", "settings"], ["esc", "close"]];
     const picker = this.pickers.open;
+    const editing = this.editors.open;
     // Three columns when the frame is wide enough, else the Request above the Response.
     const three = this.width >= THREE_COLUMNS;
     const rest = this.width - treeW - SIZE.frameGap - 2 * SIZE.framePad;
@@ -933,7 +963,11 @@ export default class Brunr extends View {
       .key_context(REQUEST_CONTEXT)
       .when(Boolean(saveKey), (el) => el.on_action(saveAction(saveKey), (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { if (!this.shortcuts.isOff("save")) this.command("save", cx); cx.notify(); }));
     const responseCol = this.response.render(t, { width: three ? (rest - SIZE.frameGap) / 2 : rest, focused: this.focus === "response", escBox: (box) => this.escBox(box) });
-    const body = div().flex().flex_row().flex_1().min_h(0).gap(SIZE.frameGap)
+    // An open editor takes the columns' place, with the save key bound as in the Request column.
+    const body = editing
+      ? div().flex().flex_1().min_h(0).key_context(REQUEST_CONTEXT).child(this.editors.render(t))
+        .when(Boolean(saveKey), (el) => el.on_action(saveAction(saveKey), (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { if (!this.shortcuts.isOff("save")) this.command("save", cx); cx.notify(); }))
+      : div().flex().flex_row().flex_1().min_h(0).gap(SIZE.frameGap)
         .child(this.treePane(t))
         .child((three ? h_flex().items_stretch() : v_flex()).flex_1().min_w(0).min_h(0).gap(SIZE.frameGap).child(requestCol).child(responseCol));
     const panel = frame(t, { id: "brunr", title: "Brunr", handle: this.handle, onKey: (e, cx) => this.key(e, cx), fill: true, details: this.details(t),
@@ -942,9 +976,9 @@ export default class Brunr extends View {
       .on_mouse_up("left", (_e, cx) => { if (actions.cancelDrag(this)) cx.notify(); })
       .child(body)
       .when(Boolean(this.note), (el) => el.child(div().flex_none().text_size(SIZE.small).text_color(this.note?.bad ? t.blocked : t.dim).child(this.note?.text ?? "")))
-      .when(this.shortcuts.showHints, (el) => el.child(divider(t)).child(legend(t, hints)))
+      .when(this.shortcuts.showHints, (el) => el.child(divider(t)).child(legend(t, editing ? [[saveKey, "save"], ["esc", "back"]] : hints)))
       // Esc with something open steps back from it. Without this the app closes the whole dialog (see BOX_CONTEXT).
-      .when(Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing || this.request.typing || this.treeForm.open || Boolean(this.drag?.over), (el) => el.key_context(BOX_CONTEXT)
+      .when(Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing || this.request.typing || editing || this.treeForm.open || Boolean(this.drag?.over), (el) => el.key_context(BOX_CONTEXT)
         .on_action(BACK_ACTION, (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { this.command("cancel", cx); cx.notify(); }))
       .when(Boolean(picker), (el) => el.child(this.pickers.panel(t)))
       .when(this.treeForm.open, (el) => el.child(this.treeForm.panel(t, (cx) => { this.treeForm.close(); this.handle.focus(); cx.notify(); })))
