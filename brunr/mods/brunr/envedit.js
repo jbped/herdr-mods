@@ -3,7 +3,7 @@
 // clones, renames and deletes them. Values are read from the file when it is selected and kept only
 // in the editor's state (`self.ed`); a save writes the same file, change-checked against the text
 // read. No Draft: closing with unsaved edits asks, then discards. A rename or delete tells the
-// dialog the Environment's names through `self.envGone(name, newName)`, never a value. The drawing
+// dialog the Environment's names through `self.envGone(name, newName, cx)`, never a value. The drawing
 // is in envview.js; rules in envtable.js, envfile.js and fileops.js.
 import { InputState } from "gpui-base";
 import * as machine from "./machine.js";
@@ -92,7 +92,7 @@ async function loadFile(self, path) {
 export function select(self, cx, path) {
   const ed = self.ed;
   if (ed.busy || path === ed.sel) return;
-  parts.guard(self, () => cx.spawn(async (cx) => { await loadFile(self, path); cx.notify(); }));
+  parts.guard(self, (cx) => cx.spawn(async (cx) => { await loadFile(self, path); cx.notify(); }), cx);
 }
 
 /** Save and ctrl-s: the file is written from the table, change-checked against the text read. */
@@ -156,13 +156,13 @@ export function startRename(self, env) {
   if (self.ed.busy) return;
   parts.guard(self, () => nameAsk(self, {
     title: `Rename "${env.name}"`, confirm: "Rename", value: env.name,
-    run: (cx, name, ask) => perform(self, cx, ask, "renameEnvironment", { name: env.name, newName: name }, (res) => self.envGone(env.name, res.name)),
+    run: (cx, name, ask) => perform(self, cx, ask, "renameEnvironment", { name: env.name, newName: name }, (res, cx) => self.envGone(env.name, res.name, cx)),
   }));
 }
 
 export function startDelete(self, env) {
   if (self.ed.busy) return;
-  const gone = () => self.envGone(env.name, null);
+  const gone = (/** @type {any} */ _res, /** @type {any} */ cx) => self.envGone(env.name, null, cx);
   parts.guard(self, () => {
     const ask = {
       title: `Delete Environment "${env.name}"?`,
@@ -193,7 +193,7 @@ function perform(self, cx, ask, op, args, after = null) {
     ed.busy = false;
     if (!r.ok && r.failed.kind === "trash") { offerPermanent(self, cx, r.failed, after); cx.notify(); return; }
     if (!r.ok) { ask.error = r.failed.message; cx.notify(); return; }
-    after?.(out.result);
+    after?.(out.result, cx);
     parts.closeAsk(self);
     await afterChange(self, out.result?.path ?? null);
     cx.notify();
@@ -213,7 +213,7 @@ function offerPermanent(self, cx, failed, after) {
           if (!self.ed) return;
           self.ed.busy = false;
           if (!r.ok) { ask.error = r.message; cx.notify(); return; }
-          after?.({ name: null, path: null });
+          after?.({ name: null, path: null }, cx);
           parts.closeAsk(self);
           await afterChange(self, null);
           cx.notify();
@@ -305,7 +305,7 @@ function move(self, cx, ask, varName, envName, value) {
 }
 
 /** The link to the .env editor of the same Collection. Unsaved edits ask first. */
-export function openDotenv(self) {
-  parts.guard(self, () => self.openDotenv());
+export function openDotenv(self, cx) {
+  parts.guard(self, (cx) => self.openDotenv(cx), cx);
 }
 

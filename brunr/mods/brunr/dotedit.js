@@ -75,7 +75,7 @@ async function loadFile(self, name) {
 
 export function select(self, cx, name) {
   if (self.ed.busy || name === self.ed.sel) return;
-  parts.guard(self, () => cx.spawn(async (cx) => { await loadFile(self, name); cx.notify(); }));
+  parts.guard(self, (cx) => cx.spawn(async (cx) => { await loadFile(self, name); cx.notify(); }), cx);
 }
 
 /** The text the table would write, or null when a name is not valid. */

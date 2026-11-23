@@ -96,7 +96,7 @@ export class Pickers {
     const lines = p.lines ?? [];
     // The scrolling parts get a set height: left to size themselves, they came out taller or shorter
     // than the panel around them, and the choices were drawn below it.
-    const listH = Math.min(LIST_MAX, p.options.reduce((h, o) => h + (o.warn ? SIZE.tallRow + 4 : SIZE.compactRow), 0) + 2 * Math.max(0, p.options.length - 1));
+    const listH = Math.min(LIST_MAX, p.options.reduce((h, o) => h + (o.warn ? SIZE.tallRow + 4 + (o.side ? 18 : 0) : SIZE.compactRow), 0) + 2 * Math.max(0, p.options.length - 1));
     const panel = v_flex().id("brunr-picker").absolute().top(60).left(SIZE.framePad).w(p.lines?.length || p.detail ? 460 : 400).max_w("100%").p(12).gap(8)
       .bg(t.popover).rounded(12).border_1().border_color(t.border).shadow_lg().text_size(SIZE.text)
       // A press on the panel stays on it: the rows under it do not get it.

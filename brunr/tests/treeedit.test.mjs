@@ -77,7 +77,7 @@ function pick(v) {
 }
 
 test("the edit keys are in the dialog's shortcuts registry, on free keys, and can be switched off", () => {
-  assert.deepEqual(SHORTCUTS.map((s) => `${s.id}=${s.key}`), ["new-request=n", "new-folder=shift-n", "rename=f2", "move-to=m", "move-up=alt-up", "move-down=alt-down", "delete=delete"]);
+  assert.deepEqual(SHORTCUTS.map((s) => `${s.id}=${s.key}`), ["new-request=n", "new-folder=shift-n", "rename=shift-r", "move-to=m", "move-up=ctrl-up", "move-down=ctrl-down", "delete=delete"]);
   const all = dialog.shortcuts.keys.map((k) => k.key);
   assert.equal(new Set(all).size, all.length, "no two shortcuts share a key");
   for (const s of SHORTCUTS) assert.ok(dialog.shortcuts.keys.some((k) => k.id === s.id), `${s.id} can be switched off or moved in the settings`);
@@ -91,7 +91,7 @@ test("the edit keys are in the dialog's shortcuts registry, on free keys, and ca
 test("the row menu lists the edit actions with their keys; a Collection on another Machine gets none", () => {
   dialog.openMenu(row(key(ROOT(), "products")));
   const labels = dialog.pickers.open.options.map((o) => `${o.label}${o.hint ? ` [${o.hint}]` : ""}`);
-  for (const l of ["New Request [n]", "New folder [shift-n]", "Rename [f2]", "Move to… [m]", "Delete [delete]"]) assert.ok(labels.includes(l), `${l} in ${labels.join(", ")}`);
+  for (const l of ["New Request [n]", "New folder [shift-n]", "Rename [shift-r]", "Move to… [m]", "Delete [delete]"]) assert.ok(labels.includes(l), `${l} in ${labels.join(", ")}`);
   dialog.pickers.close();
   dialog.openMenu(row(key(ROOT())));
   assert.ok(dialog.pickers.open.options.some((o) => o.label === "Environments…"));
@@ -143,13 +143,13 @@ test("a name check shows under the field, and esc closes the form without a chan
   assert.equal(existsSync(join(ROOT(), "products/CON")), false);
 });
 
-test("f2 renames the shown Request with a Draft: the Draft and the Request column follow the file", async () => {
+test("shift-r renames the shown Request with a Draft: the Draft and the Request column follow the file", async () => {
   const k = key(ROOT(), "products/List Products.yml");
   select(k);
   await waitFor(() => dialog.request.req?.key === k && dialog.request.reqText != null, "the Request");
   dialog.request.replaceText(dialog.request.reqText.replace("/products", "/products?draft=1"));
   assert.ok(drafts.has(k));
-  press_key(dialog, "f2");
+  press_key(dialog, "shift-r");
   const f = dialog.treeForm;
   type(f.inputs.name, "Catalog", cx);
   type(f.inputs.file, "Catalog", cx);
@@ -195,16 +195,16 @@ test("Move to by the picker moves into a folder, and to another Collection of th
   assert.equal(dialog.sel, key(TWO(), "Catalog.yml"));
 });
 
-test("alt-up and alt-down reorder a Request among its folder's Requests", async () => {
+test("ctrl-up and ctrl-down reorder a Request among its folder's Requests", async () => {
   const k = key(ROOT(), "products/Missing Product.yml");
   select(k);
   const place = () => dialog.buildRows().filter((r) => r.kind === "request" && r.parent === key(ROOT(), "products")).findIndex((r) => r.key === k);
   const before = place();
-  press_key(dialog, "alt-down");
+  press_key(dialog, "ctrl-down");
   await settle("the reorder");
   assert.equal(place(), before + 1);
   assert.equal(dialog.sel, k, "it stays selected");
-  press_key(dialog, "alt-up");
+  press_key(dialog, "ctrl-up");
   await settle("the reorder back");
   assert.equal(place(), before);
 });
@@ -316,13 +316,18 @@ test("ctrl-s saves the open editor and not the Request's Draft; once it closes, 
   assert.match(file(ROOT(), "Get Health.yml"), /health\?x=1/);
 });
 
-test("an Environment deleted in the editor clears the Collection's remembered choice", async () => {
+test("an Environment deleted in the editor clears the Collection's remembered choice, in the turns that follow the opening", async () => {
   const ck = key(ROOT());
   dialog.saved.setEnv(ck, "staging");
   dialog.openEnvPicker(row(ck));
-  pick("Manage Environments…");
+  // The editor opens in the turn of this choice. That turn's context is gone afterwards, as in the
+  // app, so every later step must use the context of its own turn.
+  const turn = { ...cx, live: true, spawn(fn) { if (!this.live) throw new Error("cx is no longer valid"); return cx.spawn(fn); } };
+  const p = dialog.pickers.open;
+  dialog.pickers.pick(p.options.findIndex((o) => o.label === "Manage Environments…"), turn);
   const ed = dialog.editors.self;
   await waitFor(() => ed.ed?.table && !ed.ed.loading, "the editor");
+  turn.live = false;
   const staging = ed.ed.list.find((e) => e.name === "staging");
   selectEnv(ed, cx, staging.path);
   await waitFor(() => ed.ed.sel === staging.path && ed.ed.table, "staging");

@@ -42,7 +42,7 @@ function list(self, t) {
   box.child(v_flex().id("brunr-env-items").flex_1().min_h(0).overflow_y_scrollbar().gap(2).children(items));
   if (!e.list.length && !e.loading) box.child(div().px(12).pb(8).text_size(11.5).text_color(t.dim).child("No Environment yet. New creates one."));
   return box.child(h_flex().flex_none().px(12).py(10).border_t(1).border_color(t.border)
-    .child(parts.button(t, "brunr-env-dotenv", "Edit .env…", true, () => ed.openDotenv(self))));
+    .child(parts.button(t, "brunr-env-dotenv", "Edit .env…", true, (cx) => ed.openDotenv(self, cx))));
 }
 
 function detail(self, t) {

@@ -80,13 +80,16 @@ export function requestClose(self) {
   guard(self, () => self.closeEditor());
 }
 
-/** Runs `then` at once, or after "Discard unsaved changes?" when the editor has unsaved changes. */
-export function guard(self, then) {
-  if (!self.ed.dirty()) return then();
+/**
+ * Runs `then(cx)` at once, or after "Discard unsaved changes?" when the editor has unsaved changes.
+ * `cx` is the context of the turn that runs it: the caller's now, or the Discard press's later.
+ */
+export function guard(self, then, cx = null) {
+  if (!self.ed.dirty()) return then(cx);
   openAsk(self, {
     title: "Discard unsaved changes?",
     detail: `Your changes to ${self.ed.fileLabel()} are not saved. Discarding them cannot be undone.`,
-    choices: [{ label: "Keep editing" }, { label: "Discard", primary: true, run: () => { closeAsk(self); then(); } }],
+    choices: [{ label: "Keep editing" }, { label: "Discard", primary: true, run: (cx) => { closeAsk(self); then(cx); } }],
   });
 }
 

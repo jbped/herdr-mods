@@ -5,7 +5,7 @@
 // shared state, a picker, the note line or a log.
 //
 // In the dialog:
-//   init:    this.editors = new Editors({ handle, envGone(ck, name, newName) });
+//   init:    this.editors = new Editors({ handle, envGone(ck, name, newName, cx) });
 //   open:    this.editors.show("env" | "dotenv", entry, path, cx)
 //   keys:    while it is open, esc is this.editors.escape() and the save key this.editors.save(cx)
 //   render:  this.editors.render(t) in place of the columns
@@ -45,8 +45,9 @@ export class Editors {
     const self = {
       kind, ck: entry.key, ed: null, handle: this.host.handle,
       closeEditor: () => { if (this.self === self) this.close(); },
-      openDotenv: () => { if (this.self === self) this.show("dotenv", entry, ".env", cx); },
-      envGone: (/** @type {string} */ name, /** @type {string | null} */ newName) => this.host.envGone(entry.key, name, newName, cx),
+      // Each call takes the context of its own turn: one kept from an earlier turn cannot spawn.
+      openDotenv: (/** @type {Context | AsyncContext} */ cx) => { if (this.self === self) this.show("dotenv", entry, ".env", cx); },
+      envGone: (/** @type {string} */ name, /** @type {string | null} */ newName, /** @type {Context | AsyncContext} */ cx) => this.host.envGone(entry.key, name, newName, cx),
     };
     this.self = self;
     const p = { machine: entry.machine ?? null, root: entry.root, path };

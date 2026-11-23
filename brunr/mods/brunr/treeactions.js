@@ -22,15 +22,17 @@ import { keyAction } from "./tree.js";
 /**
  * The keys of the edit actions, in the dialog's shortcuts registry, so the settings can turn each
  * off or move it. Clone, Environments… and Edit .env… are menu entries and commands without a key.
+ * Herdr's own keys reach Herdr first: f2 renames a tab, and alt-up and alt-down step through
+ * agents. So Rename is on shift-r and Move up and Move down on ctrl-up and ctrl-down.
  * @type {import("./kit/shortcuts.js").Shortcut[]}
  */
 export const SHORTCUTS = [
   { id: "new-request", key: "n", what: "new Request" }, { id: "new-folder", key: "shift-n", what: "new folder" },
-  { id: "rename", key: "f2", what: "rename" }, { id: "move-to", key: "m", what: "move to" },
-  { id: "move-up", key: "alt-up", what: "move up" }, { id: "move-down", key: "alt-down", what: "move down" },
+  { id: "rename", key: "shift-r", what: "rename" }, { id: "move-to", key: "m", what: "move to" },
+  { id: "move-up", key: "ctrl-up", what: "move up" }, { id: "move-down", key: "ctrl-down", what: "move down" },
   { id: "delete", key: "delete", what: "delete" },
 ];
-/** Each edit command, and the key tree.keyAction knows it by. */
+/** Each edit command, and the name tree.keyAction knows it by (not the key it is on). */
 const TREE_KEYS = /** @type {Record<string, string>} */ ({ "new-request": "n", "new-folder": "shift-n", rename: "f2", delete: "delete", "move-up": "alt-up", "move-down": "alt-down", "move-to": "m" });
 /** treeops.rowMenu's actions, and the command each one is. */
 const COMMAND_OF = /** @type {Record<string, string>} */ ({
@@ -222,6 +224,7 @@ export function hover(self, row, e, cx) {
 export function release(self, row, cx) {
   const from = self.drag?.pressed, over = self.drag?.over;
   self.drag = null;
+  if (from && over) self.note = null;
   if (!from || !over || over.key !== row.key) return;
   const d = over.drop;
   if (d.toast) return self.say(`Not moved: another format. ${d.toast}`);
@@ -273,7 +276,8 @@ export function perform(self, cx, job) {
     const run = await runEffects(out.effects, { machine: null, root: roots });
     followEffects(self, job, run.ran);
     if (job.form) {
-      if (run.ok || run.ran.length) self.treeForm.close();
+      // The form's fields go, so the keyboard goes back to the dialog.
+      if (run.ok || run.ran.length) { self.treeForm.close(); self.handle.focus(); }
       else self.treeForm.fail(run.failed?.message ?? "It did not work.");
     }
     if (!run.ok && run.failed?.kind === "trash" && job.deleted) {
