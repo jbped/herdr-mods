@@ -45,7 +45,7 @@ const toolbar = () => h_flex().h(40).flex_none().px(12).gap(8).items_center();
 
 function body(self, t, d, local) {
   const bar = toolbar().child(ui.menuButton(t, "brunr-body-mode", fv.BODY_LABELS[d.mode], local,
-    () => ui.openMenu(self, "bodyMode", null, fv.BODY_MENU, fv.BODY_LABELS, d.mode, 190)));
+    (cx) => ui.openMenu(self, "bodyMode", null, fv.BODY_MENU, fv.BODY_LABELS, d.mode, cx)));
   if (d.mode === "json") {
     bar.child(div().flex_1()).child(ui.button(t, "brunr-body-prettify", "Prettify", local, () => prettify(self)));
   }
@@ -78,14 +78,14 @@ function labelled(self, t, text, id, masked = false) {
 function auth(self, t, d, local) {
   const box = v_flex().id("brunr-form-auth").flex_1().min_h(0).overflow_y_scrollbar().pb(8)
     .child(toolbar().child(ui.menuButton(t, "brunr-auth-mode", fv.AUTH_LABELS[d.mode], local,
-      () => ui.openMenu(self, "authMode", null, fv.AUTH_MENU, fv.AUTH_LABELS, d.mode, 180))));
+      (cx) => ui.openMenu(self, "authMode", null, fv.AUTH_MENU, fv.AUTH_LABELS, d.mode, cx))));
   if (d.mode === "basic") return box.child(labelled(self, t, "Username", "auth:username")).child(labelled(self, t, "Password", "auth:password", true));
   if (d.mode === "bearer") return box.child(labelled(self, t, "Token", "auth:token", true));
   if (d.mode === "apikey") {
     return box.child(labelled(self, t, "Key", "auth:key")).child(labelled(self, t, "Value", "auth:value", true))
       .child(v_flex().flex_none().px(12).pt(8).items_start().child(label(t, "Add To"))
         .child(ui.menuButton(t, "brunr-auth-placement", fv.PLACEMENT_LABELS[d.placement], local,
-          () => ui.openMenu(self, "placement", null, fv.PLACEMENTS, fv.PLACEMENT_LABELS, d.placement, 170))));
+          (cx) => ui.openMenu(self, "placement", null, fv.PLACEMENTS, fv.PLACEMENT_LABELS, d.placement, cx))));
   }
   if (d.mode === "inherit") return box.child(div().px(12).pt(4).text_color(t.muted).child(fv.INHERIT_NOTE));
   return box;

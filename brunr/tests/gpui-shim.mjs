@@ -13,6 +13,7 @@ function element() {
       if (key === "when") return (c, f) => (c ? f(el) ?? el : el);
       if (key === "child") return (c) => { if (typeof c === "string") rec.text.push(c); return el; };
       if (key === "children") return () => el;
+      if (key === "on_action") return (name, fn) => { rec.handlers[`on_action:${name}`] = fn; return el; };
       if (typeof key === "string" && key.startsWith("on_")) return (...a) => { rec.handlers[key] = a[a.length - 1]; return el; };
       return () => el;
     },
@@ -47,6 +48,17 @@ export const EditorState = { new: (o) => textState(o) };
 export const Input = { new: () => element() };
 export const Editor = { new: () => element() };
 export const ScrollHandle = { new: () => ({ scroll_to_item() {}, release() { return true; } }) };
+// The kit's slider parts (kit/controls.js): drawn as plain elements.
+export const Slider = { new: () => element() };
+export const SliderTrack = { new: () => element() };
+export const SliderIndicator = { new: () => element() };
+export const SliderThumb = { new: () => element() };
+export const SliderState = { new: () => ({ value: () => 0, set_value() {}, on() { return true; }, release() { return true; } }) };
+
+/** Gives a text state the keyboard or takes it away, as a click into it or out of it would. */
+export function setFocus(state, on, cx) {
+  for (const fn of state.handlers[on ? "focus" : "blur"] ?? []) fn({}, cx);
+}
 
 /** Types `text` into a state as a person would: the value changes, then its change handlers run. */
 export function type(state, text, cx) {

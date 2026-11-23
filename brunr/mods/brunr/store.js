@@ -57,7 +57,7 @@ export function chosenEnv(saved, collectionKey, collection) {
 
 // The Run, in memory
 
-let view = null;              // what the Response side shows: a Run or a file
+let view = null;              // what the Response side shows: the last Run
 let busy = null;              // the Run in progress: { key, ck, label, progress }
 let waiters = [];
 
@@ -104,12 +104,6 @@ export function setProgress(progress) {
 export function finishRun(result) {
   if (view?.kind === "run" && view.state === "running") view = { ...view, state: "done", result, progress: null, n: Date.now() };
   busy = null;
-  changed();
-}
-
-/** Shows a Collection file on the Response side: `{ path, text, language }`. */
-export function showFile(file) {
-  view = { kind: "file", file, n: Date.now() };
   changed();
 }
 

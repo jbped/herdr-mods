@@ -1,15 +1,18 @@
 // Brunr: your Bruno Collections in one dialog. The tree of Collections, folders and Requests is
-// on the left, and the last Run's Response is on the right. Requests are run with the Bruno CLI.
+// on the left, the selected Request in the middle (request.js) and the last Run's Response on the
+// right. A narrow dialog puts the Request above the Response. Requests are run with the Bruno CLI.
 // Each key is also a command: `herdr-app do brunr.<command>`.
 //
-// The keyboard is on the tree or on the Response. ctrl-h puts it on the tree, ctrl-l on the
-// Response. j/k (or the arrows) move in the tree, and through a Run's Requests when it is there.
+// The keyboard is on the tree, the Request or the Response. ctrl-h and ctrl-l move it left and
+// right. j/k (or the arrows) move in the tree, and through a Run's Requests when it is there.
 // Keys: h/l fold and unfold, enter runs a Request or folds a folder, r runs the row (a folder or
-// Collection asks first), p runs a Request with other values for its URL's {{variables}}, e picks the Environment, o opens the Request's file, y copies its URL,
+// Collection asks first), p runs a Request with other values for its URL's {{variables}}, e picks the Environment, o shows the Request's file, y copies its URL,
 // b opens Bruno desktop, 1-4 pick the Response's view, / searches a Run's Requests, f fills the
-// window, ctrl-r reads everything again, ? shows or hides the key list, esc closes.
+// window, ctrl-s saves the shown Request's Draft, ctrl-r reads everything again, ? shows or hides
+// the key list, esc closes.
 //
-// Config: brunr.json in the app home. Nothing from a Response is written to disk.
+// Config: brunr.json in the app home. Nothing from a Response is written to disk. Request files
+// change only through saves (saveflow.js), and Drafts live in memory (drafts.js).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, InputState } from "gpui-base";
@@ -29,6 +32,11 @@ import * as tree from "./tree.js";
 import { planRun, plannedRequests } from "./plan.js";
 import { parseProgress, progressOf } from "./progress.js";
 import { Response, methodBadge } from "./response.js";
+import { Pickers, PICKER_KEYS } from "./picker.js";
+import { RequestColumn, stepPlace } from "./request.js";
+import * as drafts from "./drafts.js";
+import * as saveflow from "./saveflow.js";
+import { FILE } from "./formview.js";
 
 /** @typedef {import("gpui-kit").Context} Context */
 /** @typedef {import("gpui-kit").AsyncContext} AsyncContext */
@@ -37,8 +45,7 @@ import { Response, methodBadge } from "./response.js";
 /** A row of the tree, as tree.buildRows makes it. @typedef {any} Row */
 /** One {{variable}} of the "run with values" form. @typedef {{ name: string, known: boolean, secret: boolean, input: any }} VarField */
 /** The "run with values" form. @typedef {{ key: string, name: string, url: string, fields: VarField[], at: number }} VarsForm */
-/** One choice in a picker. `warn` is a dim line under it. `hint` is its key, at the right. @typedef {{ label: string, value: any, warn?: string | null, hint?: string }} Choice */
-/** A small list over the dialog: an Environment to pick, a Run to confirm, or a row's menu. @typedef {{ title: string, options: Choice[], at: number, current?: any, choose: (value: any, cx: Context | AsyncContext) => void }} Picker */
+/** @typedef {import("./picker.js").Choice} Choice */
 
 /** The mod's folder name: its icons live there. */
 const MOD = "brunr";
@@ -57,6 +64,11 @@ const DIALOG = { width: 1120, height: /** @type {const} */ ("85%") };
 /** The tree column's width, in the dialog and in full screen. */
 const TREE_W = 340;
 const TREE_W_FULL = 400;
+/** The frame is this wide or wider: the Request and the Response sit side by side, else the Request is above. */
+const THREE_COLUMNS = 1100;
+/** The Request column's key context: the save key is bound in it, so it works in a field or an editor. */
+const REQUEST_CONTEXT = "BrunrRequest";
+const saveAction = (/** @type {string} */ key) => `brunr-save-${key.replace(/[^a-z0-9]/gi, "_")}`;
 const INDENT = 14;
 /** Collections on other Machines are read again this often, in milliseconds. */
 const REMOTE_REFRESH = 30000;
@@ -70,7 +82,7 @@ const KEYS = {
   up: "up", k: "up", down: "down", j: "down", left: "left", h: "left", right: "right", l: "right", home: "home", end: "end", enter: "enter",
   r: "run", p: "vars", e: "env", o: "file", y: "url", b: "app", f: "full", "ctrl-r": "reload",
   "1": "part-1", "2": "part-2", "3": "part-3", "4": "part-4", "/": "search",
-  "ctrl-h": "focus-tree", "ctrl-l": "focus-response", escape: "cancel", "?": "keys", "shift-/": "keys", ",": "settings",
+  "ctrl-h": "focus-left", "ctrl-l": "focus-right", escape: "cancel", "?": "keys", "shift-/": "keys", ",": "settings",
   "ctrl-x": "close-tab",
 };
 /**
@@ -82,12 +94,10 @@ const SHORTCUTS = [
   { id: "run", key: "r", what: "run" }, { id: "vars", key: "p", what: "run with values" }, { id: "env", key: "e", what: "environment" },
   { id: "file", key: "o", what: "open file" }, { id: "url", key: "y", what: "copy URL" },
   { id: "app", key: "b", what: "open Bruno" }, { id: "full", key: "f", what: "full screen" },
-  { id: "reload", key: "ctrl-r", what: "reload" },
+  { id: "reload", key: "ctrl-r", what: "reload" }, { id: "save", key: "ctrl-s", what: "save" },
 ];
 /** What tree.keyAction calls each command that acts on the selected row. @type {Record<string, string>} */
 const TREE_KEY = { up: "up", down: "down", left: "left", right: "right", home: "home", end: "end", enter: "enter", run: "r", env: "e", file: "o", app: "b" };
-/** The keys while a picker is open. @type {Record<string, string>} */
-const PICKER_KEYS = { up: "up", k: "up", "ctrl-k": "up", down: "down", j: "down", "ctrl-j": "down", enter: "enter", space: "enter", escape: "cancel" };
 /**
  * Esc with something open. The app closes the top dialog on esc before the mod's key handler
  * hears of it, so the dialog sits in this key context while a picker, the settings or the Search
@@ -128,12 +138,12 @@ export default class Brunr extends View {
     /** True after the selection moves, until the next render scrolls to it. */
     this.reveal = true;
     this.scroll = ScrollHandle.new();
-    this.pickerScroll = ScrollHandle.new();
     this.loadingAll = true;
-    /** @type {"tree" | "response"} which side j and k act on */
+    /** @type {string} where the keyboard is: "tree", "request" or "response" (request.js PLACES) */
     this.focus = "tree";
-    /** @type {Picker | null} */
-    this.picker = null;
+    this.pickers = new Pickers();
+    /** @type {Set<string>} the save keys bound in the Request column's key context */
+    this.saveKeys = new Set();
     /** @type {VarsForm | null} */
     this.vars = null;
     /** @type {Map<string, Record<string, string>>} Request key -> the values its last "run with values" used. Kept until the dialog closes, never saved. */
@@ -153,6 +163,13 @@ export default class Brunr extends View {
     /** @type {boolean} the dialog fills the window */
     this.full = Boolean(p.full ?? (p.overlay !== undefined && this.shortcuts.option("full")));
     this.response = new Response();
+    this.request = new RequestColumn({
+      openPicker: (p, cx) => { this.pickers.show(p, cx); this.handle.focus(); },
+      say: (text, bad) => this.say(text, bad),
+      run: (cx, key) => this.runKey(cx, key, false),
+      saved: this.saved,
+    });
+    this.bindSave(cx);
     if (checking()) return;
 
     this.handle.focus();
@@ -168,6 +185,8 @@ export default class Brunr extends View {
     });
     // The Run lives in store.js: each change is taken here and drawn.
     cx.spawn(async (cx) => { for (;;) { await store.nextChange(); this.response.sync(); cx.notify(); } });
+    // Drafts live in drafts.js: a save, a discard or a change on disk is taken here.
+    cx.spawn(async (cx) => { for (;;) { await drafts.nextChange(); this.request.draftChanged(); cx.notify(); } });
     cx.timer.every(REMOTE_REFRESH, (cx) => this.refreshRemote(cx));
   }
 
@@ -178,6 +197,8 @@ export default class Brunr extends View {
     for (const w of this.watches?.values() ?? []) w?.cancel();
     this.watches?.clear();
     if (store.running()) store.finishRun({ ok: false, message: "Brunr was closed before the Run finished.", summary: { requests: 0, passed: 0, failed: 0, skipped: 0, duration: 0 }, responses: [] });
+    // A save in progress is finished and released here: the copy's tasks are cancelled after close.
+    await this.request?.close();
     this.response?.release();
     this.closeVars();
   }
@@ -209,7 +230,9 @@ export default class Brunr extends View {
   async loadOne(cx, entry) {
     const prev = this.loaded.get(entry.key) ?? {};
     this.loaded.set(entry.key, { ...prev, loading: true });
-    const r = await sources.loadCollection(entry);
+    const { files, ...r } = await sources.loadCollection(entry);
+    // The texts just read tell the Drafts whether a shown Request changed on disk. They are not kept.
+    if (files) drafts.collectionRead(entry.key, files);
     this.loaded.set(entry.key, { ...r, loading: false });
     cx.notify();
   }
@@ -308,10 +331,12 @@ export default class Brunr extends View {
     const ctrlOnly = m.control && !m.shift && !m.alt && !m.platform;
     const k = ctrlOnly && /^[a-z]$/.test(e.key) ? `ctrl-${e.key}` : e.keystroke;
     let c = "";
-    if (this.picker) c = PICKER_KEYS[k] ?? "";
+    if (this.pickers.open) c = PICKER_KEYS[k] ?? "";
     else if (this.vars) c = k === "escape" ? "cancel" : k === "tab" || k === "down" ? "vars-next" : k === "shift-tab" || k === "up" ? "vars-prev" : "";
     else if (this.shortcuts.open) { this.shortcuts.key(e, cx); return; }
     else if (this.response.typing) c = k === "escape" ? "cancel" : k === "enter" ? "focus-response" : "";
+    // Typing in a Request field runs no tree key. The save key, esc, ctrl-h and ctrl-l still work.
+    else if (this.request.typing) c = k === "escape" ? "cancel" : k === "ctrl-h" ? "focus-left" : k === "ctrl-l" ? "focus-right" : this.shortcuts.matches("save", k) ? "save" : "";
     else {
       // The settings say which key each shortcut is on. A key the user gave to a shortcut wins.
       // The key a shortcut came with works only while the shortcut is still on it.
@@ -319,9 +344,22 @@ export default class Brunr extends View {
       const own = SHORTCUTS.find((s) => s.id === c);
       if (own && (this.shortcuts.isOff(c) || (own.key === k && this.shortcuts.keyFor(c) !== k))) c = "";
     }
+    this.bindSave(cx);
     if (!c) return;
     this.command(c, cx);
     cx.stop_propagation();
+  }
+
+  /**
+   * Binds the save key in the Request column's key context, so it reaches the dialog even when an
+   * editor holds the keyboard. A key changed in the settings is bound when the next key arrives.
+   * @param {Context} cx
+   */
+  bindSave(cx) {
+    const k = this.shortcuts.keyFor("save");
+    if (!k || this.saveKeys.has(k)) return;
+    this.saveKeys.add(k);
+    try { cx.bind_keys([{ keystroke: k, action: saveAction(k), context: REQUEST_CONTEXT }]); } catch { /* not a key the app can bind */ }
   }
 
   /**
@@ -331,13 +369,15 @@ export default class Brunr extends View {
   command(c, cx) {
     this.note = null;
     if (c === "cancel") this.cancel(cx);
-    else if (this.picker) this.pickerCommand(c, cx);
+    else if (this.pickers.open) this.pickers.command(c, cx);
     else if (this.vars) this.varsCommand(c, cx);
     else if (this.shortcuts.command(c)) { /* the settings panel took it */ }
-    else if (c === "focus-tree" || c === "focus-response") {
-      this.focus = c === "focus-tree" ? "tree" : "response";
-      this.handle.focus();
-    }
+    else if (c === "focus-left" || c === "focus-right") this.focusOn(stepPlace(this.focus, c === "focus-left" ? -1 : 1, Boolean(this.request.req)));
+    else if (c === "focus-tree" || c === "focus-request" || c === "focus-response") this.focusOn(c.slice(6));
+    else if (c === "save") this.request.save(cx);
+    // On the Request column, enter puts the keyboard in its URL field. The tree does not move under it.
+    else if (this.focus === "request" && c === "enter") this.request.focusFirst();
+    else if (this.focus === "request" && TREE_KEY[c] && ["up", "down", "left", "right", "home", "end"].includes(c)) { /* nothing to move here */ }
     else if (c === "keys") this.shortcuts.setOption("hints", !this.shortcuts.showHints);
     else if (c === "full") this.toggleFull();
     // In a tab: close it and go back to the tab you came from. A dialog closes with esc.
@@ -356,16 +396,23 @@ export default class Brunr extends View {
     cx.notify();
   }
 
-  /** Esc: closes the picker, then the settings, then leaves the Search box, then closes the dialog. @param {Context | AsyncContext} cx */
+  /** Moves the keyboard: the tree, the Request column or the Response. Enter on the Request column goes into its URL field. @param {string} place */
+  focusOn(place) {
+    this.focus = place;
+    this.handle.focus();
+  }
+
+  /** Esc: closes the picker, then the settings, then leaves a text box, then closes the dialog. @param {Context | AsyncContext} cx */
   cancel(cx) {
-    if (this.picker) { this.picker = null; this.steppedBack = Date.now(); }
+    if (this.pickers.open) { this.pickers.close(cx); this.steppedBack = Date.now(); }
     else if (this.vars) {
       this.closeVars();
       this.steppedBack = Date.now();
       cx.spawn(async (cx) => { this.steppedBack = Date.now(); this.handle.focus(); cx.notify(); });
     }
     else if (this.shortcuts.open) this.shortcuts.back();
-    else if (this.response.typing) {
+    else if (this.response.typing || this.request.typing) {
+      if (this.request.typing) this.focus = "tree";
       // The keyboard moves back after this key press is over, so the press is not handed on as a second esc.
       this.steppedBack = Date.now();
       cx.spawn(async (cx) => { this.steppedBack = Date.now(); this.handle.focus(); cx.notify(); });
@@ -381,12 +428,12 @@ export default class Brunr extends View {
 
   /** @param {Context | AsyncContext} cx @param {any} a what tree.keyAction answered */
   act(cx, a) {
-    if (a.act === "move") { this.sel = this.rows[a.to]?.key ?? this.sel; this.reveal = true; }
+    if (a.act === "move") { this.sel = this.rows[a.to]?.key ?? this.sel; this.reveal = true; this.showSelected(cx); }
     else if (a.act === "fold") this.saved.setOpen(a.key, a.open);
     else if (a.act === "run" || a.act === "runMany") this.runKey(cx, a.row.key, false);
     else if (a.act === "env") this.openEnvPicker(a.row);
     else if (a.act === "global") this.openGlobalPicker(a.row);
-    else if (a.act === "file") this.openFile(cx, a.row);
+    else if (a.act === "open") this.openFile(cx, a.row);
     else if (a.act === "bruno") this.openBruno(cx);
   }
 
@@ -404,7 +451,9 @@ export default class Brunr extends View {
   clickRow(cx, row, e) {
     this.sel = row.key;
     this.focus = "tree";
+    this.handle.focus();
     this.note = null;
+    this.showSelected(cx);
     if (e?.click_count === 2 && row.kind === "request") this.runKey(cx, row.key, false);
     else if (e?.click_count === 2 && tree.foldable(row)) this.saved.setOpen(row.key, !row.open);
     else if (row.kind === "global") this.openGlobalPicker(row);
@@ -428,7 +477,7 @@ export default class Brunr extends View {
     if (row.kind === "request" && row.url) options.push({ label: "Copy URL", value: "url", hint: key("url") });
     if (row.ck) options.push({ label: "Copy path", value: "path" });
     options.push({ label: "Reload", value: "reload", hint: key("reload") });
-    this.picker = {
+    this.pickers.show({
       title: row.name, options, at: 0,
       choose: (value, cx) => {
         if (value === "path") this.copyPath(cx, row);
@@ -439,7 +488,7 @@ export default class Brunr extends View {
         else if (value === "app") this.openBruno(cx);
         else this.command(value, cx);
       },
-    };
+    });
   }
 
   /** Copies the row's path on its Machine: the Collection root, or a file or folder inside it. @param {Context | AsyncContext} cx @param {Row} row */
@@ -452,25 +501,6 @@ export default class Brunr extends View {
 
   // Pickers
 
-  /** @param {string} c @param {Context | AsyncContext} cx */
-  pickerCommand(c, cx) {
-    const p = this.picker;
-    if (!p) return;
-    if (c === "up" || c === "down") {
-      p.at = (p.at + (c === "up" ? -1 : 1) + p.options.length) % p.options.length;
-      this.pickerScroll.scroll_to_item(p.at);
-    } else if (c === "enter") this.pick(p.at, cx);
-  }
-
-  /** Takes a picker's choice and closes it. @param {number} i @param {Context | AsyncContext} cx */
-  pick(i, cx) {
-    const p = this.picker;
-    const option = p?.options[i];
-    if (!p || !option) return;
-    this.picker = null;
-    p.choose(option.value, cx);
-  }
-
   /** @param {Row} row any row of the Collection */
   openEnvPicker(row) {
     const entry = this.entry(row.ck), c = this.collection(row.ck);
@@ -481,14 +511,14 @@ export default class Brunr extends View {
       const secrets = env.variables.filter((/** @type {any} */ v) => v.secret).map((/** @type {any} */ v) => v.name);
       return { label: env.name, value: env.name, warn: tree.secretWarning(secrets) };
     })];
-    this.picker = { title: `Environment of ${c.name}`, options, current, at: Math.max(0, options.findIndex((o) => o.value === current)), choose: (value) => this.saved.setEnv(entry.key, value) };
+    this.pickers.show({ title: `Environment of ${c.name}`, options, current, choose: (value) => this.saved.setEnv(entry.key, value) });
   }
 
   /** @param {Row} row the Global environment row */
   openGlobalPicker(row) {
     /** @type {Choice[]} */
     const options = [{ label: "No Global environment", value: null }, ...row.options.map((/** @type {string} */ n) => ({ label: n, value: n }))];
-    this.picker = { title: "Global environment", options, current: row.env, at: Math.max(0, options.findIndex((o) => o.value === row.env)), choose: (value) => this.saved.setGlobalEnv(row.wsPath, value) };
+    this.pickers.show({ title: "Global environment", options, current: row.env, choose: (value) => this.saved.setGlobalEnv(row.wsPath, value) });
   }
 
   // Run with values
@@ -557,11 +587,13 @@ export default class Brunr extends View {
   // Runs
 
   /**
-   * Runs the row: a Request at once, a folder or Collection after a confirmation.
-   * `envVars` replaces those Environment variables for this Run only.
-   * @param {Context | AsyncContext} cx @param {string} key @param {boolean} confirmed @param {Record<string, string> | null} [envVars]
+   * Runs the row: a Request at once, a folder or Collection after a confirmation. A Request's
+   * Draft is saved first, by the same save path. A folder or Collection with Drafts in it asks
+   * whether to save them first. `envVars` replaces those Environment variables for this Run only.
+   * `saved`: the Draft was just saved.
+   * @param {Context | AsyncContext} cx @param {string} key @param {boolean} confirmed @param {Record<string, string> | null} [envVars] @param {boolean} [saved]
    */
-  runKey(cx, key, confirmed, envVars = null) {
+  runKey(cx, key, confirmed, envVars = null, saved = false) {
     const row = this.buildRows().find((r) => r.key === key);
     if (!row || !row.ck) return;
     if (store.running()) return this.say("A Run is in progress");
@@ -572,14 +604,20 @@ export default class Brunr extends View {
     const environment = this.envOf(entry, c).name;
     const ws = entry.workspace && this.found?.workspace?.path === entry.workspace ? this.found.workspace : null;
     const globalEnvironment = ws ? this.globalOf(ws.path) : null;
+    if (target.kind === "request" && !saved && drafts.has(row.key)) {
+      return this.request.saveThen(cx, [this.requestInfo(row)], (cx) => this.runKey(cx, key, confirmed, envVars, true));
+    }
     if (target.kind !== "request" && !confirmed) {
       const plan = planRun({ collection: c, target, environment, reportPath: "" });
       if (!plan.count) return this.say(`"${row.name}" has no Requests`);
-      this.picker = {
+      const withDrafts = plannedRequests(c, target).filter((/** @type {any} */ n) => drafts.has(`${entry.key}#${n.path}`))
+        .map((/** @type {any} */ n) => this.requestInfo({ key: `${entry.key}#${n.path}`, ck: row.ck, path: n.path, name: n.name }));
+      if (withDrafts.length) return saveflow.askBeforeRun(this.request, cx, withDrafts, tree.confirmText(plan.count, row.name, environment), (cx) => this.runKey(cx, key, true));
+      this.pickers.show({
         title: tree.confirmText(plan.count, row.name, environment), at: 0,
         options: [{ label: `Run ${plan.count} ${plan.count === 1 ? "Request" : "Requests"}`, value: true, warn: `The Bruno CLI sends them one after another${entry.machine ? ` on ${entry.machine}` : ""}.` }, { label: "Cancel", value: false }],
         choose: (yes, cx) => { if (yes) this.runKey(cx, key, true); },
-      };
+      });
       return;
     }
     // The Requests the CLI is expected to send, in its order, so the progress can name the next one.
@@ -598,18 +636,24 @@ export default class Brunr extends View {
     });
   }
 
-  /** Shows the Request's file on the Response side. @param {Context | AsyncContext} cx @param {Row} row */
+  /** Shows the Request in the Request column on its File tab. @param {Context | AsyncContext} cx @param {Row} row */
   openFile(cx, row) {
-    const entry = this.entry(row.ck);
-    if (!entry || row.kind !== "request") return;
-    if (store.running()) return this.say("A Run is in progress");
-    const path = `${entry.root}/${row.path}`;
-    cx.spawn(async (cx) => {
-      const text = await machine.readText(entry.machine, path);
-      if (text == null) this.say(`Cannot open ${path}`);
-      else { store.showFile({ path, text, language: /\.ya?ml$/i.test(path) ? "yaml" : "text", machine: entry.machine ?? null }); this.response.sync(); }
-      cx.notify();
-    });
+    if (row.kind !== "request" || !this.entry(row.ck)) return;
+    this.sel = row.key;
+    this.showSelected(cx, FILE);
+  }
+
+  /** The selected Request shows in the Request column. It never runs. Any other row empties it. @param {Context | AsyncContext} cx @param {string | null} [tab] */
+  showSelected(cx, tab = null) {
+    const row = this.selected();
+    if (row?.kind === "request" && this.entry(row.ck)) this.request.show(this.requestInfo(row), cx, tab);
+    else this.request.clear();
+  }
+
+  /** What the Request column needs: `{ key, ck, machine, root, path, format, name }`. @param {{ key: string, ck: string, path: string, name: string }} row */
+  requestInfo(row) {
+    const entry = this.entry(row.ck), c = this.collection(row.ck);
+    return { key: row.key, ck: row.ck, machine: entry?.machine ?? null, root: entry?.root ?? "", path: row.path, format: c?.format ?? "yaml", name: row.name };
   }
 
   /** @param {Context | AsyncContext} cx */
@@ -720,6 +764,7 @@ export default class Brunr extends View {
     } else {
       el.child(div().w(16).flex_none()).child(methodBadge(t, r.method)).child(div().flex_1().min_w(0).truncate().child(r.name));
     }
+    if (r.kind === "request" && drafts.has(r.key)) el.child(div().id(`brunr-draft-${i}`).size(7).flex_none().rounded(4).bg(t.ansi3).tooltip("Unsaved changes"));
     if (mark.count) el.child(div().flex_none().text_size(SIZE.small).text_color(t.muted).child(mark.count));
     if (mark.spinner) el.child(svg(ICON("spinner")).size(12).flex_none().text_color(t.working).spin(900));
     if (r.kind === "collection" && !r.error && !r.loading) {
@@ -788,29 +833,6 @@ export default class Brunr extends View {
       .child(this.selection(t));
   }
 
-  /** The open picker, placed over the dialog. A press beside it closes it. @param {Theme} t @param {Picker} p */
-  pickerPanel(t, p) {
-    const panel = v_flex().id("brunr-picker").absolute().top(60).left(SIZE.framePad).w(400).max_w("100%").p(12).gap(8)
-      .bg(t.popover).rounded(12).border_1().border_color(t.border).shadow_lg().text_size(SIZE.text)
-      // A press on the panel stays on it: the rows under it do not get it.
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_click((_e, cx) => cx.stop_propagation())
-      .child(div().px(4).font_semibold().text_color(t.foreground).child(p.title))
-      .child(v_flex().id("brunr-picker-list").flex_none().max_h(320).overflow_y_scrollbar().track_scroll(this.pickerScroll).gap(2)
-        .children(p.options.map((o, i) => listRow(t, { id: `brunr-pick-${i}`, on: i === p.at, compact: !o.warn, tall: Boolean(o.warn), click: (cx) => { this.pick(i, cx); cx.notify(); } })
-          .child(div().w(10).flex_none().text_color(t.accent).child(p.current !== undefined && o.value === p.current ? "●" : ""))
-          .child(v_flex().flex_1().min_w(0).gap(1)
-            .child(div().truncate().text_color(t.foreground).child(o.label))
-            .when(Boolean(o.warn), (el) => el.child(div().text_size(SIZE.small).text_color(t.dim).child(o.warn ?? ""))))
-          .when(Boolean(o.hint), (el) => el.child(div().flex_none().text_size(SIZE.small).text_color(t.dim).child(o.hint ?? ""))))))
-      .child(divider(t))
-      .child(legend(t, [["j/k", "move"], ["enter", "choose"], ["esc", "back"]]));
-    return div().id("brunr-picker-around").absolute().inset_0()
-      .on_mouse_down("left", (_e, cx) => { this.picker = null; cx.stop_propagation(); cx.notify(); })
-      .on_click((_e, cx) => cx.stop_propagation())
-      .child(panel);
-  }
-
   /** The "run with values" form, placed over the dialog. A press beside it closes it. @param {Theme} t @param {VarsForm} v */
   varsPanel(t, v) {
     const mono = this.mono();
@@ -851,24 +873,32 @@ export default class Brunr extends View {
     this.buildRows();
     const treeW = this.full ? TREE_W_FULL : TREE_W;
     /** @type {import("./kit/legend.js").Hint[]} */
-    const hints = [["?", "hide keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["h/l", "fold"], ["enter", "run"],
-      ["ctrl-h", "tree"], ["ctrl-l", "response"], ["1-4", "view"], ["/", "search"],
+    const hints = [["?", "hide keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["h/l", "fold"], ["enter", this.focus === "request" ? "edit" : "run"],
+      ["ctrl-h", "left"], ["ctrl-l", "right"], ["1-4", "view"], ["/", "search"],
       // A key that is turned off is not listed.
       ...this.shortcuts.keys.filter((k) => !this.shortcuts.isOff(k.id) && this.shortcuts.keyFor(k.id)).map((k) => /** @type {[string, string]} */ (
         [this.shortcuts.keyFor(k.id), k.id === "full" ? (this.full ? "leave full screen" : "full screen") : k.what])),
       [",", "settings"], ["esc", "close"]];
-    const picker = this.picker;
+    const picker = this.pickers.open;
+    // Three columns when the frame is wide enough, else the Request above the Response.
+    const three = this.width >= THREE_COLUMNS;
+    const rest = this.width - treeW - SIZE.frameGap - 2 * SIZE.framePad;
+    const saveKey = this.shortcuts.keyFor("save");
+    const requestCol = this.request.render(t, { focused: this.focus === "request", canRun: this.canRun(this.selected()), stacked: !three })
+      .key_context(REQUEST_CONTEXT)
+      .when(Boolean(saveKey), (el) => el.on_action(saveAction(saveKey), (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { if (!this.shortcuts.isOff("save")) this.command("save", cx); cx.notify(); }));
+    const responseCol = this.response.render(t, { width: three ? (rest - SIZE.frameGap) / 2 : rest, focused: this.focus === "response", escBox: (box) => this.escBox(box) });
     const panel = frame(t, { id: "brunr", title: "Brunr", handle: this.handle, onKey: (e, cx) => this.key(e, cx), fill: true, details: this.details(t),
       onResize: (width, cx) => { if (width !== this.width) { this.width = width; cx.notify(); } } })
       .child(div().flex().flex_row().flex_1().min_h(0).gap(SIZE.frameGap)
         .child(this.treePane(t))
-        .child(this.response.render(t, { width: this.width - treeW - SIZE.frameGap - 2 * SIZE.framePad, focused: this.focus === "response", escBox: (box) => this.escBox(box) })))
+        .child((three ? h_flex().items_stretch() : v_flex()).flex_1().min_w(0).min_h(0).gap(SIZE.frameGap).child(requestCol).child(responseCol)))
       .when(Boolean(this.note), (el) => el.child(div().flex_none().text_size(SIZE.small).text_color(this.note?.bad ? t.blocked : t.dim).child(this.note?.text ?? "")))
       .when(this.shortcuts.showHints, (el) => el.child(divider(t)).child(legend(t, hints)))
       // Esc with something open steps back from it. Without this the app closes the whole dialog (see BOX_CONTEXT).
-      .when(Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing, (el) => el.key_context(BOX_CONTEXT)
+      .when(Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing || this.request.typing, (el) => el.key_context(BOX_CONTEXT)
         .on_action(BACK_ACTION, (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { this.command("cancel", cx); cx.notify(); }))
-      .when(Boolean(picker), (el) => el.child(this.pickerPanel(t, /** @type {Picker} */ (picker))))
+      .when(Boolean(picker), (el) => el.child(this.pickers.panel(t)))
       .when(Boolean(this.vars), (el) => el.child(this.varsPanel(t, /** @type {VarsForm} */ (this.vars))))
       .when(this.shortcuts.open, (el) => el.child(this.shortcuts.panel(t)));
     // Placed as a layout block, or in full screen, the panel fills its room.
