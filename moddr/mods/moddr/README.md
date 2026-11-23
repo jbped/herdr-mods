@@ -41,6 +41,9 @@ A mod with updates and local edits shows the updates badge and both lists. A sou
 | `enter` | check the selected mod |
 | `s` | set or change the selected mod's source |
 | `m` | save the newest upstream version as installed (unknown version only) |
+| `u` | update the selected mod (updates, edited here or unknown version). `y` or `enter` confirms, any other key cancels |
+| `d` | open a drift space for the selected mod |
+| `z` | restore the selected mod's newest backup. `y` or `enter` confirms |
 | `x` | stop tracking the selected mod. Moddr stops looking for its source until you set one |
 | `?` | every key |
 | `q` / `escape` | close. In the source box, `escape` cancels and `enter` saves |
@@ -83,6 +86,35 @@ A current mod takes 2 requests, one behind or edited 3, an unknown one 12 the fi
 Each update is notified once: a refresh that finds a newer upstream commit than the last one notified posts a toast naming the mods. Clicking it opens the list.
 
 Reinstalling a mod needs no step in Moddr: the next check finds the new files' version.
+
+## Updating
+
+`u`, or the Update button, asks first. The question names the commits it brings in and, when you edited the mod, the files it replaces. Then:
+
+1. `git clone --depth 1 --filter=blob:none --no-checkout` downloads the source's branch into `data/moddr/staging/<name>/`, a sparse checkout takes only the mod's folder, and `core.autocrlf=false` keeps the files byte for byte.
+2. The mod's folder is copied to `data/moddr/backups/<name>/<time>-<installed sha>/`. The newest 3 backups of each mod are kept.
+3. Only files that differ are written, one at a time with 1.5 seconds between: other files first, then `.js` modules, then `mod.json`, then `main.js`. Files gone upstream are removed. Herdr reloads the mod on every write, and a burst of writes has crashed it.
+4. The mod is checked again. It should read "up to date".
+
+Text files are written by Moddr. Other files (images, fonts, extensionless files) are copied with `cmd /c copy` on Windows and `cp` elsewhere, because Herdr's `fs.writeFile` writes nothing for binary data.
+
+Moddr cannot update itself: the first write would reload it mid-update. Its row has no Update button. Copy its folder from the source by hand.
+
+An update does not change your `keys.json` or layout. When a mod's install steps change, read its page.
+
+## Restoring
+
+`z`, or the Restore button, puts the newest backup back with the same one-file-at-a-time writes. The files there now are backed up first (`<time>-before-restore`), so `z` again undoes a restore. The row shows the newest backup's name.
+
+## Discussing drift
+
+`d`, or Discuss drift, on a tracked mod that is not up to date:
+
+1. Finds an agent: the first installed one in Herdr's agent list (most used first), on the focused space's machine when that machine can see this computer's files (WSL on Windows), else on this computer.
+2. Prepares `data/moddr/drift/<name>/`: `local/` (a copy of your files), `upstream/` (the source's newest files), `drift.diff` (`git diff --no-index local upstream`) and `BRIEF.md` (the source, versions, commits, edited files, the live folder, a fresh backup, and the safe way to write into a live mod).
+3. Opens a space named "<name> drift" there, with the agent asked to read `BRIEF.md`, explain the drift and recommend what to do, and not to change the live folder until you say so.
+
+The list closes when the space opens. Each `d` starts the folder afresh.
 
 ## Signing in
 
@@ -135,4 +167,5 @@ A write that finds the file changed by another copy reads it again and keeps tha
 - A repo too big for GitHub to list in one tree answer cannot be searched or checked.
 - A found source follows the repo's default branch. Set the source by hand to follow another branch.
 - Background checks run only while the badge is in the shown layout, or the list is open.
-- Moddr does not install updates. Reinstall the mod as you installed it, and the next check sees it.
+- Updates take the branch's newest commit, the same one the check compared with.
+- An update needs `git` with partial clone and sparse checkout (git 2.27 or newer).

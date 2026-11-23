@@ -81,12 +81,17 @@ async function walk(root, rel, out) {
   }
 }
 
-/** { "<relative path>": "<git blob sha>" } for the mod's files, hashed by git as it hashes them
- *  for a commit (no line-ending changes). */
-export async function files(name) {
-  const root = `${modsDir()}/${name}`;
+/** Every file under a folder, relative, skipping the ones Herdr writes and dot files. */
+export async function list(root) {
   const paths = [];
   await walk(root, "", paths);
+  return paths;
+}
+
+/** { "<relative path>": "<git blob sha>" } for the files under a folder, hashed by git as it
+ *  hashes them for a commit (no line-ending changes). */
+export async function filesIn(root) {
+  const paths = await list(root);
   if (!paths.length) return {};
   let r;
   try { r = await exec("git", ["hash-object", "--no-filters", "--", ...paths], { cwd: root, timeout: 20000 }); } catch { throw new Error("git could not be run. Moddr needs git to compare files"); }
@@ -95,3 +100,6 @@ export async function files(name) {
   if (shas.length !== paths.length) throw new Error("git hash-object answered with the wrong number of lines");
   return Object.fromEntries(paths.map((p, i) => [p, shas[i]]));
 }
+
+/** The mod's own files, hashed. */
+export const files = (name) => filesIn(`${modsDir()}/${name}`);

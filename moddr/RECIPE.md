@@ -1,6 +1,6 @@
 # Moddr
 
-A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHub folder each mod was installed from, works out the installed version by hashing the local files and matching them to an upstream commit, and checks every few hours for new commits. New updates are announced once with a toast, the badge counts them, and the list shows each mod's new commit messages and local edits.
+A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHub folder each mod was installed from, works out the installed version by hashing the local files and matching them to an upstream commit, and checks every few hours for new commits. New updates are announced once with a toast, the badge counts them, and the list shows each mod's new commit messages and local edits. It installs an update file by file after a backup, restores backups, and opens a space where the person's agent talks a mod's drift through.
 
 ![Moddr](preview.png)
 
@@ -18,6 +18,9 @@ A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHu
 ## How it behaves
 
 - `ctrl-shift-g`, the palette entry "Moddr: Open", or a click on the badge opens the list. Again closes it.
+- Update (`u`, button "Update" on updates, edited or unknown rows, never on `moddr`): a confirmation box in the row (border `accent`, or `working` when it replaces edits) naming the commits and the replaced files, `y`/`enter` or "Update" goes. Then: sparse clone of the branch into `data/moddr/staging/<name>` with `core.autocrlf=false`; back up the folder to `data/moddr/backups/<name>/<time>-<sha7>` (3 kept); write only differing files, 1.5 s apart, others then `.js` then `mod.json` then `main.js`; remove files gone upstream; check again. Progress "Updating: Writing x (3 of 9)…" in `accent`, errors in `blocked`.
+- Restore (`z`, button "Restore" when a backup exists): same confirmation and writes from the newest backup, after backing up to `<time>-before-restore`.
+- Drift (`d`, button "Discuss drift" on a tracked row not up to date): pick the first installed agent from `knownAgents`, on the focused space's machine if `test -d <WSL path of the config folder>` succeeds there, else here; write `data/moddr/drift/<name>/` with `local/`, `upstream/`, `drift.diff` and `BRIEF.md`; back up; `space.new { name: "<name> drift", folder, machine, argv: agent.run, task }`; close the list.
 - Keys: `j`/`k` and arrows, `g`/`G`, `ctrl-d`/`ctrl-u`; `r` refresh; `f` refresh and look again for every untracked mod; `enter` check the selected mod; `s` source box; `m` save the newest upstream commit as installed; `x` stop tracking (saved as `{ ignored: true }`, never looked for again until a source is set); `?`; `q`/`escape`.
 - A refresh: load `moddr.json` and the mods folder; find sources for untracked mods not looked for in 7 days (all with `f`); check every tracked mod not just checked; save `lastRun`; toast the mods whose newest upstream commit was not notified before; share the summary.
 - Finding sources: trusted repos first (README links of every mod, repos of tracked mods, `repos` setting), then per remaining mod the trusted repos found so far and the top 3 of GitHub's search `<name> in:name,description,readme topic:herdr-mod`, then the trusted repos once more. A folder named like the mod holding `main.js` (`mods/<name>` first) is checked. A version match tracks it and trusts the repo. A trusted repo tracks it even without a match. A searched repo without a match is only offered.
@@ -27,10 +30,11 @@ A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHu
 
 ## Built from
 
-- One mod, `moddr`: `main.js` (both views, chosen by `props().badge`), `engine.js` (the refresh, shared values, notification), `track.js` (sources, GitHub calls through an injected `io`, checks and discovery, no Herdr imports), `store.js` (the file, the mods list, hashing, gh), `box.svg`.
+- One mod, `moddr`: `main.js` (both views, chosen by `props().badge`), `engine.js` (the refresh, shared values, notification), `update.js` (staging, backups, the write order, restore, the drift folder and space), `track.js` (sources, GitHub calls through an injected `io`, checks and discovery, no Herdr imports), `store.js` (the file, the mods list, hashing, gh), `box.svg`.
 - `mod.json`: `{ "place": "none", "title": "Moddr", "overlay": { "kind": "dialog", "width": 560, "height": 0.7 }, "palette": [ … "Moddr: Open" → mod.open moddr ] }`.
 - `herdr` functions: `appHome`, `exec`, `readTextFile`, `writeTextFile`, `props`, `closeOverlay`, `notify`, `run`, `shared`, `setShared`, `theme`, `checking`. `fs/promises` `readdir`. `fetch`. `gpui-base`: `InputState`, `Input`, `ScrollHandle`. `.frames` for the spinner.
-- Programs: `git hash-object --no-filters -- <paths>` in the mod's folder; `gh auth token --hostname github.com` (optional).
+- Programs: `git hash-object --no-filters -- <paths>` in the mod's folder; `gh auth token --hostname github.com` (optional); `git clone --depth 1 --filter=blob:none --no-checkout`, `git sparse-checkout set --no-cone /<path>/`, `git checkout`; `git diff --no-index`; `cmd /c copy /y` or `cp` for non-text files; `test -d` on another machine.
+- `herdr` also: `knownAgents`, `machines`, `spaces`, `focused`, and the commands `space.new` and `mod.open`. `fs/promises` `readFile`, `writeFile`, `unlink`, `rmdir`, `mkdir`, `exists`.
 - GitHub REST: `commits?sha&path&per_page=30`, `git/trees/{commit|HEAD}?recursive=1`, `search/repositories?q=…&per_page=3`, with `Authorization: Bearer` when there is a token.
 - Files: reads `installed.json` (its keys are Herdr's shipped mods) and each mod's `README.md`; reads and writes `moddr.json` with `writeTextFile`'s expected-text guard.
 - Layout block for the badge: `{ "mod": "moddr", "props": { "badge": true } }`. `keys.json`: `"ctrl-shift-g": "mod.open:moddr"`.
@@ -49,6 +53,10 @@ A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHu
 - `init` runs during `herdr-app check`: return before any file, network or timer work when `checking()` is true.
 - Closing the list cancels its refresh. Each mod is saved as it finishes, and a stale `moddr.running` mark is ignored after 20 minutes.
 - On Windows, `exec("gh")` finds only a Windows gh. Never write gh's token to a file.
+- A Windows git checks files out with CRLF line endings. Clone with `core.autocrlf=false`, or every updated file differs from its source and the mod reads "edited here".
+- `fs.writeFile` writes 0 bytes for a `Uint8Array`. Copy non-text files with the system's copy.
+- Never write a whole folder at once into a live mod: one file at a time, `main.js` last. Moddr must not update itself.
+- Escape closes the dialog before the mod sees it, so a confirmation cancels on any other key, not on Escape alone.
 
 ## Done when
 
@@ -57,4 +65,6 @@ A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHu
 - A copy of an older version shows "N updates" with the right commit messages; the current version shows "up to date"; a copy with one file changed in a trusted repo shows "unknown version" and, after `m`, "edited here".
 - A second refresh posts no toast for the same updates.
 - `x` then `f` leaves the mod untracked.
+- `u` then `y` on an older copy makes its folder byte-identical to the source and the row "up to date", with a backup listed; `z` then `y` brings the old files back.
+- `d` on an edited mod opens a "<name> drift" space running an agent in a folder with `BRIEF.md`, `local/`, `upstream/` and `drift.diff`.
 - `node --test moddr/tests/*.test.mjs` passes.

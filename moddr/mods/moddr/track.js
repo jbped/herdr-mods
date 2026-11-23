@@ -293,3 +293,22 @@ export function state(entry, busy) {
   if (c.edited?.length) return "edited";
   return "current";
 }
+
+/** Writes first, main.js last: assets, then other modules, then mod.json, then main.js. A mod
+ *  reloads on every write, so its entry point goes in only once what it imports is in place. */
+function writeRank(path) {
+  if (path === "main.js") return 3;
+  if (path === "mod.json") return 2;
+  return /\.(m?js)$/.test(path) ? 1 : 0;
+}
+
+/**
+ * What turns the files in `have` into the files in `want` (both { path: blob sha }):
+ * { write: [paths, in a safe order], remove: [paths] }. Unchanged files are left alone.
+ */
+export function writePlan(have, want) {
+  const write = Object.keys(want).filter((p) => have[p] !== want[p])
+    .sort((a, b) => writeRank(a) - writeRank(b) || a.localeCompare(b));
+  const remove = Object.keys(have).filter((p) => !(p in want)).sort();
+  return { write, remove };
+}

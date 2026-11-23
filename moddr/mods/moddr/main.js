@@ -13,6 +13,7 @@ import { v_flex, h_flex, ScrollHandle, InputState, Input } from "gpui-base";
 import { checking, closeOverlay, props, run, shared, theme } from "herdr";
 import { SEARCH, parseSource, resolve, sourceUrl, state } from "./track.js";
 import { Ctx, RUNNING, SUMMARY, busyElsewhere, io, settings } from "./engine.js";
+import { backups, openDrift, restore, update } from "./update.js";
 
 const HALF_PAGE = 6;
 const SHOWN_COMMITS = 8;
@@ -21,7 +22,8 @@ const BADGE_FIRST = 30e3; // the badge's first look, after Herdr has settled
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const KEYS = [
   ["j / k", "down / up"], ["g / G", "first / last"], ["r", "refresh"], ["f", "find sources again"],
-  ["enter", "check this one"], ["s", "set source"], ["m", "mark installed"], ["x", "stop tracking"], ["q", "close"],
+  ["enter", "check this one"], ["u", "update"], ["d", "discuss drift with an agent"], ["s", "set source"],
+  ["m", "mark installed"], ["z", "restore the last backup"], ["x", "stop tracking"], ["q", "close"],
 ];
 const BADGE = {
   untracked: ["no source", "dim"],
@@ -61,6 +63,9 @@ export default class Moddr extends View {
     this.editing = null; // the mod whose source is being typed
     this.editError = null;
     this.resolving = false;
+    this.confirm = null; // { name, kind: "update" | "restore" } waiting for y
+    this.op = null; // { name, kind, step, error } while files change or a drift space is prepared
+    this.saved = {}; // name -> its backups, newest first
     this.scroll = ScrollHandle.new();
     this.handle = cx.focus_handle();
     this.input = InputState.new({ placeholder: "https://github.com/<owner>/<repo>/tree/<branch>/<folder>" });
@@ -71,6 +76,7 @@ export default class Moddr extends View {
     if (checking()) return;
     cx.spawn(async (cx) => {
       await this.ctx.load();
+      await this.loadBackups();
       this.seen = shared(SUMMARY)?.at ?? 0;
       cx.notify();
       await this.ctx.signIn();
@@ -119,6 +125,62 @@ export default class Moddr extends View {
   }
 
   selected() { return this.ctx.names[this.at] ?? null; }
+
+  async loadBackups() {
+    for (const n of this.ctx.names) this.saved[n] = await backups(n);
+  }
+
+  /** u: asks first. Only a tracked mod with something to take. */
+  askUpdate(name) {
+    const e = this.ctx.entry(name);
+    const s = state(e, this.ctx.busy.has(name));
+    if (!e?.source || this.op || !["updates", "edited", "unknown"].includes(s)) return;
+    this.confirm = { name, kind: "update" };
+  }
+
+  askRestore(name) {
+    if (!this.saved[name]?.length || this.op) return;
+    this.confirm = { name, kind: "restore" };
+  }
+
+  /** Runs an update or a restore, then checks the mod again. */
+  change(cx, name, kind) {
+    this.confirm = null;
+    const e = this.ctx.entry(name);
+    this.op = { name, kind, step: "Starting", error: null };
+    cx.spawn(async (cx) => {
+      const wait = (ms) => new Promise((done) => cx.timer.after(ms, () => done()));
+      const onStep = (step) => { this.op.step = step; cx.notify(); };
+      try {
+        if (kind === "update") await update(name, e, { wait, onStep });
+        else await restore(name, this.saved[name][0].dir, { wait, onStep });
+        this.op = null;
+      } catch (err) {
+        this.op = { name, kind, step: null, error: String(err?.message ?? err) };
+      }
+      this.saved[name] = await backups(name);
+      cx.notify();
+      if (e?.source) this.checkOne(name, cx);
+    });
+  }
+
+  /** d: a new space where an agent walks the person through the mod's drift. */
+  discuss(cx, name) {
+    const e = this.ctx.entry(name);
+    if (!e?.source || !e.check?.latest || this.op) return;
+    this.op = { name, kind: "drift", step: "Starting", error: null };
+    cx.spawn(async (cx) => {
+      try {
+        await openDrift(name, e, { onStep: (step) => { this.op.step = step; cx.notify(); } });
+        this.op = null;
+        this.saved[name] = await backups(name);
+        this.close();
+      } catch (err) {
+        this.op = { name, kind: "drift", step: null, error: String(err?.message ?? err) };
+      }
+      cx.notify();
+    });
+  }
 
   startEdit(name) {
     if (!name) return;
@@ -195,6 +257,14 @@ export default class Moddr extends View {
       if (k === "escape") { this.stopEdit(); cx.stop_propagation(); cx.notify(); }
       return;
     }
+    if (this.confirm) {
+      const { name, kind } = this.confirm;
+      if (k === "y" || k === "enter") this.change(cx, name, kind);
+      else this.confirm = null;
+      cx.stop_propagation();
+      cx.notify();
+      return;
+    }
     const last = Math.max(0, this.ctx.names.length - 1);
     const plain = !m.control && !m.alt && !m.platform;
     const shift = Boolean(m.shift);
@@ -211,9 +281,12 @@ export default class Moddr extends View {
     else if (!shift && k === "r") this.refresh(cx);
     else if (!shift && k === "f") this.refresh(cx, true);
     else if (k === "enter") { if (name && this.ctx.entry(name)?.source) this.checkOne(name, cx); }
+    else if (!shift && k === "u") this.askUpdate(name);
+    else if (!shift && k === "d") this.discuss(cx, name);
     else if (!shift && k === "s") this.startEdit(name);
     else if (!shift && k === "m") this.markInstalled(name, cx);
     else if (!shift && k === "x") this.untrack(name, cx);
+    else if (!shift && k === "z") this.askRestore(name);
     else return;
     this.scroll.scroll_to_item(this.at);
     cx.stop_propagation();
@@ -315,6 +388,35 @@ export default class Moddr extends View {
       }
       if (c?.edited?.length) lines.child(note(e.installed ? `Changed here since ${short(e.installed)}: ${c.edited.join(", ")}` : `Differs from the newest upstream: ${c.edited.join(", ")}`, t.working));
       if (s === "current") lines.child(note(`At ${short(e.installed)}, the newest upstream (${ago(c.latest?.date)}).`));
+      const saved = this.saved[name] ?? [];
+      if (saved.length) lines.child(note(`Backup: ${saved[0].id}${saved.length > 1 ? ` and ${saved.length - 1} older` : ""}`, t.dim));
+      const op = this.op?.name === name ? this.op : null;
+      if (op?.step) lines.child(note(`${op.kind === "drift" ? "Preparing the drift space" : op.kind === "update" ? "Updating" : "Restoring"}: ${op.step}…`, t.accent));
+      if (op?.error) lines.child(note(op.error, t.blocked));
+      const ask = this.confirm?.name === name ? this.confirm.kind : null;
+      if (ask === "update") {
+        const edits = c?.edited ?? [];
+        lines.child(v_flex().gap(4).p(8).rounded(4).border(1).border_color(edits.length ? t.working : t.accent).bg(t.raised)
+          .child(note(`Update ${name} to ${short(c?.latest?.sha)}${c?.behind?.length ? `, bringing in ${c.behind.length}${c.more ? "+" : ""} commits` : ""}?`, t.foreground))
+          .when(edits.length > 0, (el) => el.child(note(`This replaces your changes to ${edits.join(", ")}. Press d instead to talk them through with an agent.`, t.working)))
+          .child(note("Your files are backed up first, and Restore puts them back. Press y to update, any other key to cancel.", t.muted))
+          .child(h_flex().gap(6)
+            .child(button(`moddr-yes-${name}`, "Update", (cx) => this.change(cx, name, "update")))
+            .child(button(`moddr-no-${name}`, "Cancel", () => { this.confirm = null; }))));
+      }
+      if (ask === "restore") {
+        lines.child(v_flex().gap(4).p(8).rounded(4).border(1).border_color(t.working).bg(t.raised)
+          .child(note(`Put back the backup ${saved[0]?.id}? The files there now are backed up first. Press y to restore, any other key to cancel.`, t.foreground))
+          .child(h_flex().gap(6)
+            .child(button(`moddr-ryes-${name}`, "Restore", (cx) => this.change(cx, name, "restore")))
+            .child(button(`moddr-rno-${name}`, "Cancel", () => { this.confirm = null; }))));
+      }
+      const canUpdate = Boolean(e?.source) && ["updates", "edited", "unknown"].includes(s) && name !== "moddr";
+      const free = !this.op && !busy;
+      lines.child(h_flex().gap(6).pt(2).flex_wrap()
+        .when(canUpdate, (el) => el.child(button(`moddr-update-${name}`, "Update", () => this.askUpdate(name), free)))
+        .when(Boolean(e?.source && c?.latest) && s !== "current", (el) => el.child(button(`moddr-drift-${name}`, "Discuss drift", (cx) => this.discuss(cx, name), free)))
+        .when(saved.length > 0, (el) => el.child(button(`moddr-restore-${name}`, "Restore", () => this.askRestore(name), free))))
       lines.child(h_flex().gap(6).pt(2)
         .child(button(`moddr-set-${name}`, e?.source ? "Change source" : "Set source", () => this.startEdit(name)))
         .when(Boolean(e?.source), (el) => el
@@ -361,7 +463,7 @@ export default class Moddr extends View {
       ? h_flex().flex_none().flex_wrap().px(14).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
           .children(KEYS.map(([k, what]) => key(k, what)))
       : h_flex().flex_none().h(28).px(14).gap(14).items_center().border_t(1).border_color(t.border).text_size(11)
-          .child(key("j/k", "move")).child(key("r", "refresh")).child(key("s", "source")).child(key("m", "mark installed")).child(key("?", "keys"));
+          .child(key("j/k", "move")).child(key("r", "refresh")).child(key("u", "update")).child(key("d", "discuss drift")).child(key("s", "source")).child(key("?", "keys"));
 
     return v_flex()
       .id("moddr")

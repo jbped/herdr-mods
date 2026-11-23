@@ -226,3 +226,11 @@ test("a mod offered before its repo became trusted is tracked at the end", async
   assert.equal(results.a.tracked, true);
   assert.equal(results.a.result.installed, null);
 });
+
+test("writePlan writes changed files with main.js last and removes the gone ones", async () => {
+  const { writePlan } = await import("../mods/moddr/track.js");
+  const have = { "main.js": "1", "util.js": "1", "mod.json": "1", "old.svg": "1", "same.md": "s" };
+  const want = { "main.js": "2", "util.js": "2", "mod.json": "2", "icons/new.svg": "n", "same.md": "s", "a.js": "a" };
+  assert.deepEqual(writePlan(have, want), { write: ["icons/new.svg", "a.js", "util.js", "mod.json", "main.js"], remove: ["old.svg"] });
+  assert.deepEqual(writePlan(want, want), { write: [], remove: [] });
+});
