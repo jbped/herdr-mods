@@ -1,26 +1,28 @@
 # Moddr
 
-Lists the mods you installed, where each came from on GitHub, and whether that source has changed since you installed it.
+Finds where each of your mods came from on GitHub and tells you when one has an update.
 
 ![Moddr](preview.png)
 
 ## Features
 
-- **Update check.** Refresh asks GitHub about every tracked mod and marks the ones with new commits. Nothing is checked on its own.
-- **What changed.** A mod with updates lists the new commits that touched its folder, newest first, with their messages and ages.
-- **Installed version found from the files.** Moddr hashes the files you have and finds the upstream commit they match, so it knows what you installed without being told.
-- **Local edits.** A mod you changed by hand shows "edited here" and the files that differ from the installed version.
-- **A toast when updates turn up.** A refresh that finds updates posts a notification that opens the list.
-- **Sources from a URL.** Paste a GitHub folder link: the mod's own folder, or the share folder that holds it under `mods/<name>/`. A README that links a GitHub folder is offered as the source.
-- **Signs in with gh.** When the GitHub CLI is signed in, Moddr uses its token: 5,000 requests an hour instead of 60, and private repos you can see.
-- **Your mods only.** Herdr's shipped mods update with Herdr and are left out.
-- **Vim keys.** `j` and `k` move, `r` refreshes, `s` sets a source, `m` marks the newest version installed, `x` stops tracking.
+- **Finds sources by itself.** Moddr looks for each mod in the repos its README links, in repos where your other mods were found, and in GitHub's `herdr-mod` repos that mention it. A mod whose files match a version there is tracked without asking.
+- **Checks on its own.** Every 6 hours by default, from the status-bar badge or when you open the list. `r` checks now.
+- **A badge in your status bar.** It shows how many mods have updates and opens the list when clicked.
+- **A toast for new updates.** Each new update is announced once, with the names of the mods.
+- **What changed.** A mod with updates lists the new commits that touched its folder, with their messages and ages.
+- **Installed version found from the files.** Moddr matches your files to an upstream commit, so it knows what you installed without being told.
+- **Local edits.** A mod you changed by hand shows "edited here" and the files that differ.
+- **Sources by hand.** Paste a GitHub folder link for a mod it could not find: the mod's folder, or the share folder that holds it.
+- **Signs in with gh.** When the GitHub CLI is signed in, Moddr uses its token: 5,000 requests an hour instead of 60, and private repos.
+- **Vim keys.** `j` and `k` move, `r` refreshes, `f` looks for sources again, `s` sets a source, `x` stops tracking.
 
 ## Needs
 
-- Herdr and git. Sources are GitHub repos: public ones, or private ones when gh is signed in or `moddr.json` has a token. The GitHub CLI (`gh`) is optional.
-- It runs `git hash-object` on the files in your mods folder, and `gh auth token` once each time it opens. The token stays in memory and is sent only to api.github.com. It reads `installed.json` and each mod's `README.md`, and writes `moddr.json` in the Herdr config folder.
-- It calls the GitHub API (api.github.com) when you refresh or set a source. Signed out, GitHub allows 60 requests an hour, and each tracked mod takes two or more.
+- Herdr and git. Sources are GitHub repos. The GitHub CLI (`gh`) is optional.
+- It runs `git hash-object` on the files in your mods folder, and `gh auth token` when it starts. The token stays in memory and is sent only to api.github.com.
+- It reads `installed.json` and each mod's `README.md`, and writes `moddr.json` in the Herdr config folder.
+- It calls the GitHub API every 6 hours while the badge or the list is shown. Signed out, a first run over a dozen mods takes about 50 of the 60 requests GitHub allows an hour. Later runs take about 2 per mod.
 
 ## Install
 
@@ -34,21 +36,22 @@ Or by hand:
 
 1. Copy `mods/moddr/` to `~/.config/herdr-app/mods/`.
 2. Merge `keys.json` into `~/.config/herdr-app/keys.json`. It binds `ctrl-shift-g`.
-3. Run `herdr-app check ~/.config/herdr-app/mods/moddr`.
+3. For the badge, add a block to your own layout's status row (Herdr's shipped layouts are read-only, so clone one first): `{ "id": "moddr-badge", "type": "block", "size": { "px": 48 }, "content": { "mod": "moddr", "props": { "badge": true } } }`.
+4. Run `herdr-app check ~/.config/herdr-app/mods/moddr`.
 
 ## Use
 
-Press the key or pick "Moddr: Open" in the palette. Select a mod, press `s` and paste the GitHub folder you installed it from, then press `r` to check every tracked mod. Click a row to select it and use its buttons.
+Click the badge, press the key or pick "Moddr: Open" in the palette. The first time, Moddr looks for every mod's source and checks it. Select a mod to see its commits and buttons.
 
 | Key | Action |
 |---|---|
 | `ctrl-shift-g` | open the list, again closes it |
 | `j` / `k` | down / up |
-| `r` | refresh every tracked mod |
-| `enter` | refresh the selected mod |
+| `r` | look for new sources and check every tracked mod |
+| `f` | look again for sources it could not find |
 | `s` | set or change the source |
 | `m` | count the newest upstream version as installed |
-| `x` | stop tracking |
+| `x` | stop tracking, and stop looking for its source |
 | `q` or `escape` | close |
 
-Every state, how the installed version is found, `moddr.json`, signing in and the limits: [`mods/moddr/README.md`](mods/moddr/README.md).
+Every state, how sources and versions are found, the settings in `moddr.json`, signing in and the limits: [`mods/moddr/README.md`](mods/moddr/README.md).

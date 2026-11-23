@@ -65,7 +65,11 @@ async function get(io, url, token) {
   try { body = JSON.parse(text); } catch { /* not JSON */ }
   if (!res.ok) {
     const msg = body?.message ?? "";
-    if (res.status === 403 && /rate limit/i.test(msg)) throw new Error("GitHub's hourly limit for unsigned requests is used up. Try later, sign in with gh auth login, or add a token to moddr.json");
+    if ((res.status === 403 || res.status === 429) && /rate limit/i.test(msg)) {
+      const e = new Error(token ? "GitHub's request limit is used up. Moddr tries again later" : "GitHub's hourly limit for unsigned requests is used up. Moddr tries again later. Sign in with gh auth login, or add a token to moddr.json, for a higher limit");
+      e.rate = true;
+      throw e;
+    }
     if (res.status === 404) throw new Error(token ? "GitHub has no such repo or branch, or this account cannot see it" : "GitHub has no such repo or branch, or it is private. Sign in with gh auth login to read private repos");
     throw new Error(msg ? `GitHub answered ${res.status}: ${msg}` : `GitHub answered ${res.status}`);
   }
@@ -125,6 +129,14 @@ export function differ(local, upstream) {
   return out.sort();
 }
 
+/** A short hash of a file map, to tell whether the local files changed since the last check. */
+export function fingerprint(files) {
+  let h = 0x811c9dc5;
+  const text = Object.keys(files).sort().map((p) => `${p}\0${files[p]}`).join("\n");
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0");
+}
+
 /**
  * One refresh of a tracked mod. `entry` is its saved record: { source, installed }.
  * Returns the new record's check fields:
@@ -133,29 +145,137 @@ export function differ(local, upstream) {
  *   behind      the commits after `installed`, newest first ([] when current)
  *   more        true when more commits are behind than were read
  *   edited      local paths that differ from `installed`
+ *   fp          the local files' fingerprint
+ * An unknown version is searched for once per pair of local files and newest commit: the record's
+ * check.fp and check.latest say when that search already failed.
  */
 export async function check(io, name, entry, token) {
   const src = entry.source;
   const [local, list] = await Promise.all([io.files(name), commits(io, src, token)]);
   if (!list.length) throw new Error("The folder has no commits on that branch");
   const latest = list[0];
+  const fp = fingerprint(local);
   const latestFiles = await filesAt(io, src, latest.sha, src.path, token);
-  if (!differ(local, latestFiles).length) return { installed: latest.sha, latest, behind: [], more: false, edited: [] };
+  if (!differ(local, latestFiles).length) return { installed: latest.sha, latest, behind: [], more: false, edited: [], fp };
 
   let installed = entry.installed ?? null, installedFiles = null;
-  if (!installed) {
+  const searched = entry.check?.fp === fp && entry.check?.latest?.sha === latest.sha;
+  if (!installed && !searched) {
     // Not known yet: the newest of the recent commits whose files match the local ones.
     for (const c of list.slice(1, 1 + SEARCH)) {
       const f = await filesAt(io, src, c.sha, src.path, token);
       if (!differ(local, f).length) { installed = c.sha; installedFiles = f; break; }
     }
   }
-  if (!installed) return { installed: null, latest, behind: [], more: false, edited: differ(local, latestFiles) };
+  if (!installed) return { installed: null, latest, behind: [], more: false, edited: differ(local, latestFiles), fp };
 
   const at = list.findIndex((c) => c.sha === installed);
   const behind = at < 0 ? list : list.slice(0, at);
   installedFiles ??= installed === latest.sha ? latestFiles : await filesAt(io, src, installed, src.path, token);
-  return { installed, latest, behind, more: at < 0, edited: differ(local, installedFiles) };
+  return { installed, latest, behind, more: at < 0, edited: differ(local, installedFiles), fp };
+}
+
+/** "owner/repo" keys, for sets of repos. */
+export const repoKey = (r) => `${r.owner}/${r.repo}`.toLowerCase();
+
+/** owner/repo from a GitHub link or "owner/repo" text, or null. */
+export function repoOf(text) {
+  try { const s = parseSource(text); return { owner: s.owner, repo: s.repo }; } catch { return null; }
+}
+
+/** Folders in a repo's file list that hold a mod called `name`: a main.js in a folder of that
+ *  name. mods/<name> folders first, then the shallower ones. */
+export function findFolders(paths, name) {
+  const out = [];
+  for (const p of paths) {
+    const parts = p.split("/");
+    if (parts.length >= 2 && parts.at(-1) === "main.js" && parts.at(-2) === name) out.push(parts.slice(0, -1).join("/"));
+  }
+  const rank = (d) => (d.split("/").at(-2) === "mods" ? 0 : 1) * 100 + d.split("/").length;
+  return out.sort((a, b) => rank(a) - rank(b));
+}
+
+/** Repos tagged herdr-mod whose name, description or README mention `name`, best first. The
+ *  README matters: a repo of several mods names them there. */
+export async function searchRepos(io, name, token, limit = 3) {
+  const q = new URLSearchParams({ q: `${name} in:name,description,readme topic:herdr-mod`, per_page: String(limit) });
+  const body = await get(io, `${API}/search/repositories?${q}`, token);
+  return (body?.items ?? []).map((r) => ({ owner: r.owner?.login, repo: r.name })).filter((r) => r.owner && r.repo);
+}
+
+/**
+ * Finds where untracked mods came from. `repos` are tried in order and are trusted: a mod found in
+ * one is tracked even when its files match no recent version. Then, with `search`, the herdr-mod
+ * repos GitHub finds by each remaining mod's name are tried. A mod found in one of those is
+ * tracked only when its files match a version, and that repo becomes trusted.
+ *
+ * Calls onResult(name, { source, result, tracked }) for each mod found, as it is found:
+ *   tracked true   track it; result is check()'s answer
+ *   tracked false  a folder of that name whose files differ: offered as the source, not tracked
+ * Returns { tried: [names looked for to the end], stopped: error message when GitHub's limit cut it short }.
+ */
+export async function discover(io, names, repos, { token, search = false, onResult = () => {} } = {}) {
+  const left = new Set(names);
+  const tried = new Set();
+  const done = new Set();
+  const trusted = new Set(repos.map(repoKey));
+  const trustedList = [...repos]; // in the order they became trusted
+  const offered = new Map(); // name -> { source, result, repo } offered but not tracked
+
+  const trees = new Map(); // repo -> its file paths, read once
+  const tryRepo = async (r, only) => {
+    const key = repoKey(r);
+    if (tried.has(key)) return; // already looked through for every mod
+    if (!only) tried.add(key);
+    let paths;
+    try {
+      if (!trees.has(key)) trees.set(key, Object.keys(await filesAt(io, { ...r, path: "" }, "HEAD", "", token)));
+      paths = trees.get(key);
+    } catch (e) { if (e.rate) throw e; trees.set(key, []); return; }
+    for (const name of [...left]) {
+      if (only && name !== only) continue;
+      const [dir] = findFolders(paths, name);
+      if (!dir) continue;
+      const source = { owner: r.owner, repo: r.repo, ref: null, path: dir };
+      let result;
+      try { result = await check(io, name, { source }, token); } catch (e) { if (e.rate) throw e; continue; }
+      if (result.installed && !trusted.has(repoKey(r))) { trusted.add(repoKey(r)); trustedList.push(r); }
+      if (result.installed || trusted.has(repoKey(r))) {
+        left.delete(name);
+        done.add(name);
+        onResult(name, { source, result, tracked: true });
+      } else if (!offered.has(name)) {
+        offered.set(name, { source, result, repo: r });
+        onResult(name, { source, result, tracked: false });
+      }
+    }
+  };
+
+  try {
+    for (const r of repos) { if (!left.size) break; await tryRepo(r); }
+    if (search) {
+      for (const name of [...left]) {
+        // A repo that matched another mod during this search is the likeliest home: try those first.
+        for (const r of trustedList) { if (!left.has(name)) break; await tryRepo(r, name); }
+        if (left.has(name)) for (const r of await searchRepos(io, name, token)) { if (!left.has(name)) break; await tryRepo(r, name); }
+        done.add(name);
+      }
+      // Mods looked up before a repo became trusted: look again in the trusted ones.
+      for (const name of [...left]) {
+        const o = offered.get(name);
+        if (o && trusted.has(repoKey(o.repo))) {
+          left.delete(name);
+          onResult(name, { source: o.source, result: o.result, tracked: true });
+          continue;
+        }
+        for (const r of trustedList) { if (!left.has(name)) break; await tryRepo(r, name); }
+      }
+    } else for (const n of left) done.add(n);
+  } catch (e) {
+    if (!e.rate) throw e;
+    return { tried: [...done], stopped: e.message };
+  }
+  return { tried: [...done], stopped: null };
 }
 
 /**

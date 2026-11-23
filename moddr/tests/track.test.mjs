@@ -1,7 +1,7 @@
 // track.js against a stand-in GitHub: node --test moddr/tests
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { check, differ, ignored, parseSource, resolve, sourcesIn, sourceUrl, state } from "../mods/moddr/track.js";
+import { check, differ, discover, findFolders, fingerprint, ignored, parseSource, resolve, sourcesIn, sourceUrl, state } from "../mods/moddr/track.js";
 
 // A repo history, newest first: [{ sha, message, files: { "<repo path>": "<blob>" } }].
 function github(history, calls = []) {
@@ -141,4 +141,88 @@ test("a missing repo points at gh when unsigned", async () => {
   const fetch = async () => ({ ok: false, status: 404, text: async () => JSON.stringify({ message: "Not Found" }) });
   await assert.rejects(check({ fetch, files: async () => ({}) }, "m", { source: src }), /gh auth login/);
   await assert.rejects(check({ fetch, files: async () => ({}) }, "m", { source: src }, "t"), /cannot see it/);
+});
+
+test("findFolders prefers mods/<name> and shallow folders", () => {
+  const paths = ["x/deep/m/main.js", "share/mods/m/main.js", "m/main.js", "other/main.js", "m/readme.md"];
+  assert.deepEqual(findFolders(paths, "m"), ["share/mods/m", "m", "x/deep/m"]);
+  assert.deepEqual(findFolders(paths, "nope"), []);
+});
+
+test("an unknown version is not searched again for the same files and newest commit", async () => {
+  const local = { "main.js": "mine", "mod.json": "j1" };
+  const first = await check(io(local), "m", { source: src });
+  assert.equal(first.installed, null);
+  const calls = [];
+  const again = await check(io(local, calls), "m", { source: src, check: { fp: first.fp, latest: first.latest } });
+  assert.equal(again.installed, null);
+  assert.equal(calls.length, 2);
+  assert.notEqual(fingerprint({ a: "1" }), fingerprint({ a: "2" }));
+});
+
+// discover against a stand-in GitHub that knows a few repos and a topic search.
+function hub(repos, searchHits = {}, calls = []) {
+  const reply = (status, body) => ({ ok: status < 300, status, text: async () => JSON.stringify(body) });
+  return async (url) => {
+    calls.push(url);
+    const u = new URL(url);
+    if (u.pathname === "/search/repositories") {
+      const name = u.searchParams.get("q").split(" ")[0];
+      return reply(200, { items: (searchHits[name] ?? []).map((k) => ({ owner: { login: k.split("/")[0] }, name: k.split("/")[1] })) });
+    }
+    const [, , owner, repo] = u.pathname.split("/");
+    const h = repos[`${owner}/${repo}`];
+    if (!h) return reply(404, { message: "Not Found" });
+    const rest = u.pathname.split("/").slice(4).join("/");
+    const head = rest === "git/trees/HEAD";
+    return github(h)(head ? url.replace("/git/trees/HEAD", `/git/trees/${h[0].sha}`) : url);
+  };
+}
+
+test("discover tracks exact matches, and trusts a repo once one mod matched there", async () => {
+  const repos = { "o/r": history };
+  const results = {};
+  const local = { m: { "main.js": "b2", "mod.json": "j1" } };
+  const io2 = { fetch: hub(repos), files: async (n) => local[n] ?? {} };
+  const out = await discover(io2, ["m"], [{ owner: "o", repo: "r" }], { onResult: (n, r) => { results[n] = r; } });
+  assert.equal(results.m.tracked, true);
+  assert.equal(results.m.source.path, "share/mods/m");
+  assert.equal(results.m.result.installed, "c1");
+  assert.deepEqual(out, { tried: ["m"], stopped: null });
+});
+
+test("a repo found by search is only offered when the files differ", async () => {
+  const repos = { "s/x": history };
+  const results = {};
+  const io2 = { fetch: hub(repos, { m: ["s/x"] }), files: async () => ({ "main.js": "mine" }) };
+  await discover(io2, ["m"], [], { search: true, onResult: (n, r) => { results[n] = r; } });
+  assert.equal(results.m.tracked, false);
+  assert.equal(results.m.source.path, "share/mods/m");
+});
+
+test("a listed repo is trusted even when the files differ", async () => {
+  const results = {};
+  const io2 = { fetch: hub({ "o/r": history }), files: async () => ({ "main.js": "mine" }) };
+  await discover(io2, ["m"], [{ owner: "o", repo: "r" }], { onResult: (n, r) => { results[n] = r; } });
+  assert.equal(results.m.tracked, true);
+  assert.equal(results.m.result.installed, null);
+});
+
+test("discover stops at GitHub's rate limit and says which mods it finished", async () => {
+  const fetch = async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ message: "API rate limit exceeded" }) });
+  const out = await discover({ fetch, files: async () => ({}) }, ["m"], [{ owner: "o", repo: "r" }], { search: true });
+  assert.deepEqual(out.tried, []);
+  assert.match(out.stopped, /limit/);
+});
+
+test("a mod offered before its repo became trusted is tracked at the end", async () => {
+  // "a" sorts first and differs; "m" matches exactly, which makes s/x trusted.
+  const h = [{ sha: "c1", message: "one", files: { "mods/a/main.js": "A", "mods/m/main.js": "M" } }];
+  const local = { a: { "main.js": "mine" }, m: { "main.js": "M" } };
+  const results = {};
+  const io2 = { fetch: hub({ "s/x": h }, { a: ["s/x"], m: ["s/x"] }), files: async (n) => local[n] };
+  await discover(io2, ["a", "m"], [], { search: true, onResult: (n, r) => { results[n] = r; } });
+  assert.equal(results.m.tracked, true);
+  assert.equal(results.a.tracked, true);
+  assert.equal(results.a.result.installed, null);
 });

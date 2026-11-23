@@ -1,21 +1,27 @@
 // Moddr: lists the mods in the mods folder, where each came from on GitHub, and whether its
-// Source has changed since it was installed. Opened as a dialog (mod.open moddr).
+// Source has changed since it was installed.
 //
-// Nothing is checked on its own: Refresh (r) checks every tracked mod, one at a time.
+// Two views, chosen by props:
+//   dialog  opened by mod.open moddr: the list, with keys.
+//   badge   props { badge: true }: a status-bar block with the number of mods with updates. It
+//           refreshes in the background when one is due.
+// Both refresh through engine.js. The dialog also refreshes when it opens and one is due.
 // The record is <appHome>/moddr.json (store.js). The comparison is track.js.
 
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, InputState, Input } from "gpui-base";
-import { checking, closeOverlay, notify, props, theme } from "herdr";
-import { SEARCH, check, parseSource, resolve, sourcesIn, sourceUrl, state } from "./track.js";
-import * as store from "./store.js";
+import { checking, closeOverlay, props, run, shared, theme } from "herdr";
+import { SEARCH, parseSource, resolve, sourceUrl, state } from "./track.js";
+import { Ctx, RUNNING, SUMMARY, busyElsewhere, io, settings } from "./engine.js";
 
 const HALF_PAGE = 6;
 const SHOWN_COMMITS = 8;
+const BADGE_POLL = 10 * 60e3; // how often the badge asks whether a refresh is due
+const BADGE_FIRST = 30e3; // the badge's first look, after Herdr has settled
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const KEYS = [
-  ["j / k", "down / up"], ["g / G", "first / last"], ["r", "refresh all"], ["enter", "refresh this one"],
-  ["s", "set source"], ["m", "mark installed"], ["x", "stop tracking"], ["q", "close"],
+  ["j / k", "down / up"], ["g / G", "first / last"], ["r", "refresh"], ["f", "find sources again"],
+  ["enter", "check this one"], ["s", "set source"], ["m", "mark installed"], ["x", "stop tracking"], ["q", "close"],
 ];
 const BADGE = {
   untracked: ["no source", "dim"],
@@ -42,21 +48,19 @@ function ago(at, now = Date.now()) {
 }
 
 const short = (sha) => String(sha ?? "").slice(0, 7);
-const io = { fetch: (url, opts) => fetch(url, opts), files: (name) => store.files(name) };
+const repoText = (s) => `${s.owner}/${s.repo}${s.path ? ` · ${s.path}` : ""}`;
 
 export default class Moddr extends View {
   init(_props, cx) {
-    this.names = [];
-    this.data = { mods: {} };
-    this.fileError = null;
+    this.ctx = new Ctx();
+    this.view = props()?.badge ? "badge" : "dialog";
+    this.seen = 0; // the summary this copy last loaded
+    if (this.view === "badge") return this.initBadge(cx);
     this.at = 0;
     this.help = false;
-    this.busy = new Set();
-    this.refreshing = false;
     this.editing = null; // the mod whose source is being typed
     this.editError = null;
-    this.suggest = {}; // name -> GitHub links in its README
-    this.gh = null; // gh's token, looked up once when the dialog opens
+    this.resolving = false;
     this.scroll = ScrollHandle.new();
     this.handle = cx.focus_handle();
     this.input = InputState.new({ placeholder: "https://github.com/<owner>/<repo>/tree/<branch>/<folder>" });
@@ -65,75 +69,64 @@ export default class Moddr extends View {
     this.handle.focus();
     cx.timer.after(600, () => { if (!this.editing) this.handle.focus(); });
     if (checking()) return;
-    cx.spawn(async (cx) => { await this.reload(); cx.notify(); this.gh = await store.ghToken(); cx.notify(); });
-  }
-
-  /** moddr.json's token, else gh's, else none (unsigned requests). */
-  token() { return this.data.token || this.gh || null; }
-  auth() { return this.data.token ? "token from moddr.json" : this.gh ? "signed in with gh" : "unsigned"; }
-
-  async reload() {
-    const { data, error } = await store.load();
-    this.data = data;
-    this.fileError = error;
-    try { this.names = await store.localMods(); } catch (e) { this.fileError = `The mods folder could not be read: ${e?.message ?? e}`; }
-    for (const n of this.names) if (!(n in this.suggest)) this.suggest[n] = sourcesIn(await store.readme(n));
-  }
-
-  entry(name) { return this.data.mods[name] ?? null; }
-  tracked() { return this.names.filter((n) => this.entry(n)?.source); }
-  selected() { return this.names[this.at] ?? null; }
-
-  async persist(name) {
-    try { await store.save(this.data, new Set([name])); } catch (e) { this.fileError = `moddr.json could not be saved: ${e?.message ?? e}`; }
-  }
-
-  /** Checks one mod against its Source and saves what was found. */
-  async checkOne(name, cx) {
-    const e = this.entry(name);
-    if (!e?.source || this.busy.has(name)) return;
-    this.busy.add(name);
-    cx.notify();
-    let found;
-    try { found = await check(io, name, e, this.token()); } catch (err) { found = { error: String(err?.message ?? err) }; }
-    this.busy.delete(name);
-    const now = this.entry(name);
-    if (!now?.source) { cx.notify(); return; } // untracked meanwhile
-    if (found.error) now.check = { ...(now.check ?? {}), at: Date.now(), error: found.error };
-    else {
-      now.installed = found.installed;
-      now.check = { at: Date.now(), latest: found.latest, behind: found.behind, more: found.more, edited: found.edited, error: null };
-    }
-    await this.persist(name);
-    cx.notify();
-  }
-
-  refreshAll(cx) {
-    if (this.refreshing || checking()) return;
-    this.refreshing = true;
     cx.spawn(async (cx) => {
-      await this.reload();
-      for (const name of this.tracked()) await this.checkOne(name, cx);
-      this.refreshing = false;
-      const updated = this.tracked().filter((n) => state(this.entry(n)) === "updates");
-      if (updated.length) {
-        notify({
-          title: updated.length === 1 ? `${updated[0]} has an update` : `${updated.length} mods have updates`,
-          body: updated.join(", "),
-          level: "info",
-          action: { name: "mod.open", args: { name: "moddr" } },
-        });
+      await this.ctx.load();
+      this.seen = shared(SUMMARY)?.at ?? 0;
+      cx.notify();
+      await this.ctx.signIn();
+      cx.notify();
+      if (this.ctx.due()) this.refresh(cx);
+    });
+    // Another copy (the badge) may refresh while this is open: load what it saved.
+    cx.timer.every(3000, (cx) => {
+      const at = shared(SUMMARY)?.at ?? 0;
+      if (at > this.seen && !this.ctx.running) {
+        this.seen = at;
+        cx.spawn(async (cx) => { await this.ctx.load(); cx.notify(); });
       }
+    });
+  }
+
+  initBadge(cx) {
+    if (checking()) return;
+    const tick = (cx) => cx.spawn(async (cx) => {
+      if (this.ctx.running || busyElsewhere(false)) return;
+      await this.ctx.load();
+      if (!this.ctx.due()) { if (!shared(SUMMARY)) this.ctx.share(); return; }
+      if (this.ctx.gh === null) await this.ctx.signIn();
+      await this.ctx.refresh({ onChange: () => cx.notify() });
+      this.seen = shared(SUMMARY)?.at ?? 0;
+    });
+    cx.timer.after(BADGE_FIRST, (cx) => tick(cx));
+    cx.timer.every(BADGE_POLL, (cx) => tick(cx));
+  }
+
+  refresh(cx, force = false) {
+    if (this.ctx.running || checking()) return;
+    cx.spawn(async (cx) => {
+      await this.ctx.refresh({ force, onChange: () => cx.notify() });
+      this.seen = shared(SUMMARY)?.at ?? 0;
       cx.notify();
     });
   }
+
+  checkOne(name, cx) {
+    cx.spawn(async (cx) => {
+      try { await this.ctx.checkOne(name, () => cx.notify()); } catch { /* the error is on the record */ }
+      this.ctx.share();
+      cx.notify();
+    });
+  }
+
+  selected() { return this.ctx.names[this.at] ?? null; }
 
   startEdit(name) {
     if (!name) return;
     this.editing = name;
     this.editError = null;
-    const e = this.entry(name);
-    this.input.set_value(e?.source ? sourceUrl(e.source) : (this.suggest[name]?.[0] ?? ""));
+    const e = this.ctx.entry(name);
+    const guess = e?.source ?? e?.candidate;
+    this.input.set_value(guess ? sourceUrl(guess) : (this.ctx.readmes[name]?.[0] ?? ""));
     this.input.focus();
   }
 
@@ -146,44 +139,48 @@ export default class Moddr extends View {
   /** Reads what was typed, finds the mod's folder in that repo, saves it and checks it. */
   saveSource(cx) {
     const name = this.editing;
-    if (!name || this.busy.has(name)) return;
+    if (!name || this.resolving) return;
     let src;
     try { src = parseSource(this.input.value()); } catch (e) { this.editError = e.message; cx.notify(); return; }
-    this.busy.add(name);
+    this.resolving = true;
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        src = await resolve(io, src, name, this.token());
+        src = await resolve(io, src, name, this.ctx.token());
       } catch (e) {
-        this.busy.delete(name);
+        this.resolving = false;
         this.editError = String(e?.message ?? e);
         cx.notify();
         return;
       }
-      this.busy.delete(name);
-      const old = this.entry(name);
-      const same = old?.source && sourceUrl(old.source) === sourceUrl(src);
-      this.data.mods[name] = { ...(old ?? {}), source: src, installed: same ? old.installed ?? null : null, tracked: old?.tracked ?? Date.now(), check: same ? old.check : null };
+      this.resolving = false;
+      const old = this.ctx.entry(name) ?? {};
+      const same = old.source && sourceUrl(old.source) === sourceUrl(src);
+      this.ctx.data.mods[name] = {
+        ...old, source: src, installed: same ? old.installed ?? null : null, tracked: old.tracked ?? Date.now(),
+        check: same ? old.check : null, ignored: undefined, candidate: undefined, found: undefined,
+      };
       this.stopEdit();
-      await this.persist(name);
-      await this.checkOne(name, cx);
+      await this.ctx.persist([name]);
+      this.checkOne(name, cx);
     });
   }
 
   /** Takes the newest upstream version as the installed one. Local differences then show as edits. */
   markInstalled(name, cx) {
-    const e = this.entry(name);
+    const e = this.ctx.entry(name);
     const latest = e?.check?.latest?.sha;
-    if (!latest || this.busy.has(name)) return;
+    if (!latest || this.ctx.busy.has(name)) return;
     e.installed = latest;
     e.check = null;
-    cx.spawn(async (cx) => { await this.persist(name); await this.checkOne(name, cx); });
+    cx.spawn(async (cx) => { await this.ctx.persist([name]); this.checkOne(name, cx); });
   }
 
+  /** Stops tracking, and stops looking for its source: a found source would track it again. */
   untrack(name, cx) {
-    if (!this.entry(name) || this.busy.has(name)) return;
-    delete this.data.mods[name];
-    cx.spawn(async (cx) => { await this.persist(name); cx.notify(); });
+    if (!this.ctx.entry(name)?.source || this.ctx.busy.has(name)) return;
+    this.ctx.data.mods[name] = { ignored: true };
+    cx.spawn(async (cx) => { await this.ctx.persist([name]); this.ctx.share(); cx.notify(); });
   }
 
   close() {
@@ -198,7 +195,7 @@ export default class Moddr extends View {
       if (k === "escape") { this.stopEdit(); cx.stop_propagation(); cx.notify(); }
       return;
     }
-    const last = Math.max(0, this.names.length - 1);
+    const last = Math.max(0, this.ctx.names.length - 1);
     const plain = !m.control && !m.alt && !m.platform;
     const shift = Boolean(m.shift);
     const name = this.selected();
@@ -211,8 +208,9 @@ export default class Moddr extends View {
     else if (k === "up" || (!shift && k === "k")) this.at = Math.max(0, this.at - 1);
     else if (k === "G" || (shift && k === "g") || k === "end") this.at = last;
     else if (k === "g" || k === "home") this.at = 0;
-    else if (!shift && k === "r") this.refreshAll(cx);
-    else if (k === "enter") { if (name) cx.spawn(async (cx) => this.checkOne(name, cx)); }
+    else if (!shift && k === "r") this.refresh(cx);
+    else if (!shift && k === "f") this.refresh(cx, true);
+    else if (k === "enter") { if (name && this.ctx.entry(name)?.source) this.checkOne(name, cx); }
     else if (!shift && k === "s") this.startEdit(name);
     else if (!shift && k === "m") this.markInstalled(name, cx);
     else if (!shift && k === "x") this.untrack(name, cx);
@@ -224,17 +222,59 @@ export default class Moddr extends View {
 
   render() {
     const t = theme();
-    this.at = Math.max(0, Math.min(this.at, this.names.length - 1));
-    const tracked = this.tracked();
+    return this.view === "badge" ? this.renderBadge(t) : this.renderDialog(t);
+  }
+
+  /** The status-bar block. props { bare: true } drops its background and top border. */
+  renderBadge(t) {
+    const p = props() ?? {};
+    const sum = shared(SUMMARY);
+    const updates = Array.isArray(sum?.updates) ? sum.updates : [];
+    const running = this.ctx.running || Boolean(shared(RUNNING)?.at);
+    const color = updates.length ? t.done : sum?.error ? t.working : t.muted;
+    const tip = running ? "Moddr is checking your mods"
+      : updates.length ? `Updates: ${updates.join(", ")}`
+      : sum?.error ? sum.error
+      : sum ? `${sum.tracked} tracked mods, none with updates. Checked ${ago(sum.at)}`
+      : "Moddr has not checked yet";
+    return h_flex()
+      .id("moddr-badge")
+      .size_full()
+      .gap(5)
+      .items_center()
+      .justify_center()
+      .when(!p.bare, (el) => el.bg(t.chrome).border_t(1).border_color(t.border))
+      .text_size(11.8)
+      .text_color(color)
+      .cursor_pointer()
+      .hover((x) => x.text_color(t.foreground))
+      .tooltip(`${tip}. Click to open Moddr (ctrl-shift-g)`)
+      .on_click(() => run("mod.open", { name: "moddr" }))
+      .child(running
+        ? div().text_color(t.accent).frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)
+        : svg("mods/moddr/box.svg").size(14).flex_none().text_color(color))
+      .when(updates.length > 0, (el) => el.child(div().child(String(updates.length))));
+  }
+
+  renderDialog(t) {
+    const ctx = this.ctx;
+    const names = ctx.names;
+    this.at = Math.max(0, Math.min(this.at, names.length - 1));
+    const tracked = ctx.tracked();
     const counts = {};
-    for (const n of tracked) { const s = state(this.entry(n), this.busy.has(n)); counts[s] = (counts[s] ?? 0) + 1; }
-    const lastAt = Math.max(0, ...tracked.map((n) => this.entry(n)?.check?.at ?? 0));
-    const summary = !this.names.length ? "" : [
-      `${tracked.length} of ${this.names.length} tracked`,
+    for (const n of tracked) { const s = state(ctx.entry(n), ctx.busy.has(n)); counts[s] = (counts[s] ?? 0) + 1; }
+    const elsewhere = !ctx.running && busyElsewhere(false);
+    const lastAt = Number(ctx.data.lastRun?.at) || Math.max(0, ...tracked.map((n) => ctx.entry(n)?.check?.at ?? 0));
+    const every = settings(ctx.data).every;
+    const status = ctx.phase === "finding" ? "finding sources…" : ctx.phase === "checking" ? "checking…" : elsewhere ? "checking in the background…" : null;
+    const summary = !names.length ? "" : [
+      `${tracked.length} of ${names.length} tracked`,
       counts.updates ? `${counts.updates} with updates` : null,
-      lastAt ? `checked ${ago(lastAt)}` : null,
-      this.auth(),
+      status ?? (lastAt ? `checked ${ago(lastAt)}` : null),
+      every ? `every ${every}h` : "manual",
+      ctx.auth(),
     ].filter(Boolean).join(" · ");
+    const busy = ctx.running || elsewhere;
 
     const button = (id, label, on, enabled = true) =>
       div().id(id).flex_none().px(8).py(3).rounded(4).bg(t.raised).text_size(12)
@@ -254,10 +294,12 @@ export default class Moddr extends View {
       const lines = v_flex().gap(4).pt(6).text_size(12);
       const note = (text, color = t.muted) => div().text_color(color).child(text);
       if (s === "untracked") {
-        const sug = this.suggest[name] ?? [];
-        lines.child(note(sug.length ? `Its README links ${sug[0]}. Press s to use it or type another.` : "Press s and paste the GitHub folder it was installed from."));
+        if (e?.ignored) lines.child(note("Not tracked, and Moddr does not look for its source. Press s to set one."));
+        else if (e?.candidate) lines.child(note(`${repoText(e.candidate)} has a mod of this name, but the files here match none of its recent versions. Press s to track it anyway.`));
+        else if (e?.discovered) lines.child(note(`No source found ${ago(e.discovered)}. Press s to set one, or f to look again.`));
+        else lines.child(note("Not looked for yet. Press r to look for its source, or s to set one."));
       }
-      if (e?.source) lines.child(note(sourceUrl(e.source), t.dim));
+      if (e?.source) lines.child(note(`${sourceUrl(e.source)}${e.found ? " (found by Moddr)" : ""}`, t.dim));
       if (c?.error) lines.child(note(c.error, t.blocked));
       if (s === "unknown") lines.child(note(`The files here match none of the last ${1 + SEARCH} versions upstream. Press m to count the newest as installed.`));
       if (c?.behind?.length) {
@@ -276,16 +318,15 @@ export default class Moddr extends View {
       lines.child(h_flex().gap(6).pt(2)
         .child(button(`moddr-set-${name}`, e?.source ? "Change source" : "Set source", () => this.startEdit(name)))
         .when(Boolean(e?.source), (el) => el
-          .child(button(`moddr-check-${name}`, "Check", (cx) => cx.spawn(async (cx) => this.checkOne(name, cx)), !this.busy.has(name)))
+          .child(button(`moddr-check-${name}`, "Check", (cx) => this.checkOne(name, cx), !ctx.busy.has(name) && !busy))
           .when(s === "unknown", (el) => el.child(button(`moddr-mark-${name}`, "Mark installed", (cx) => this.markInstalled(name, cx))))
           .child(button(`moddr-untrack-${name}`, "Stop tracking", (cx) => this.untrack(name, cx)))));
       return lines;
     };
 
     const row = (name, i) => {
-      const e = this.entry(name);
-      const s = state(e, this.busy.has(name));
-      const src = e?.source ? `${e.source.owner}/${e.source.repo}${e.source.path ? ` · ${e.source.path}` : ""}` : "";
+      const e = ctx.entry(name);
+      const s = state(e, ctx.busy.has(name));
       const open = i === this.at;
       return v_flex()
         .id(`moddr-row-${name}`)
@@ -299,7 +340,7 @@ export default class Moddr extends View {
         .on_click((_ev, cx) => { if (!this.editing) { this.at = i; this.handle.focus(); cx.notify(); } })
         .child(h_flex().gap(10).items_center()
           .child(div().flex_none().font_semibold().text_size(13).child(name))
-          .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(src))
+          .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(e?.source ? repoText(e.source) : ""))
           .child(badge(s, e)))
         .when(open, (el) => el.child(details(name, e, s)));
     };
@@ -309,11 +350,12 @@ export default class Moddr extends View {
           .child(div().text_size(12).text_color(t.muted).child(`Source of ${this.editing}: a GitHub folder holding the mod or its share`))
           .child(h_flex().h(28).px(8).rounded(4).border(1).border_color(t.input).bg(t.background).items_center()
             .child(Input.new(this.input).flex_1().h_full().text_size(12.5).text_color(t.foreground)))
-          .when(this.busy.has(this.editing), (el) => el.child(div().text_size(11.5).text_color(t.accent).child("Looking it up on GitHub…")))
+          .when(this.resolving, (el) => el.child(div().text_size(11.5).text_color(t.accent).child("Looking it up on GitHub…")))
           .when(Boolean(this.editError), (el) => el.child(div().text_size(11.5).text_color(t.blocked).child(this.editError)))
           .child(div().text_size(11).text_color(t.dim).child("enter saves · escape cancels"))
       : null;
 
+    const runError = ctx.data.lastRun?.error;
     const key = (k, what) => h_flex().gap(5).child(div().text_color(t.accent).child(k)).child(div().text_color(t.dim).child(what));
     const legend = this.help
       ? h_flex().flex_none().flex_wrap().px(14).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
@@ -331,12 +373,14 @@ export default class Moddr extends View {
       .child(h_flex().flex_none().h(40).px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().text_size(13).child("Mods"))
         .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(summary))
-        .child(button("moddr-refresh", this.refreshing ? "Refreshing…" : "Refresh", (cx) => this.refreshAll(cx), !this.refreshing && tracked.length > 0)))
-      .when(Boolean(this.fileError), (el) => el.child(
-        div().flex_none().px(14).py(8).border_b(1).border_color(t.border).text_size(11.5).text_color(t.blocked).child(this.fileError)))
+        .child(button("moddr-refresh", busy ? "Refreshing…" : "Refresh", (cx) => this.refresh(cx), !busy && names.length > 0)))
+      .when(Boolean(ctx.error), (el) => el.child(
+        div().flex_none().px(14).py(8).border_b(1).border_color(t.border).text_size(11.5).text_color(t.blocked).child(ctx.error)))
+      .when(Boolean(runError) && !busy, (el) => el.child(
+        div().flex_none().px(14).py(8).border_b(1).border_color(t.border).text_size(11.5).text_color(t.working).child(runError)))
       .when(Boolean(editor), (el) => el.child(editor))
-      .child(this.names.length
-        ? v_flex().id("moddr-rows").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).children(this.names.map(row))
+      .child(names.length
+        ? v_flex().id("moddr-rows").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).children(names.map(row))
         : v_flex().flex_1().items_center().justify_center().text_size(12).text_color(t.dim).child("No mods of your own in the mods folder."))
       .child(legend);
   }

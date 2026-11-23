@@ -218,6 +218,10 @@ _Avoid_: baseline, installed commit
 A commit that touched the Mod source after the Installed version.
 _Avoid_: new version, release
 
+**Trusted repo**:
+A repo Moddr tracks a mod from by name alone, even when the mod's files match none of its versions: one a README links, one another mod is tracked from, or one the user listed.
+_Avoid_: known repo, allowed repo
+
 ### Tiling
 
 **Dwindle**:
