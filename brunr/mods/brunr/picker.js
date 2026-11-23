@@ -18,7 +18,12 @@ import { listRow } from "./kit/list.js";
 /** @typedef {import("gpui-kit").Context} Context */
 /** @typedef {import("gpui-kit").AsyncContext} AsyncContext */
 /** @typedef {import("./kit/theme.js").Theme} Theme */
-/** One choice in a picker. `warn` is a dim line under it. `hint` is its key, at the right. @typedef {{ label: string, value: any, warn?: string | null, hint?: string }} Choice */
+/**
+ * One choice in a picker. `warn` is a dim line under it. `hint` is its key, at the right. `depth`
+ * indents it, `header` draws it in bold, and `disabled` greys it out so it cannot be chosen. `side`
+ * is a small button at its right, such as "Edit…", that does something else than choosing it.
+ * @typedef {{ label: string, value: any, warn?: string | null, hint?: string, depth?: number, header?: boolean, disabled?: boolean, side?: { label: string, run: (cx: Context) => void } }} Choice
+ */
 /** A numbered line under a question's detail, such as a lint warning. @typedef {{ line: number | null, text: string }} Line */
 /**
  * A picker. `at`: the highlighted choice (default: `current`'s, else the first). `current`: the
@@ -50,6 +55,7 @@ export class Pickers {
     if (this.open) this.close(cx);
     const current = p.current === undefined ? -1 : p.options.findIndex((o) => o.value === p.current);
     this.open = { ...p, at: p.at ?? Math.max(0, current) };
+    if (this.open.options[this.open.at]?.disabled) this.command("down", null);
     this.scroll.scroll_to_item(this.open.at);
   }
 
@@ -65,7 +71,12 @@ export class Pickers {
     const p = this.open;
     if (!p || !p.options.length) return;
     if (c === "up" || c === "down") {
-      p.at = (p.at + (c === "up" ? -1 : 1) + p.options.length) % p.options.length;
+      const n = p.options.length;
+      // A greyed-out choice is stepped over.
+      for (let i = 1; i <= n; i++) {
+        const at = (p.at + (c === "up" ? -i : i) + n * n) % n;
+        if (!p.options[at].disabled) { p.at = at; break; }
+      }
       this.scroll.scroll_to_item(p.at);
     } else if (c === "enter") this.pick(p.at, cx);
   }
@@ -74,7 +85,7 @@ export class Pickers {
   pick(i, cx) {
     const p = this.open;
     const option = p?.options[i];
-    if (!p || !option) return;
+    if (!p || !option || option.disabled) return;
     this.open = null;
     p.choose(option.value, cx);
   }
@@ -100,10 +111,16 @@ export class Pickers {
           .child(div().flex_1().min_w(0).text_color(t.ansi3).child(l.text))))))
       .child(v_flex().id("brunr-picker-list").flex_none().h(listH).overflow_y_scrollbar().track_scroll(this.scroll).gap(2)
         .children(p.options.map((o, i) => listRow(t, { id: `brunr-pick-${i}`, on: i === p.at, compact: !o.warn, tall: Boolean(o.warn), click: (cx) => { this.pick(i, cx); cx.notify(); } })
+          .when(Boolean(o.depth), (el) => el.pl(8 + 14 * (o.depth ?? 0)))
           .child(div().w(10).flex_none().text_color(t.accent).child(p.current !== undefined && o.value === p.current ? "●" : ""))
           .child(v_flex().flex_1().min_w(0).gap(1)
-            .child(div().truncate().text_color(t.foreground).child(o.label))
+            .child(div().truncate().text_color(o.disabled ? t.dim : t.foreground).when(Boolean(o.header), (el) => el.font_semibold()).child(o.label))
             .when(Boolean(o.warn), (el) => el.child(div().text_size(SIZE.small).text_color(t.dim).child(o.warn ?? ""))))
+          .when(Boolean(o.side), (el) => el.child(div().id(`brunr-pick-side-${i}`).flex_none().h(20).px(7).flex().items_center().rounded(5).border_1().border_color(t.border)
+            .text_size(SIZE.small).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover))
+            .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+            .on_click((_e, cx) => { cx.stop_propagation(); const side = o.side; this.open = null; side?.run(cx); cx.notify(); })
+            .child(o.side?.label ?? "")))
           .when(Boolean(o.hint), (el) => el.child(div().flex_none().text_size(SIZE.small).text_color(t.dim).child(o.hint ?? ""))))))
       .child(divider(t))
       .child(legend(t, [["j/k", "move"], ["enter", "choose"], ["esc", "back"]]));

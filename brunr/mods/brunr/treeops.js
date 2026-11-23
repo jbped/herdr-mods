@@ -186,7 +186,7 @@ export function rowMenu(row, { canRun = true, up = false, down = false, busy = f
   }
   if (row.kind === "collection") {
     return [item("Run Collection", "runMany", "r", !canRun), ...edit("New Request", "newRequest", "n"), ...edit("New folder", "newFolder", "Shift+N"),
-      ...(local ? [item("Edit Environments…", "editEnvs"), item("Edit .env…", "editDotenv")] : [])];
+      ...(local ? [item("Environments…", "editEnvs"), item("Edit .env…", "editDotenv")] : [])];
   }
   return [];
 }

@@ -1,6 +1,7 @@
 // Brunr: your Bruno Collections in one dialog. The tree of Collections, folders and Requests is
 // on the left, the selected Request in the middle (request.js) and the last Run's Response on the
 // right. A narrow dialog puts the Request above the Response. Requests are run with the Bruno CLI.
+// The tree's edit actions are in treeactions.js and treeform.js.
 // Each key is also a command: `herdr-app do brunr.<command>`.
 //
 // The keyboard is on the tree, the Request or the Response. ctrl-h and ctrl-l move it left and
@@ -8,8 +9,9 @@
 // Keys: h/l fold and unfold, enter runs a Request or folds a folder, r runs the row (a folder or
 // Collection asks first), p runs a Request with other values for its URL's {{variables}}, e picks the Environment, o shows the Request's file, y copies its URL,
 // b opens Bruno desktop, 1-4 pick the Response's view, / searches a Run's Requests, f fills the
-// window, ctrl-s saves the shown Request's Draft, ctrl-r reads everything again, ? shows or hides
-// the key list, esc closes.
+// window, ctrl-s saves the shown Request's Draft, ctrl-r reads everything
+// again, n, shift-n, f2, m, alt-up, alt-down and delete edit the tree, ? shows or hides the key
+// list, esc closes.
 //
 // Config: brunr.json in the app home. Nothing from a Response is written to disk. Request files
 // change only through saves (saveflow.js), and Drafts live in memory (drafts.js).
@@ -37,6 +39,8 @@ import { RequestColumn, stepPlace } from "./request.js";
 import * as drafts from "./drafts.js";
 import * as saveflow from "./saveflow.js";
 import { FILE } from "./formview.js";
+import * as actions from "./treeactions.js";
+import { TreeForm } from "./treeform.js";
 
 /** @typedef {import("gpui-kit").Context} Context */
 /** @typedef {import("gpui-kit").AsyncContext} AsyncContext */
@@ -95,6 +99,7 @@ const SHORTCUTS = [
   { id: "file", key: "o", what: "open file" }, { id: "url", key: "y", what: "copy URL" },
   { id: "app", key: "b", what: "open Bruno" }, { id: "full", key: "f", what: "full screen" },
   { id: "reload", key: "ctrl-r", what: "reload" }, { id: "save", key: "ctrl-s", what: "save" },
+  ...actions.SHORTCUTS,
 ];
 /** What tree.keyAction calls each command that acts on the selected row. @type {Record<string, string>} */
 const TREE_KEY = { up: "up", down: "down", left: "left", right: "right", home: "home", end: "end", enter: "enter", run: "r", env: "e", file: "o", app: "b" };
@@ -169,6 +174,11 @@ export default class Brunr extends View {
       run: (cx, key) => this.runKey(cx, key, false),
       saved: this.saved,
     });
+    this.treeForm = new TreeForm();
+    /** True while a tree action runs (treeactions.js). */
+    this.busy = false;
+    /** @type {{ pressed: Row | null, over: any } | null} a drag in the tree */
+    this.drag = null;
     this.bindSave(cx);
     if (checking()) return;
 
@@ -201,6 +211,7 @@ export default class Brunr extends View {
     await this.request?.close();
     this.response?.release();
     this.closeVars();
+    this.treeForm?.close();
   }
 
   /** Closes the dialog. Placed as a layout block there is nothing to close. */
@@ -329,9 +340,12 @@ export default class Brunr extends View {
     // Ctrl with a letter is read from the key and its modifiers, so it works however the app spells the keystroke.
     const m = e.modifiers;
     const ctrlOnly = m.control && !m.shift && !m.alt && !m.platform;
-    const k = ctrlOnly && /^[a-z]$/.test(e.key) ? `ctrl-${e.key}` : e.keystroke;
+    const shiftOnly = m.shift && !m.control && !m.alt && !m.platform;
+    const k = ctrlOnly && /^[a-z]$/.test(e.key) ? `ctrl-${e.key}` : shiftOnly && /^[a-z]$/i.test(e.key) ? `shift-${e.key.toLowerCase()}` : e.keystroke;
     let c = "";
     if (this.pickers.open) c = PICKER_KEYS[k] ?? "";
+    // A form takes only esc and its own keys. Typed letters never reach a tree key.
+    else if (this.treeForm.open) c = this.treeForm.keyCommand(k);
     else if (this.vars) c = k === "escape" ? "cancel" : k === "tab" || k === "down" ? "vars-next" : k === "shift-tab" || k === "up" ? "vars-prev" : "";
     else if (this.shortcuts.open) { this.shortcuts.key(e, cx); return; }
     else if (this.response.typing) c = k === "escape" ? "cancel" : k === "enter" ? "focus-response" : "";
@@ -370,6 +384,7 @@ export default class Brunr extends View {
     this.note = null;
     if (c === "cancel") this.cancel(cx);
     else if (this.pickers.open) this.pickers.command(c, cx);
+    else if (this.treeForm.open) this.treeForm.command(c, cx);
     else if (this.vars) this.varsCommand(c, cx);
     else if (this.shortcuts.command(c)) { /* the settings panel took it */ }
     else if (c === "focus-left" || c === "focus-right") this.focusOn(stepPlace(this.focus, c === "focus-left" ? -1 : 1, Boolean(this.request.req)));
@@ -388,6 +403,7 @@ export default class Brunr extends View {
     else if (c === "url") this.copyUrl(cx);
     else if (c === "vars") this.openVars();
     else if (this.focus === "response" && (c === "up" || c === "down")) this.response.move(c === "up" ? -1 : 1);
+    else if (actions.command(this, cx, c)) { /* a tree edit action */ }
     else if (TREE_KEY[c]) {
       const at = Math.max(0, this.rows.findIndex((r) => r.key === this.sel));
       const a = tree.keyAction(TREE_KEY[c], this.rows, at);
@@ -404,7 +420,15 @@ export default class Brunr extends View {
 
   /** Esc: closes the picker, then the settings, then leaves a text box, then closes the dialog. @param {Context | AsyncContext} cx */
   cancel(cx) {
-    if (this.pickers.open) { this.pickers.close(cx); this.steppedBack = Date.now(); }
+    if (actions.cancelDrag(this)) this.steppedBack = Date.now();
+    else if (this.pickers.open) { this.pickers.close(cx); this.steppedBack = Date.now(); }
+    else if (this.treeForm.open) {
+      // One esc steps back once, even when it arrives twice.
+      if (Date.now() - this.steppedBack <= ESC_GAP_MS) return;
+      this.treeForm.close();
+      this.handle.focus();
+      this.steppedBack = Date.now();
+    }
     else if (this.vars) {
       this.closeVars();
       this.steppedBack = Date.now();
@@ -471,6 +495,7 @@ export default class Brunr extends View {
     if (row.kind === "request" && this.canRun(row)) options.push({ label: "Run", value: "run", hint: "enter" });
     if (tree.runsMany(row) && this.canRun(row)) options.push({ label: row.kind === "folder" ? "Run folder" : "Run Collection", value: "run", hint: key("run") });
     if (row.kind === "request") options.push({ label: "Open file", value: "file", hint: key("file") });
+    options.push(...actions.menuEntries(this, row));
     if (row.ck) options.push({ label: "Environment", value: "env", hint: key("env") });
     if (row.kind === "global") options.push({ label: "Global environment", value: "global", hint: key("env") });
     if (row.ck && row.machine == null) options.push({ label: "Open Bruno", value: "app", hint: key("app") });
@@ -480,7 +505,8 @@ export default class Brunr extends View {
     this.pickers.show({
       title: row.name, options, at: 0,
       choose: (value, cx) => {
-        if (value === "path") this.copyPath(cx, row);
+        if (actions.command(this, cx, value, row)) { /* an edit action */ }
+        else if (value === "path") this.copyPath(cx, row);
         else if (value === "run") this.runKey(cx, row.key, false);
         else if (value === "file") this.openFile(cx, row);
         else if (value === "env") this.openEnvPicker(row);
@@ -596,6 +622,7 @@ export default class Brunr extends View {
   runKey(cx, key, confirmed, envVars = null, saved = false) {
     const row = this.buildRows().find((r) => r.key === key);
     if (!row || !row.ck) return;
+    if (row.broken) return this.say(`${row.name} does not read as a Request. Fix it on the File tab to run it.`);
     if (store.running()) return this.say("A Run is in progress");
     if (!this.canRun(row)) return this.say(`No Bruno CLI on ${row.machine ?? "this computer"}. Runs are off`);
     const entry = this.entry(row.ck), c = this.collection(row.ck);
@@ -643,11 +670,14 @@ export default class Brunr extends View {
     this.showSelected(cx, FILE);
   }
 
-  /** The selected Request shows in the Request column. It never runs. Any other row empties it. @param {Context | AsyncContext} cx @param {string | null} [tab] */
+  /**
+   * The selected Request shows in the Request column. It never runs. A file that does not parse
+   * shows on the File tab. Another row keeps the last Request shown, as Bruno keeps its tab open.
+   * @param {Context | AsyncContext} cx @param {string | null} [tab]
+   */
   showSelected(cx, tab = null) {
     const row = this.selected();
-    if (row?.kind === "request" && this.entry(row.ck)) this.request.show(this.requestInfo(row), cx, tab);
-    else this.request.clear();
+    if (row?.kind === "request" && this.entry(row.ck)) this.request.show(this.requestInfo(row), cx, row.broken ? FILE : tab);
   }
 
   /** What the Request column needs: `{ key, ck, machine, root, path, format, name }`. @param {{ key: string, ck: string, path: string, name: string }} row */
@@ -694,7 +724,7 @@ export default class Brunr extends View {
     const runs = row?.kind === "request" ? "Run" : row?.kind === "folder" ? "Run folder" : row?.kind === "collection" ? "Run Collection" : "";
     return h_flex().flex_1().min_w(0).gap(10).items_center()
       .child(div().flex_1().min_w(0).truncate().text_size(SIZE.small).text_color(t.dim).child(counts))
-      .when(this.loadingAll || Boolean(store.running()), (el) => el.child(svg(ICON("spinner")).size(13).flex_none().text_color(t.working).spin(900)))
+      .when(this.loadingAll || this.busy || Boolean(store.running()), (el) => el.child(svg(ICON("spinner")).size(13).flex_none().text_color(t.working).spin(900)))
       .when(Boolean(runs) && this.canRun(row), (el) => el.child(this.button(t, "brunr-run", `${runs}${this.tipKey("run")}`, "run")
         .child(svg(ICON("play")).size(10).flex_none().text_color(t.done)).child(runs)))
       .child(this.button(t, "brunr-reload", `Read everything again${this.tipKey("reload")}`, "reload").px(6)
@@ -738,10 +768,18 @@ export default class Brunr extends View {
     if (r.kind === "machine") return sectionLabel(t, r.name).id(`brunr-row-${i}`).px(8);
     const on = r.key === this.sel;
     const mark = tree.runMark(r, store.running());
-    const el = listRow(t, { id: `brunr-row-${i}`, on, compact: true }).pl(8 + r.depth * INDENT).pr(8).gap(6)
+    // Drag and drop: the row is the handle. The rules are in treeops.js; this only reports the pointer.
+    const drag = actions.dragMark(this, r);
+    const el = listRow(t, { id: `brunr-row-${i}`, on, compact: true }).relative().pl(8 + r.depth * INDENT).pr(8).gap(6)
       // The selection is dimmer while j and k act on the Response.
       .when(on && this.focus !== "tree", (e) => e.bg(t.hover))
+      .when(drag === "inside", (e) => e.bg(t.selected).border_1().border_color(t.accent))
+      .when(drag === "dragged", (e) => e.opacity(0.5))
+      .when(drag === "above" || drag === "below", (e) => e.child(div().absolute().left(0).right(0).h(2).bg(t.accent).when(drag === "below", (l) => l.bottom(0)).when(drag === "above", (l) => l.top(0))))
       .on_click((e, cx) => this.clickRow(cx, r, e))
+      .on_mouse_down("left", () => actions.press(this, r))
+      .on_mouse_move((e, cx) => actions.hover(this, r, e, cx))
+      .on_mouse_up("left", (_e, cx) => { actions.release(this, r, cx); cx.notify(); })
       .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(r); cx.notify(); });
     if (r.kind === "global") {
       return el.child(svg(ICON("globe")).size(13).flex_none().text_color(t.muted))
@@ -761,6 +799,10 @@ export default class Brunr extends View {
     } else if (r.kind === "folder") {
       el.child(svg(ICON("folder")).size(13).flex_none().text_color(t.muted)).child(div().flex_1().min_w(0).truncate().child(r.name))
         .child(div().flex_none().text_size(SIZE.small).text_color(t.dim).child(String(r.count)));
+    } else if (r.broken) {
+      // A file that does not parse: its file name, a warning mark and no method.
+      el.child(div().w(16).flex_none()).child(div().w(34).flex_none().child(svg(ICON("warning")).size(12).text_color(t.blocked)))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(r.name)).tooltip(`Does not read as a Request: ${r.error}`);
     } else {
       el.child(div().w(16).flex_none()).child(methodBadge(t, r.method)).child(div().flex_1().min_w(0).truncate().child(r.name));
     }
@@ -794,7 +836,10 @@ export default class Brunr extends View {
     if (now) box.child(div().truncate().text_color(t.muted).child(`Running: ${now.name}`));
     if (!r || r.kind === "machine") return box.child(dim("Enter or a double-click runs a Request."));
     const coll = r.ck ? this.rows.find((x) => x.key === r.ck) : null;
-    if (r.kind === "request") {
+    if (r.kind === "request" && r.broken) {
+      box.child(div().text_color(t.blocked).child(`${r.path} does not parse: ${r.error}`));
+      box.child(dim("It shows on the File tab. It cannot run until it parses."));
+    } else if (r.kind === "request") {
       box.child(h_flex().gap(6).items_start().child(methodBadge(t, r.method, 40)).child(div().flex_1().min_w(0).font_family(this.mono()).text_size(SIZE.small).text_color(t.foreground).child(r.url || "(no URL)")));
     } else if (r.kind === "global") {
       box.child(dim(`Applies to every Collection of this workspace. ${r.env ? `Now: ${r.env}.` : "None chosen."}`));
@@ -888,17 +933,21 @@ export default class Brunr extends View {
       .key_context(REQUEST_CONTEXT)
       .when(Boolean(saveKey), (el) => el.on_action(saveAction(saveKey), (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { if (!this.shortcuts.isOff("save")) this.command("save", cx); cx.notify(); }));
     const responseCol = this.response.render(t, { width: three ? (rest - SIZE.frameGap) / 2 : rest, focused: this.focus === "response", escBox: (box) => this.escBox(box) });
+    const body = div().flex().flex_row().flex_1().min_h(0).gap(SIZE.frameGap)
+        .child(this.treePane(t))
+        .child((three ? h_flex().items_stretch() : v_flex()).flex_1().min_w(0).min_h(0).gap(SIZE.frameGap).child(requestCol).child(responseCol));
     const panel = frame(t, { id: "brunr", title: "Brunr", handle: this.handle, onKey: (e, cx) => this.key(e, cx), fill: true, details: this.details(t),
       onResize: (width, cx) => { if (width !== this.width) { this.width = width; cx.notify(); } } })
-      .child(div().flex().flex_row().flex_1().min_h(0).gap(SIZE.frameGap)
-        .child(this.treePane(t))
-        .child((three ? h_flex().items_stretch() : v_flex()).flex_1().min_w(0).min_h(0).gap(SIZE.frameGap).child(requestCol).child(responseCol)))
+      // A release that no row took ends a drag with no drop.
+      .on_mouse_up("left", (_e, cx) => { if (actions.cancelDrag(this)) cx.notify(); })
+      .child(body)
       .when(Boolean(this.note), (el) => el.child(div().flex_none().text_size(SIZE.small).text_color(this.note?.bad ? t.blocked : t.dim).child(this.note?.text ?? "")))
       .when(this.shortcuts.showHints, (el) => el.child(divider(t)).child(legend(t, hints)))
       // Esc with something open steps back from it. Without this the app closes the whole dialog (see BOX_CONTEXT).
-      .when(Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing || this.request.typing, (el) => el.key_context(BOX_CONTEXT)
+      .when(Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing || this.request.typing || this.treeForm.open || Boolean(this.drag?.over), (el) => el.key_context(BOX_CONTEXT)
         .on_action(BACK_ACTION, (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { this.command("cancel", cx); cx.notify(); }))
       .when(Boolean(picker), (el) => el.child(this.pickers.panel(t)))
+      .when(this.treeForm.open, (el) => el.child(this.treeForm.panel(t, (cx) => { this.treeForm.close(); this.handle.focus(); cx.notify(); })))
       .when(Boolean(this.vars), (el) => el.child(this.varsPanel(t, /** @type {VarsForm} */ (this.vars))))
       .when(this.shortcuts.open, (el) => el.child(this.shortcuts.panel(t)));
     // Placed as a layout block, or in full screen, the panel fills its room.
@@ -906,6 +955,7 @@ export default class Brunr extends View {
     // The overlay covers the window. A click beside the dialog closes it, a click in it does not.
     return div().id("brunr-around").size_full().flex().items_center().justify_center()
       .on_click(() => this.dismiss())
+      .on_mouse_up("left", (_e, cx) => { if (actions.cancelDrag(this)) cx.notify(); })
       .child(div().id("brunr-box").w(DIALOG.width).max_w("100%").h(DIALOG.height).flex_none()
         .on_click((_e, cx) => cx.stop_propagation())
         .child(panel));
