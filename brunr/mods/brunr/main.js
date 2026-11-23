@@ -201,7 +201,8 @@ export default class Brunr extends View {
     });
     // The Run lives in store.js: each change is taken here and drawn.
     // The key pressed while an editor has unsaved edits: ask, do not close (closeguard.js).
-    closeguard.set(() => props()?.overlay !== undefined && this.editors.dirty);
+    // Only the dialog registers: a copy in a tab or a layout block must not take the dialog's place.
+    if (props()?.overlay !== undefined) closeguard.set(() => this.editors.dirty);
     cx.spawn(async (cx) => { for (;;) { await closeguard.nextRequest(); this.editors.askClose(() => this.dismiss()); cx.notify(); } });
     cx.spawn(async (cx) => { for (;;) { await store.nextChange(); this.response.sync(); cx.notify(); } });
     // Drafts live in drafts.js: a save, a discard or a change on disk is taken here.
@@ -213,7 +214,7 @@ export default class Brunr extends View {
   async close() {
     if (this.launcher) return;
     dialogClosed(MOD);
-    closeguard.set(null);
+    if (props()?.overlay !== undefined) closeguard.set(null);
     for (const w of this.watches?.values() ?? []) w?.cancel();
     this.watches?.clear();
     if (store.running()) store.finishRun({ ok: false, message: "Brunr was closed before the Run finished.", summary: { requests: 0, passed: 0, failed: 0, skipped: 0, duration: 0 }, responses: [] });
