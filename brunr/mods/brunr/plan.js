@@ -1,3 +1,4 @@
+// @ts-nocheck
 // The Run planner: a Collection, a target and the chosen Environments to the `bru run` command.
 // Pure: no Herdr, no Node APIs.
 import { countRequests, findNode } from "./parser.js";
@@ -12,8 +13,9 @@ const relPath = (p) => String(p ?? "").replace(/\\/g, "/").replace(/^(\.\/)+/, "
 /**
  * `{ cmd, args, cwd, timeout, count, confirm }` for one Run. `target` is `{ kind: "collection" }`
  * or `{ kind: "folder" | "request", path }`. Each argument is one array item and is never quoted.
+ * `envVars` (`{ name: value }`) replaces those Environment variables for this Run only.
  */
-export function planRun({ collection, target, environment = null, globalEnvironment = null, workspacePath = null, reportPath }) {
+export function planRun({ collection, target, environment = null, globalEnvironment = null, workspacePath = null, reportPath, envVars = null }) {
   const kind = target?.kind === "folder" || target?.kind === "request" ? target.kind : "collection";
   const path = kind === "collection" ? "" : relPath(target.path);
   const args = ["run"];
@@ -23,6 +25,7 @@ export function planRun({ collection, target, environment = null, globalEnvironm
   if (globalEnvironment && workspacePath) {
     args.push("--global-env", globalEnvironment, "--workspace-path", String(workspacePath).replace(/\\/g, "/"));
   }
+  for (const [name, value] of Object.entries(envVars ?? {})) args.push("--env-var", `${name}=${value}`);
   args.push("--reporter-json", String(reportPath ?? ""));
   const count = runCount(collection, kind, path);
   return {

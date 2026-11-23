@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Run progress: the Bruno CLI's output, read while a Run is in progress, to the Requests that have
 // finished and the one that runs now. Pure: no Herdr, no Node APIs, no imports.
 //

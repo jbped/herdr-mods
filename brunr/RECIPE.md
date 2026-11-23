@@ -104,8 +104,8 @@ State: `localStorage` keys `open`, `envs` and `globals`. Shared state keys `brun
 
 Programs, all through `exec`:
 
-- `bru run ...` with its output going to a progress file, on the Collection's Machine. Not on Windows: `sh -c 'out=$1; shift; exec "$@" >"$out" 2>&1' sh <file> bru run ...`. On Windows: `node -e <fixed script> -- <file> run ...`, which reads the CLI script's path out of `bru.cmd` on the PATH and starts it with `node` and no shell. When it finds no script it exits 86 and Brunr starts `bru.cmd run ...` directly, without progress.
-- `bru --version` (`bru.cmd` on Windows, for this computer) and `node --version`, on the Collection's Machine.
+- `bru run ...` with its output going to a progress file, on the Collection's Machine. Not on Windows: `sh -c 'out=$1; shift; exec "$@" >"$out" 2>&1' sh <file> bru run ...`. On Windows: `node -e <fixed script> -- <file> run ...`, which reads the CLI script's path out of `bru.cmd` on the PATH, else in `%APPDATA%\npm`, and starts it with `node` and no shell. When it finds no script it exits 86 and Brunr starts `bru.cmd run ...` directly, without progress.
+- `bru --version` and `node --version`, on the Collection's Machine. On Windows, for this computer, the same `node -e` lookup starts the CLI's script with `--version`, and `bru.cmd --version` is the fallback.
 - Listing: `sh -c` on any Machine, `powershell -NoProfile -NonInteractive -Command` on Windows for this computer when `fs` is refused. Reading on another Machine: `sh -c` with `cat`. Reports on another Machine: `cat` and `rm`.
 - Open Bruno: `cmd /d /c start` with `Bruno.exe` from `<home>/AppData/Local/Programs/Bruno/` on Windows, `open /Applications/Bruno.app` on macOS and `bruno` found with `command -v bruno` on Linux.
 
@@ -137,7 +137,7 @@ Facts of the Bruno CLI (4.2.1) that a fresh build gets wrong:
 
 Facts of Herdr that a fresh build gets wrong:
 
-- `exec` finds a bare name only as an `.exe`. On Windows `bru` is an npm `.cmd` shim, so start `bru.cmd`. The host quotes each argument for cmd.exe, so paths with spaces work. The PATH that `exec` sees is the one Herdr was started with, so the npm global folder has to be on it.
+- `exec` finds a bare name only as an `.exe`, and on the Herdr version tested it could not start `bru.cmd` by name either ("program not found"). Start the CLI's script with `node` instead. The PATH that `exec` sees is the one Herdr was started with, which can lack the npm global folder, so also look in `%APPDATA%\npm`.
 - `fs` reads are refused outside the granted roots (the home folder). `readTextFile` reads anywhere. List a Collection with `fs` first and fall back to one `exec` listing.
 - Work a popup starts in the turn that closes it never runs, and its `cx.timer.after` never fires. A popup passes its choice through shared state (`brunr.request`) and the panel takes it the next time it draws.
 - Only Herdr moves the keyboard off a terminal, one `pane.go` at a time. The key's pass-through copy asks the panel to step right every 150ms, at most 8 times, until the panel's `focus` command arrives.

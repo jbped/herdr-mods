@@ -1,3 +1,4 @@
+// @ts-nocheck
 // The report reader: the Bruno CLI's JSON report plus its exit code and output to plain Responses.
 // Pure: no Herdr, no Node APIs.
 

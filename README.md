@@ -21,7 +21,7 @@ Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/jbped/
 
 [<img src="brunr/preview.png" width="720" alt="Brunr">](brunr/)
 
-A side panel that lists your Bruno Collections as a tree, runs their Requests with the Bruno CLI and shows each Response in a pane.
+A dialog that lists your Bruno Collections as a tree, runs their Requests with the Bruno CLI and shows each Response beside the tree.
 
 ```text
 Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/jbped/herdr-mods/tree/main/brunr
