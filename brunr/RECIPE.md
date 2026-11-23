@@ -92,7 +92,7 @@ Limits and assumptions:
 
 - Editing works on this computer only, because the change-checked write exists only here.
 - `p` passes typed values as command-line arguments, which other programs can see during the Run.
-- Closing the dialog during a Run leaves its report file in `data/brunr/` until Brunr next opens. Closing it with a press beside it or the key drops an editor's unsaved edits without asking.
+- Closing the dialog during a Run leaves its report file in `data/brunr/` until Brunr next opens. A press beside it or the key asks "Discard unsaved changes?" first when an editor has unsaved edits.
 - At most 2000 files per Collection. One Run at a time. A Run cannot be cancelled. Timeouts are 60 seconds for a Request and 10 minutes for a folder or Collection.
 - A masked value still shows its length. The Raw view shows values.
 

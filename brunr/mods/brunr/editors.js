@@ -70,6 +70,21 @@ export class Editors {
     if (this.self) parts.requestClose(this.self);
   }
 
+  /**
+   * Something wants to close the whole dialog. With unsaved edits it asks "Discard unsaved
+   * changes?" and returns true: the dialog stays, and Discard runs `then`. Otherwise false.
+   * @param {() => void} then
+   */
+  askClose(then) {
+    const self = this.self;
+    if (!self?.ed?.dirty?.()) return false;
+    if (!self.ed.ask) parts.guard(self, () => { self.closeEditor(); then(); });
+    return true;
+  }
+
+  /** True when the open editor has unsaved edits. */
+  get dirty() { return Boolean(this.self?.ed?.dirty?.()); }
+
   /** The save key: the editor saves its file. A Request's Draft is not saved while an editor is open. @param {Context | AsyncContext} cx */
   save(cx) {
     this.self?.ed?.save?.(cx);

@@ -27,6 +27,7 @@ import { listRow, listNote } from "./kit/list.js";
 import { sectionLabel } from "./kit/pane.js";
 import { chip, toolButton, textInput } from "./kit/controls.js";
 import { Shortcuts } from "./kit/shortcuts.js";
+import * as closeguard from "./closeguard.js";
 import { isLauncher, launch, toggleDialog, dialogClosed, closeTab, sharedStorage, openAsOption, onOpenAsChange } from "./kit/open-as.js";
 import * as sources from "./sources.js";
 import * as machine from "./machine.js";
@@ -122,7 +123,9 @@ export default class Brunr extends View {
     // dialog, as the settings say, then closes (kit/open-as.js). Nothing else starts in it.
     this.launcher = isLauncher();
     if (this.launcher) {
-      if (!checking()) launch(MOD, HOW, cx);
+      // An open dialog with unsaved editor edits asks first and stays. The launcher just closes.
+      if (!checking() && closeguard.request()) closeOverlay(props()?.overlay);
+      else if (!checking()) launch(MOD, HOW, cx);
       return;
     }
     const p = props() ?? {};
@@ -197,6 +200,9 @@ export default class Brunr extends View {
       }
     });
     // The Run lives in store.js: each change is taken here and drawn.
+    // The key pressed while an editor has unsaved edits: ask, do not close (closeguard.js).
+    closeguard.set(() => props()?.overlay !== undefined && this.editors.dirty);
+    cx.spawn(async (cx) => { for (;;) { await closeguard.nextRequest(); this.editors.askClose(() => this.dismiss()); cx.notify(); } });
     cx.spawn(async (cx) => { for (;;) { await store.nextChange(); this.response.sync(); cx.notify(); } });
     // Drafts live in drafts.js: a save, a discard or a change on disk is taken here.
     cx.spawn(async (cx) => { for (;;) { await drafts.nextChange(); this.request.draftChanged(); cx.notify(); } });
@@ -207,6 +213,7 @@ export default class Brunr extends View {
   async close() {
     if (this.launcher) return;
     dialogClosed(MOD);
+    closeguard.set(null);
     for (const w of this.watches?.values() ?? []) w?.cancel();
     this.watches?.clear();
     if (store.running()) store.finishRun({ ok: false, message: "Brunr was closed before the Run finished.", summary: { requests: 0, passed: 0, failed: 0, skipped: 0, duration: 0 }, responses: [] });
@@ -402,7 +409,7 @@ export default class Brunr extends View {
     else if (c === "keys") this.shortcuts.setOption("hints", !this.shortcuts.showHints);
     else if (c === "full") this.toggleFull();
     // In a tab: close it and go back to the tab you came from. A dialog closes with esc.
-    else if (c === "close-tab") { if (props()?.overlay === undefined) closeTab(MOD); }
+    else if (c === "close-tab") { if (props()?.overlay === undefined && !this.editors.askClose(() => closeTab(MOD))) closeTab(MOD); }
     else if (c === "reload") cx.spawn((cx) => this.reload(cx));
     else if (c === "search") { if (this.response.many) { this.focus = "response"; this.response.filterInput.focus(); } }
     else if (c.startsWith("part-")) this.response.setPart(Number(c.slice(5)) - 1);
@@ -988,7 +995,7 @@ export default class Brunr extends View {
     if (props()?.overlay === undefined || this.full) return panel;
     // The overlay covers the window. A click beside the dialog closes it, a click in it does not.
     return div().id("brunr-around").size_full().flex().items_center().justify_center()
-      .on_click(() => this.dismiss())
+      .on_click((_e, cx) => { if (this.editors.askClose(() => this.dismiss())) cx.notify(); else this.dismiss(); })
       .on_mouse_up("left", (_e, cx) => { if (actions.cancelDrag(this)) cx.notify(); })
       .child(div().id("brunr-box").w(DIALOG.width).max_w("100%").h(DIALOG.height).flex_none()
         .on_click((_e, cx) => cx.stop_propagation())

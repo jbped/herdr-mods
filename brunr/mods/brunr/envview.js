@@ -64,10 +64,9 @@ function detail(self, t) {
   if (!e.table) return box;
   const secretCell = (row) => h_flex().flex_1().min_w(0).gap(8).items_center()
     .child(div().flex_1().min_w(0).text_size(11.5).text_color(t.muted).child(parts.SECRET_TEXT))
-    .child(parts.button(t, `brunr-env-move-${row.id}`, "Move to .env", !e.busy && !dirty, () => ed.startMove(self, row)));
+    .child(parts.button(t, `brunr-env-move-${row.id}`, "Move to .env", !e.busy, () => ed.startMove(self, row)));
   box.child(parts.tableView(self, t, { enabled: true, secretCell, idPrefix: "brunr-env-row" }));
-  const status = e.status?.error ? [t.blocked, e.status.error] : e.status?.ok ? [t.done, e.status.ok]
-    : dirty && e.table.rows.some((r) => r.secret) ? [t.dim, "Move to .env works once the changes are saved or discarded."] : null;
+  const status = e.status?.error ? [t.blocked, e.status.error] : e.status?.ok ? [t.done, e.status.ok] : null;
   return box.child(h_flex().h(44).flex_none().px(12).gap(8).items_center().border_t(1).border_color(t.border)
     .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(status?.[0] ?? t.dim).child(status?.[1] ?? ""))
     .child(parts.button(t, "brunr-env-discard", "Discard", dirty && !e.busy, (cx) => ed.discard(self, cx)))

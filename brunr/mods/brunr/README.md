@@ -398,7 +398,7 @@ A secret variable shows "Secret. Its value is kept by Bruno, not in this file." 
 - It asks for the name in `.env`, filled in as upper case with underscores (`apiKey` becomes `API_KEY`), and for the value, masked with its own eye.
 - It adds `NAME=value` to the `.env` in the Collection folder, creating the file when needed, and rewrites the variable as `{{process.env.NAME}}`.
 - When the name is already in `.env`, the question says "NAME is already in .env. Move replaces its value." and the button becomes Replace.
-- It is off while the table has unsaved changes.
+- With unsaved changes in the table, the question adds "Your unsaved changes to local.yml are saved with it.", and Move writes them to the Environment file too.
 
 New, Clone, Rename and Delete ask for a name or a confirmation inside the editor:
 
@@ -412,7 +412,8 @@ Keys and unsaved edits:
 - `ctrl-s` (the save key) saves the open editor's file and never a Request's Draft. Once the editor closes, it saves the shown Request's Draft again.
 - `esc` cancels an open question, otherwise it closes the editor. Keys typed while an editor is open never run a tree key.
 - Closing with unsaved edits (the close button or `esc`), choosing another Environment, "Edit .env…", and New, Clone, Rename and Delete ask "Discard unsaved changes?" with Keep editing and Discard. Discard drops the edits.
-- Closing the whole dialog, quitting Herdr or a mod reload closes the editor without asking, and the edits are lost.
+- A press beside the dialog, `ctrl-shift-u`, and `ctrl-x` in a tab ask the same question before they close Brunr. Discard closes the editor and then Brunr.
+- Quitting Herdr or a mod reload closes the editor without asking, and the edits are lost.
 - Nothing is kept as a Draft.
 
 ## The .env editor
@@ -515,7 +516,6 @@ The gear or `,` opens them:
 - Closing the dialog during a Run leaves that Run's report file in the app's data folder (`data/brunr/`) until Brunr is next opened.
 - Editing works on this computer only. Requests, Environments and `.env` files on another Machine are read-only.
 - Herdr's own keys reach Herdr before the dialog: `f2` renames a tab and `alt-up` and `alt-down` step through agents. That is why Rename is on `shift-r` and Move up and Move down on `ctrl-up` and `ctrl-down`.
-- A press beside the dialog or `ctrl-shift-u` closes it, and with it an open editor, without asking about the editor's unsaved edits. `esc` asks.
 - A masked field shows one dot per character, so the length of a value is visible. The Raw view and a revealed row show values on screen and in screenshots. A revealed value or the Raw text can be selected and copied with the system keys, as any Herdr text field allows.
 - The editors are not separate windows. A Herdr window sits under a dialog, so they take the dialog's columns while open, and only one is open at a time.
 

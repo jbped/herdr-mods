@@ -237,16 +237,19 @@ async function afterChange(self, path) {
 /**
  * "Move to .env" on a secret variable: asks for the .env name and the value (masked), then writes
  * `.env` (created when absent) and the Environment file, where the variable becomes
- * `{{process.env.NAME}}`. Only while the table has no unsaved edits.
+ * `{{process.env.NAME}}`. The Environment file is written from the table, so unsaved edits in the
+ * table are saved with the move. The question says so.
  */
 export function startMove(self, row) {
   const ed = self.ed;
-  if (ed.busy || ed.dirty() || !row?.secret) return;
+  if (ed.busy || !row?.secret) return;
+  const dirty = ed.dirty();
+  if (dirty && !tbl.canSave(ed.table)) { ed.status = { error: "Fix the names marked in red first." }; return; }
   const nameInput = InputState.new({ placeholder: ".env name", value: tbl.dotenvNameFor(row.name) });
   const valueInput = InputState.new({ placeholder: "Value", value: "" });
   const ask = {
     title: `Move "${row.name}" to .env`,
-    detail: `${fileOf(ed.sel)} will read it as {{process.env.NAME}}, and .env in the Collection folder will hold the value. A Run reads .env.`,
+    detail: `${fileOf(ed.sel)} will read it as {{process.env.NAME}}, and .env in the Collection folder will hold the value. A Run reads .env.${dirty ? ` Your unsaved changes to ${fileOf(ed.sel)} are saved with it.` : ""}`,
     fields: [
       { label: "Name in .env", input: nameInput, mono: true, check: () => tbl.dotenvNameError(nameInput.value()) },
       { label: "Value", input: valueInput, mono: true, mask: true },
