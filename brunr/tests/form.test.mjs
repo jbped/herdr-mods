@@ -183,11 +183,11 @@ test("rows keep their other keys through edits: matched by name, by position for
   assert.equal(writeTab(unknown, "headers", [{ name: "a", value: "c", enabled: false }]), "http:\n  headers:\n    - name: a\n      value: c\n      disabled: true\n      future: {deep: [1]}\n");
 });
 
-test("params: a query edit rewrites the URL as Bruno's setQueryParams does; path rows follow the URL", () => {
+test("params: a query edit rewrites the URL as Bruno's setQueryParams does; path rows are written as given", () => {
   const out = writeTab(full, "params", { query: [{ name: "lang", value: "en", enabled: true }, { name: "", value: "skip", enabled: true }], path: [{ name: "shop", value: "8" }, { name: "gone", value: "1" }] });
   assert.ok(out.includes('  url: "{{baseUrl}}/orders/:shop?lang=en"\n'));
   assert.ok(out.includes("    - name: lang\n      value: en\n      type: query\n      description: language\n"), "the kept row keeps its description");
-  assert.ok(!out.includes("name: gone"), "a path row with no :segment is dropped");
+  assert.ok(out.includes("    - name: gone\n      value: \"1\"\n      type: path\n"), "a query edit does not drop a path row, as in Bruno");
   const frag = "info:\n  name: N\n  type: http\nhttp:\n  url: x/:id?a=1#top\n  params:\n    - name: a\n      value: \"1\"\n      type: query\n";
   assert.equal(readTab(frag, "params").data.path.length, 0);
   assert.equal(writeTab(frag, "params", { query: [], path: [{ name: "id", value: "3" }] }),
@@ -293,4 +293,53 @@ test("canForm: YAML HTTP Requests only", () => {
   assert.equal(canForm("info:\n  name: F\n  type: folder\n", "yaml"), false);
   assert.equal(canForm(readTree("yaml")["Broken.yml"], "yaml"), false);
   assert.deepEqual(F.TABS, ["params", "body", "headers", "auth", "vars", "script", "assert", "tests", "docs", "settings"]);
+});
+
+test("params: a URL query with no rows shows in the Query table, and an edit keeps it", () => {
+  const hand = "info:\n  name: H\n  type: http\nhttp:\n  method: GET\n  url: \"{{baseUrl}}/echo?a=1\"\n";
+  assert.deepEqual(readTab(hand, "params").data, { query: [{ name: "a", value: "1", enabled: true }], path: [] });
+  assert.equal(tabBadge(hand, "params"), 1);
+  assert.equal(writeTab(hand, "params", readTab(hand, "params").data), hand, "an unchanged read writes nothing");
+  const added = writeTab(hand, "params", { query: [{ name: "a", value: "1", enabled: true }, { name: "b", value: "2", enabled: true }], path: [] });
+  assert.equal(added, "info:\n  name: H\n  type: http\nhttp:\n  method: GET\n  url: \"{{baseUrl}}/echo?a=1&b=2\"\n"
+    + "  params:\n    - name: a\n      value: \"1\"\n      type: query\n    - name: b\n      value: \"2\"\n      type: query\n");
+});
+
+test("params: rows that differ from the URL read as Bruno's URL reconciliation: the URL's params, then the disabled rows", () => {
+  const head = "info:\n  name: M\n  type: http\nhttp:\n  url: x?a=1&b=2\n  params:\n";
+  const row = (name, value, extra = "") => `    - name: ${name}\n      value: "${value}"\n      type: query\n${extra}`;
+  const partial = head + row("a", "1", "      description: kept\n") + row("c", "3", "      disabled: true\n");
+  assert.deepEqual(readTab(partial, "params").data.query, [
+    { name: "a", value: "1", enabled: true }, { name: "b", value: "2", enabled: true }, { name: "c", value: "3", enabled: false },
+  ], "b is in the URL but not in the rows");
+  const edited = writeTab(partial, "params", { query: [{ name: "a", value: "1", enabled: true }, { name: "b", value: "5", enabled: true }, { name: "c", value: "3", enabled: false }], path: [] });
+  assert.ok(edited.includes("  url: x?a=1&b=5\n"), edited);
+  assert.ok(edited.includes(row("a", "1", "      description: kept\n")), "a matched row keeps its other keys");
+  assert.ok(edited.includes(row("c", "3", "      disabled: true\n")));
+  const extraRow = head + row("a", "1") + row("z", "9") + "    - name: b\n      value: \"2\"\n      type: query\n";
+  assert.deepEqual(readTab(extraRow, "params").data.query.map((r) => r.name), ["a", "b"], "an enabled row the URL does not send is not shown as sent");
+  const consistent = head.replace("x?a=1&b=2", "x?a=1") + row("off", "0", "      disabled: true\n") + row("a", "1");
+  assert.deepEqual(readTab(consistent, "params").data.query.map((r) => r.name), ["off", "a"], "rows that agree with the URL are read as they are");
+});
+
+test("params: a path row whose :name left the URL stays at a Params edit, as Bruno's setQueryParams keeps it", () => {
+  const stale = "http:\n  url: x/:id?a=1\n  params:\n    - name: a\n      value: \"1\"\n      type: query\n    - name: old\n      value: \"7\"\n      type: path\n";
+  const out = writeTab(stale, "params", { query: [{ name: "a", value: "2", enabled: true }], path: [{ name: "old", value: "7" }] });
+  assert.equal(out, stale.replace("x/:id?a=1", "x/:id?a=2").replace('value: "1"', "value: \"2\""));
+});
+
+test("a comment after a quoted value is a comment: the section reads, an unchanged write keeps it, a changed value drops it", () => {
+  const text = "info:\n  name: C\n  type: http\nhttp:\n  url: x\n  headers:\n    - name: \"a\"   # the name\n      value: 'b # not a comment' # note\n      # under\n    - name: c\n      value: \"d\"\t# tab\n";
+  assert.deepEqual(readTab(text, "headers"), { ok: true, data: [{ name: "a", value: "b # not a comment", enabled: true }, { name: "c", value: "d", enabled: true }] });
+  assert.equal(writeTab(text, "headers", [{ name: "a", value: "b # not a comment", enabled: true }, { name: "c", value: "d", enabled: true }]), text);
+  assert.equal(writeTab(text, "headers", [{ name: "a", value: "B", enabled: true }, { name: "c", value: "d", enabled: true }]), text.replace("value: 'b # not a comment' # note", "value: B"));
+  assert.equal(readTab("http:\n  headers:\n    - name: a\n      value: \"x\"# no space\n", "headers").ok, false, "a # right after the quote is not a comment");
+});
+
+test("a comment after an inline value is a comment for the section tools too: {} and [] and inherit", () => {
+  assert.deepEqual(readTab("info:\n  type: http\nhttp: {} # none yet\n", "headers"), { ok: true, data: [] });
+  assert.deepEqual(readTab("http:\n  headers: [] # none\n", "headers"), { ok: true, data: [] });
+  assert.deepEqual(readTab("http:\n  auth: inherit # from the folder\n", "auth"), { ok: true, data: { mode: "inherit" } });
+  assert.equal(readTab("settings: {} # defaults\n", "settings").ok, true);
+  assert.deepEqual(readTab("http:\n  body:\n    type: json # raw\n    data: \"{}\" # empty\n", "body").data, { mode: "json", text: "{}" });
 });

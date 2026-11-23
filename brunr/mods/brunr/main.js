@@ -11,7 +11,7 @@
 // are changed only through effects.js, and Drafts live in memory (drafts.js).
 import { View } from "gpui-kit";
 import { ScrollHandle } from "gpui-base";
-import { checking, closeOverlay, focused, layout, nextCommand, notify, openOverlay, panes, props, run } from "herdr";
+import { checking, closeOverlay, focused, layout, nextCommand, notify, openOverlay, panes, props, run, spaces } from "herdr";
 import * as sources from "./sources.js";
 import * as machine from "./machine.js";
 import * as store from "./store.js";
@@ -30,6 +30,7 @@ import * as dotview from "./dotview.js";
 import { findNode } from "./parser.js";
 import { planRun, plannedRequests } from "./plan.js";
 import { parseProgress, progressOf } from "./progress.js";
+import { newTab, tabIds } from "./panetab.js";
 
 const REMOTE_REFRESH = 30000;
 const machineKey = (m) => m ?? "";
@@ -280,7 +281,7 @@ export default class Brunr extends View {
     else if (a.act === "run" || a.act === "runMany") this.runKey(cx, a.row.key, false);
     else if (a.act === "env") this.openEnvPicker(a.row, true);
     else if (a.act === "global") this.openGlobalPicker(a.row, true);
-    else if (a.act === "open") this.openRequest(a.row);
+    else if (a.act === "open") this.openRequest(cx, a.row);
     else if (a.act === "bruno") this.openBruno(cx);
     else actions.act(this, cx, a);
   }
@@ -368,17 +369,17 @@ export default class Brunr extends View {
       } });
       return;
     }
-    const tab = this.responseTab();
-    if (!tab) { notify({ title: "Brunr", body: "No tab to show the Response in.", level: "warning" }); return; }
-    if (target.kind === "request") store.showRequest(tab, this.requestInfo(row));
-    // The Requests the CLI is expected to send, in its order, so the progress can name the next one.
-    // A single Request Run looks as it always did, so it has no progress.
-    const many = target.kind !== "request";
-    const planned = plannedRequests(c, target);
-    const info = { key, ck: row.ck, kind: target.kind, label: row.name, method: row.method ?? null, url: row.url ?? null, environment, collection: c.name, machine: entry.machine ?? null, tree: c, target, planned };
-    if (!store.beginRun(tab, info, many ? progressOf({ planned, finished: [] }) : null)) return;
-    const onProgress = many ? (text) => store.setProgress(tab, progressOf({ planned, finished: parseProgress(text).finished })) : null;
     cx.spawn(async (cx) => {
+      const tab = await this.responseTab(cx);
+      if (!tab) { notify({ title: "Brunr", body: "No tab to show the Response in.", level: "warning" }); return; }
+      if (target.kind === "request") store.showRequest(tab, this.requestInfo(row));
+      // The Requests the CLI is expected to send, in its order, so the progress can name the next one.
+      // A single Request Run looks as it always did, so it has no progress.
+      const many = target.kind !== "request";
+      const planned = plannedRequests(c, target);
+      const info = { key, ck: row.ck, kind: target.kind, label: row.name, method: row.method ?? null, url: row.url ?? null, environment, collection: c.name, machine: entry.machine ?? null, tree: c, target, planned };
+      if (!store.beginRun(tab, info, many ? progressOf({ planned, finished: [] }) : null)) return;
+      const onProgress = many ? (text) => store.setProgress(tab, progressOf({ planned, finished: parseProgress(text).finished })) : null;
       const result = await machine.runBru({ machine: entry.machine ?? null, collection: c, target, environment, globalEnvironment, workspacePath: ws?.dir ?? null, timer: many ? cx.timer : null, onProgress });
       store.finishRun(tab, result);
       cx.notify();
@@ -386,7 +387,7 @@ export default class Brunr extends View {
   }
 
   /** The tab whose Response pane shows the next Run, opening the pane when the tab has none. */
-  responseTab() {
+  async responseTab(cx) {
     const f = focused();
     const tab = f?.tab ?? null;
     if (tab && panes().some((p) => p.mod === "brunr" && p.tab === tab)) return tab;
@@ -394,8 +395,16 @@ export default class Brunr extends View {
       run("pane.split", { pane: f.pane, direction: "right", mod: "brunr", props: { view: "response", tab } });
       return tab;
     }
-    run("tab.new", { mod: "brunr", props: { view: "response" } });
-    return focused()?.tab ?? null;
+    // A new tab: Herdr lists it a moment after tab.new, and its pane cannot see it (panetab.js).
+    const claim = store.newClaim();
+    const before = tabIds(spaces());
+    run("tab.new", { mod: "brunr", props: { view: "response", claim } });
+    for (let i = 0; i < 100; i++) {
+      const id = newTab(before, spaces());
+      if (id) { store.claimTab(claim, id); return id; }
+      await cx.sleep(20);
+    }
+    return null;
   }
 
   /**
@@ -443,10 +452,12 @@ export default class Brunr extends View {
   }
 
   /** "Open": shows the Request in the pane, opening the pane when the tab has none. */
-  openRequest(row) {
+  openRequest(cx, row) {
     if (row?.kind !== "request" || !this.entry(row.ck)) return;
-    const tab = this.responseTab();
-    if (tab) store.showRequest(tab, this.requestInfo(row));
+    cx.spawn(async (cx) => {
+      const tab = await this.responseTab(cx);
+      if (tab) store.showRequest(tab, this.requestInfo(row));
+    });
   }
 
   openBruno(cx) {

@@ -347,7 +347,7 @@ function finish(self, cx, job, result) {
     }
     if (job.open && result?.path) {
       const row = self.rowFor(`${ck}#${result.path}`);
-      if (row) self.openRequest(row);
+      if (row) self.openRequest(cx, row);
     }
     cx.notify();
   });

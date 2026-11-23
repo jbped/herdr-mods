@@ -65,3 +65,8 @@ test("breaksRequest: only text that does not read as a Request at all", () => {
   assert.equal(breaksRequest(lintRequest(yaml("  url: x\n  x: a: b\n"), "yaml")), false);
   assert.equal(breaksRequest([]), false);
 });
+
+test("a comment after a quoted value reads, as YAML and Bruno read it: no warning", () => {
+  assert.deepEqual(lintRequest(yaml('  url: "{{baseUrl}}/a" # the URL\n  headers:\n    - name: a\n      value: \'x # y\'   # note\n'), "yaml"), []);
+  assert.deepEqual(lines(lintRequest(yaml('  url: "{{baseUrl}}/a"# no space\n'), "yaml")), [7]);
+});

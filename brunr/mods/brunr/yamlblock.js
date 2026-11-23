@@ -30,11 +30,21 @@ export function mapEntries(b, from, to, col) {
     let end = i + 1;
     while (end < to && (!b[end].trim() || indent(b[end]) > col || (indent(b[end]) === col && DASH.test(b[end].slice(col))))) end++;
     while (end > i + 1 && !b[end - 1].trim()) end--;
-    const rest = s.slice(col + m[0].length).trim();
-    out.push({ key: m[1], line: i, end, inline: rest.startsWith("#") ? "" : rest });
+    out.push({ key: m[1], line: i, end, inline: inlineValue(s.slice(col + m[0].length).trim()) });
     i = end;
   }
   return out;
+}
+
+/** A key line's value text without a trailing comment (a `#` after white space, outside quotes). */
+function inlineValue(rest) {
+  if (rest.startsWith("#")) return "";
+  let end = 0;
+  if (rest[0] === '"' || rest[0] === "'") {
+    const close = rest[0] === '"' ? /^"(?:[^"\\]|\\.)*"/ : /^'(?:[^']|'')*'/;
+    end = close.exec(rest)?.[0].length ?? rest.length;
+  }
+  return rest.slice(0, end) + rest.slice(end).replace(/\s+#.*$/, "");
 }
 
 /** The items of a block list in `b[from, to)`: `{ col, items: [{ line, end }] }`, or null. */

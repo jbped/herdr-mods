@@ -58,7 +58,7 @@ test("Params: a query edit rewrites the URL and the URL bar; a path value; a Fil
   typeIn(self, "path:0:value", "9");
   assert.match(self.reqText, /- name: shop\n {6}value: "9"/);
   assert.ok(drafts.has(self.req.key));
-  fileEdit(self, self.reqText.replace("value: \"2\"\n      type: query", "value: \"5\"\n      type: query"));
+  fileEdit(self, self.reqText.replace("value: \"2\"\n      type: query", "value: \"5\"\n      type: query").replace("verbose=2", "verbose=5"));
   assert.equal(self.form.wid.get("query:0:value").value(), "5", "a File edit shows in the form");
   draw(self);
   press(self, "brunr-query-remove-2");

@@ -6,7 +6,7 @@
 import { childLines, topLines, sectionValue, putChild, putTop, readList, writeList } from "./formsec.js";
 import { mapEntries, entryLines, setEntry, setValue, setDisabled, indent, blankOrComment } from "./yamlblock.js";
 import { readHead, setUrl } from "./edit.js";
-import { splitOnFirst, parsePathParams } from "./urlsync.js";
+import { splitOnFirst, parseQueryParams } from "./urlsync.js";
 
 export class Unreadable extends Error {}
 export const fail = (what) => { throw new Unreadable(what); };
@@ -77,23 +77,38 @@ function readParams(L) {
 /** Bruno's buildQueryString: `name=value` pairs of the rows with a name, not encoded. */
 export const buildQueryString = (rows) => rows.filter((p) => p.name.trim()).map((p) => `${p.name}=${p.value}`).join("&");
 
+/**
+ * The Query rows: the file's rows when their enabled ones are what the URL sends, else what Bruno's
+ * requestUrlChanged makes of the URL: its query params, enabled, then the disabled rows. So the
+ * table shows what the URL sends, and an edit keeps every param the URL had.
+ */
+function queryRows(L, rows) {
+  const url = readHead(L.text, "yaml").url;
+  if (url === null) return rows;
+  const sent = parseQueryParams(splitOnFirst(url, "?")[1]).map((p) => ({ name: p.name, value: p.value ?? "", enabled: true }));
+  const live = rows.filter((r) => r.enabled && r.name.trim());
+  if (live.length === sent.length && live.every((r, i) => r.name === sent[i].name && r.value === sent[i].value)) return rows;
+  return [...sent, ...rows.filter((r) => !r.enabled)];
+}
+
 export const params = {
   read(L) {
     const items = readParams(L);
     return {
-      query: items.filter((x) => x.obj.type === "query").map(({ obj }) => ({ name: str(obj.name), value: str(obj.value), enabled: on(obj) })),
+      query: queryRows(L, items.filter((x) => x.obj.type === "query").map(({ obj }) => ({ name: str(obj.name), value: str(obj.value), enabled: on(obj) }))),
       path: items.filter((x) => x.obj.type === "path").map(({ obj }) => ({ name: str(obj.name), value: str(obj.value) })),
     };
   },
-  /** Bruno's setQueryParams: query rows first, then path rows; the URL's query is rebuilt. */
+  /**
+   * Bruno's setQueryParams: query rows first, then the path rows as they are (a path row whose
+   * `:name` left the URL stays, as in Bruno); the URL's query is rebuilt.
+   */
   write(L, data) {
     const r = childLines(L, "http", "params");
     const old = list(r, "params");
     const url = readHead(L.text, "yaml").url;
     const parts = url === null ? null : splitOnFirst(url, "?");
-    const used = parts ? parsePathParams(parts[0] ?? "") : null;
-    const path = data.path.filter((p) => !used || used.includes(p.name));
-    const rows = [...data.query.map((p) => ({ ...p, type: "query" })), ...path.map((p) => ({ ...p, type: "path", enabled: true }))];
+    const rows = [...data.query.map((p) => ({ ...p, type: "query" })), ...data.path.map((p) => ({ ...p, type: "path", enabled: true }))];
     const spec = {
       name: (row) => `${row.type}:${row.name}`,
       oldName: (obj) => `${obj.type}:${str(obj.name)}`,
@@ -111,7 +126,7 @@ export const params = {
     const next = query ? `${parts[0]}?${query}` : parts[0];
     return next === url ? text : setUrl(text, "yaml", next);
   },
-  badge: (L) => readParams(L).filter(({ obj }) => on(obj)).length || null,
+  badge: (L, data) => data.query.filter((p) => p.enabled).length + readParams(L).filter(({ obj }) => obj.type === "path" && on(obj)).length || null,
 };
 
 // ---- body -------------------------------------------------------------------------------------

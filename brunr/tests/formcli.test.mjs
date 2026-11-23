@@ -114,3 +114,19 @@ test("Requests edited through every form tab run with the real bru and send what
     assert.deepEqual(results.postVar.testResults.map((t) => t.status), ["pass"]);
   });
 });
+
+test("a hand-written URL query with no params rows is kept when a param is added in the Params tab, and bru sends both", { skip: !realBru && "bru is not on PATH" }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "brunr-form-"));
+  writeFileSync(join(root, "opencollection.yml"), "opencollection: 1.0.0\n\ninfo:\n  name: Form CLI\n");
+  const hand = "info:\n  name: Hand Query\n  type: http\n  seq: 1\n\nhttp:\n  method: GET\n  url: \"{{baseUrl}}/echo?a=1\"\n";
+  const { query, path } = readTab(hand, "params").data;
+  writeFileSync(join(root, "hand.yml"), writeTab(hand, "params", { query: [...query, kv("b", "2")], path }));
+  await withServer(async () => {
+    const report = join(root, "report.json");
+    const r = spawnSync("bru", ["run", "-r", "--env-var", `baseUrl=http://127.0.0.1:${PORT}`, "--reporter-json", report], { cwd: root, encoding: "utf8", timeout: 90000 });
+    assert.ok(existsSync(report), `bru wrote no report: ${r.stderr || r.stdout}`);
+    const [result] = JSON.parse(readFileSync(report, "utf8")).flatMap((it) => it.results);
+    assert.equal(result.response.status, 200);
+    assert.equal(result.response.data.url, "/echo?a=1&b=2");
+  });
+});

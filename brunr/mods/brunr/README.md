@@ -245,7 +245,7 @@ One Draft, two views:
   - A pre-request variable with a typed value (`value: { type, data }`).
   - A param with no `query` or `path` type, an assertion whose operator is not in the list, a script with no type, and two scripts of one type.
   - A settings value Bruno's reader would drop: a boolean other than true or false, a timeout that is not a number or `inherit`, and a negative or non-numeric max redirects.
-  - A hand-written shape: a flow list or flow items (`headers: [{ name: a }]`), a quoted or repeated key, a scalar where a list or map belongs, a line outside every entry, and a comment after a quoted value (`value: "x" # note`).
+  - A hand-written shape: a flow list or flow items (`headers: [{ name: a }]`), a quoted or repeated key, a scalar where a list or map belongs, and a line outside every entry.
 
 Params and the URL field keep each other in step, in both directions, as Bruno does:
 
@@ -254,8 +254,8 @@ Params and the URL field keep each other in step, in both directions, as Bruno d
 - An edit of the URL field makes the new list: the URL's query params (enabled), then new path params with empty values, then the disabled query params as they were, then the enabled path params the URL still has, as they were.
 - This drops the description of every enabled query param, and every disabled path param. A list equal to the old one leaves the params block alone. A file with no params block and a URL with no query or `:name` segment gets only its `url` line changed.
 - An edit of the Query table rebuilds the URL: the part before the first `?`, then `?` and the enabled rows that have a name as `name=value`, not encoded, joined by `&`. A `#fragment` is dropped. The table edit keeps the rows' descriptions.
-- Path rows come from the `:name` segments. Their names cannot be edited, they have no checkbox, and they cannot be added or removed. A path row whose `:name` is no longer in the URL is dropped at the next Params edit.
-- A file whose URL has a query but no params rows loses that query from the URL at the first Query table edit.
+- Path rows come from the `:name` segments. Their names cannot be edited, they have no checkbox, and they cannot be added or removed.
+- The Query table shows what the URL sends. When the enabled rows match the URL's query params, it shows the rows as they are. Otherwise it shows the URL's query params, enabled, then the disabled rows, as a URL field edit would make them. So a file whose URL has a query and no params rows shows that query. A Params edit then writes both the rows and the URL, and keeps every param the URL had that you did not remove. A path row stays at a Params edit, even when its `:name` has left the URL.
 - Editing the `url` line in File changes that line and nothing else. The params are not rewritten.
 
 Body:
@@ -495,7 +495,7 @@ Command palette entries: "Brunr: Toggle" (`layout.toggle` for the block `brunr`)
 ## State
 
 - The panel keeps in its localStorage: which Collections and folders are unfolded, the Environment chosen per Collection (keyed by Machine and root) and the Global environment chosen per workspace file. Herdr keeps it in store files under `data/brunr/` in the app home.
-- The pane keeps the name of the last used Request tab in localStorage (`requestTab`). Nothing else of the form is stored.
+- The pane keeps the name of the last used Request tab in localStorage (`requestTab`). Nothing else of the form is stored. A pane opened in a new tab also keeps its tab's id there (`paneTab`).
 - Collections start unfolded and folders folded until you change them.
 - Drafts are held in memory by the mod and are never written to disk. Request text can hold tokens, and the form's fields hold the same text.
 - The form's inputs, editors, reveal toggles and Prettify message are held in memory by the pane copy and go when the pane closes.
@@ -526,7 +526,6 @@ Each pane copy reads its asks from an in-memory log of the last 50, because shar
 - On Windows, a timed-out Run may leave the CLI running until it ends by itself, since Brunr ends the `node` that started it.
 - Secrets stored in Bruno desktop are empty in a CLI Run (see Secrets).
 - With API Key auth set to add the key to the query, `bru` 4.3 does not send the key when the Request's URL starts with a variable such as `{{baseUrl}}`. It adds the key before it fills in the variables. A URL that starts with a literal host works.
-- Known defect: a pane opened as a new tab, which happens when the focused tab has no focused pane, can attach to the previous tab. It then shows that tab's Request and takes that tab's menu choices and dialog answers, and closing it clears that tab's shown Request. A pane opened beside the focused pane is not affected.
 - On Windows Brunr starts `bru.cmd`, so the npm global folder must be on the PATH Herdr was started with. Without it the panel shows the missing CLI notice. Moves, new folders, permanent deletes and the Recycle Bin call start `node`, so it must be on that PATH too.
 - Bruno desktop cannot be told to open a specific Request, so "Open Bruno" only starts the app. Brunr looks for it at `<home>/AppData/Local/Programs/Bruno/Bruno.exe` on Windows, `/Applications/Bruno.app` on macOS and `bruno` on the PATH elsewhere.
 - `"place": "right"` is not enough to place the panel. On the Herdr version tested, the shipped `main` layout did not dock it, and a personal layout docked it at the window root, full height, with a generated id. The page's Install therefore adds a block with the id `brunr`. `ctrl-shift-u` finds the block by its mod, so it works with any id. The "Brunr: Toggle" palette entry uses the id `brunr`.
@@ -560,6 +559,7 @@ One mod draws every part. Herdr starts a copy of it for the panel, for each Requ
 - `formpanes.js`: the bodies of the ten form tabs and the "can only be edited in File" notice.
 - `edit.js`: format writers that change a Request or folder file in place, and the text of a new one. No Herdr calls.
 - `urlsync.js`: the URL field's edit with the params block rewritten as Bruno does. No Herdr calls.
+- `panetab.js`: which tab a Response pane belongs to, and the tab `tab.new` made. No Herdr calls.
 - `yamlwrite.js`: a string as Bruno's YAML writer emits it. No imports.
 - `lines.js`: text as lines that keep their own line endings. No imports.
 - `lint.js`: the warnings before a save. No Herdr calls.

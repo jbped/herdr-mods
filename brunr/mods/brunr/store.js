@@ -68,6 +68,22 @@ export function nextChange() { return new Promise((resolve) => waiters.push(reso
 /** What a tab's Response pane shows, or null. */
 export function getView(tab) { return runs.get(tab) ?? null; }
 
+// The tab of a pane the panel opened in a new tab, by the claim in its props (panetab.js).
+const claims = new Map();
+let claimCount = 0;
+
+/** A new claim for a pane about to be opened in a new tab. */
+export const newClaim = () => `c${Date.now().toString(36)}-${++claimCount}`;
+
+/** The panel found the new tab: the pane holding `claim` belongs to `tab`. */
+export function claimTab(claim, tab) {
+  claims.set(claim, tab);
+  changed();
+}
+
+/** The tab claimed for a pane, or null. */
+export const claimedTab = (claim) => claims.get(claim) ?? null;
+
 /** The Run in progress, or null. One Run at a time across the mod. */
 export function running() { return busy; }
 

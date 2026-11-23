@@ -14,9 +14,11 @@ import * as saveflow from "./saveflow.js";
 import { formatSize, formatTime } from "./report.js";
 import { methodBadge } from "./panel.js";
 import { runRows, unfoldFor } from "./runtree.js";
+import { ownTab } from "./panetab.js";
 import { activeFilter, filterRun, keepMethod, keepSelection, methodValues, nextValue, LABELS, NO_FILTER, RESULTS, SORTS, STATUSES } from "./runfilter.js";
 
 const MAX_TEXT = 400000;
+const PANE_TAB = "paneTab";
 const WIDE = 900;
 const PARTS = ["response", "headers", "timeline", "tests"];
 const INDENT = 14;
@@ -24,7 +26,11 @@ const mono = () => String(settings()?.font_family ?? settings()?.font ?? "JetBra
 
 export function init(self, cx) {
   const p = props() ?? {};
-  self.tab = (p.pane && panes().find((x) => x.pane === p.pane)?.tab) || p.tab || focused()?.tab || null;
+  self.claim = p.claim ?? null;
+  self.tab = ownTab({
+    props: p, claimed: p.claim ? store.claimedTab(p.claim) : null, stored: p.claim ? storedTab() : null,
+    paneTab: (p.pane && panes().find((x) => x.pane === p.pane)?.tab) || null, focusedTab: focused()?.tab ?? null,
+  });
   self.v = null;
   self.seen = null;
   self.sel = 0;
@@ -38,7 +44,7 @@ export function init(self, cx) {
   self.askSeq = store.askSeq();
   request.init(self, cx);
   sync(self);
-  cx.spawn(async (cx) => { for (;;) { await store.nextChange(); sync(self); request.syncRequest(self, cx); cx.notify(); } });
+  cx.spawn(async (cx) => { for (;;) { await store.nextChange(); learnTab(self); sync(self); request.syncRequest(self, cx); cx.notify(); } });
   cx.spawn(async (cx) => {
     for (;;) {
       const c = await nextCommand();
@@ -52,6 +58,21 @@ export function init(self, cx) {
       cx.notify();
     }
   });
+}
+
+/** The tab kept by a pane opened in a new tab, from an earlier start. Its storage is its own: its props hold its claim. */
+function storedTab() {
+  try { return globalThis.localStorage?.getItem(PANE_TAB) || null; } catch { return null; }
+}
+
+/** A pane opened in a new tab takes its tab once the panel has claimed it, and keeps it for the next start. */
+function learnTab(self) {
+  if (self.tab || !self.claim) return;
+  const tab = store.claimedTab(self.claim);
+  if (!tab) return;
+  self.tab = tab;
+  self.addr = `pane:${tab}`;
+  try { globalThis.localStorage?.setItem(PANE_TAB, tab); } catch {}
 }
 
 /**
