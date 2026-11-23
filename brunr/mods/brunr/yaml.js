@@ -104,7 +104,8 @@ function parseValue(st, rest, indent, inMap) {
   if (/^[|>]/.test(text)) return parseBlockScalar(st, text, indent);
   if (text[0] === '"' || text[0] === "'") {
     const { value, end } = readQuoted(st, text, 0, st.i - 1);
-    if (text.slice(end).trim() !== "") fail(st, "unexpected text after a quoted value", st.i - 1);
+    // A comment may follow, after white space: `"x" # note`.
+    if (!/^(\s+#.*)?\s*$/.test(text.slice(end))) fail(st, "unexpected text after a quoted value", st.i - 1);
     return value;
   }
   if (text[0] === "[" || text[0] === "{") return parseFlow(st, text);

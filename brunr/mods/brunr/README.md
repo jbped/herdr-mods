@@ -252,3 +252,271 @@ The key opens a tiny overlay copy of the mod that opens Brunr as a dialog or a t
 
 Tests are in `brunr/tests/` in the repo and run with `sh brunr/tests/run.sh`.
 
+
+## Editing (being ported)
+
+## Editing a Request
+
+The pane beside your terminal has a Request side and a Response side. In a pane 900px wide or more the Request side is on the left and the Response side on the right, each half of the width. In a narrower pane the Request side is on top.
+
+A click on a Request row shows the Request on the Request side when the focused tab has a Brunr pane. A click never opens a pane and never sends anything. `o` and the row menu's Open show the Request in the pane, and open the pane when the tab has none. Double-click and `enter` still run the Request.
+
+The Request side, top to bottom:
+
+- A bar with the method menu (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS), the URL field and Run.
+- A line with the Request's name, its path in the Collection, an `Unsaved` mark while it has a Draft, Save and Discard.
+- Notes, when they apply: "Editing works on this computer only.", a read error, and the changed-on-disk line (below).
+- Bruno's tabs and the shown tab's content (see The Request form). A Request that does not get the tabs shows its file as text instead, under the line "The form is available for HTTP Requests in YAML Collections."
+- The warnings for the text, each with its line. A click on one opens the File tab and moves the cursor to that line.
+
+The bar and the text:
+
+- The method menu changes the method line and nothing else. It is greyed out when the file has no method line.
+- The URL field changes the `url` line, and the params follow it (see Params). It is greyed out when the file has no `url` line.
+- A change to the method or `url` line, in File or by a tab, shows in the bar.
+- A Request whose text does not parse cannot run, so Run is off until it parses.
+
+A Draft is a Request's unsaved edits:
+
+- A Request with a Draft has a dot on its tree row and `Unsaved` in the pane.
+- Drafts are held in memory. They survive switching to another Request and closing the pane. They are lost when Herdr quits or the mod reloads.
+- Discard goes back to the file on disk, read again.
+
+Save (`ctrl-s` while the pane holds the keyboard, or the Save button):
+
+- Text with warnings asks first: `Save "List Products" with a warning?` (or `with 2 warnings?`), each warning with its line, then Cancel and Save anyway. Cancel keeps the Draft.
+- The warnings are: text that does not read as a Request, a YAML file whose `info.type` is folder, script or app, a tab in YAML indentation, a key twice in one YAML map, and a plain YAML value that starts with `{{`, `@`, a backtick, `*`, `&` or `!`, or that holds a colon followed by a space. The CLI rejects or misreads these.
+- When the text does not read as a Request at all, the dialog adds "Brunr will list it as a broken file and leave it out of Runs."
+- A save writes the file only when it is still the text the Draft started from. When it changed on disk, the dialog `"List Products" changed on disk` offers Reload from disk (drops your edits) or Overwrite.
+
+When the shown file changes on disk:
+
+- With no Draft, the Request side shows the new text.
+- With a Draft, a line says "The file changed on disk." with Reload (drops the Draft) and Keep mine. Keep mine keeps the Draft, and the next save still asks Reload from disk or Overwrite.
+
+Runs with Drafts:
+
+- Run (the button, double-click, `enter`, `r`) on a Request with a Draft saves it first by the same path, warning and conflict dialogs included. When the save is cancelled or refused, nothing runs. The pane's Run button works while the panel is hidden.
+- A folder or Collection Run saves nothing by itself. When Requests in it have Drafts it asks `2 Requests have unsaved changes.` with Cancel, Run without saving and Save and run. Save and run stops at the first Request that does not save, names it and does not run.
+- A toast names a Request and never shows its text.
+
+A Request on another Machine opens read-only with the note "Editing works on this computer only." Run still works there. Its tabs show and change nothing: menus and buttons are greyed out, editors are read-only, and text typed into a field goes back to what the file holds.
+
+## The Request form
+
+The form is Bruno's tab strip over the Request's file, plus a File tab that holds the text. It is one view of a Draft, and File is the other.
+
+Which Requests get it:
+
+- A Request gets the tabs when its Collection uses the YAML format, its file's top level reads as a YAML map, and its `info.type` is `http` or missing.
+- Every other Request shows only its text, under the line "The form is available for HTTP Requests in YAML Collections." That covers bru Collections, GraphQL, gRPC and WebSocket Requests, and a YAML file broken at its top level.
+- An edit in File that changes the type or breaks the top level hides the tabs until the text is fixed.
+
+The tabs, in order, and what each edits:
+
+| Tab | Edits | Fields | Badge |
+|---|---|---|---|
+| Params | `http.params`, and the query of the `url` line | Query rows (Name, Value), Path rows (Name, Value) | count of enabled params, query and path |
+| Body | `http.body` | mode menu, then an editor or rows (Key, Value) | dot when the mode is not No Body |
+| Headers | `http.headers` | rows (Name, Value) | count of enabled headers |
+| Auth | `http.auth` | mode menu and that mode's fields | dot for Basic Auth, Bearer Token and API Key |
+| Vars | `runtime.variables` and the post-response variable entries of `runtime.actions` | Pre Request rows (Name, Value), Post Response rows (Name, Expr) | count of enabled variables of both kinds |
+| Script | the before-request and after-response entries of `runtime.scripts` | two JavaScript editors, Pre Request and Post Response, stacked | dot when either holds code |
+| Assert | `runtime.assertions` | rows (Expr, Operator, Value) | count of enabled assertions |
+| Tests | the tests entry of `runtime.scripts` | one JavaScript editor | dot when it holds code |
+| Docs | `docs` | one Markdown editor | dot when it holds text |
+| Settings | `settings` | three toggles and two number fields | dot when the Request has `info.tags` |
+| File | the whole file | the text, with syntax colours for YAML | none |
+
+- A badge count of 0 shows nothing. A section the form cannot read shows a dot.
+- The pane opens on the tab used last, and on Params the first time. Only the tab's name is remembered.
+- The strip wraps onto more lines when the pane is narrow, so every tab stays reachable.
+- Every row table has an enabled checkbox, its fields and an × that removes the row. Typing in the empty last row adds a row. A row whose fields are all emptied is removed, because empty rows are not written.
+
+One Draft, two views:
+
+- The Draft text is the only state. A tab draws from the text and File shows the same text. A form edit shows in File at once and marks the Request `Unsaved`. An edit in File shows in the tabs. Save, Discard, `ctrl-s`, Run, the warnings and the changed-on-disk line work the same from every tab.
+- A form edit rewrites only its own section, in the shape Bruno writes it. Every other byte of the text stays, including line endings, other sections and keys the form does not know. The form never touches `examples`, `app` or the block of another Request type.
+- Bruno's shape: the top-level blocks are `info`, `http`, `runtime`, `settings`, `examples` and `docs` in that order, with a blank line before each. `http` holds `method`, `url`, `headers`, `params`, `body` and `auth`. `runtime` holds `variables`, `scripts`, `assertions` and `actions`. Lists are indented two spaces under their key, and `disabled: true` is the last key of a row that is off.
+- A section that does not exist is created where that order puts it. A section that becomes empty is removed, and an `http` or `runtime` block left empty goes with it.
+- Inside a section, a row the edit keeps is changed in place, and only the keys whose values changed. Its comments, quoting and unknown keys stay, and so does hand indentation. The line of a value that changed is rewritten, so a comment at the end of that line goes.
+- Rows are matched to the old ones by name: the longest common run first, then the same name anywhere, then a one-for-one rename. A new row is written in Bruno's shape. A removed row takes its keys and the comment lines under it with it. A comment above the first row stays.
+- Data that equals what the section already holds writes nothing, so opening a tab never changes the file.
+
+"This section can only be edited in File.":
+
+- A tab whose section the reader does not recognise shows this sentence, a warning icon and an Open File button, and no fields. The form never rewrites that section. Fixing it in File makes the tab work again.
+- Causes:
+  - An auth mode other than No Auth, Inherit, Basic Auth, Bearer Token and API Key, or an API key placement other than header or query.
+  - A body that is a file, GraphQL, SPARQL or of an unknown type, and a multipart row that is a file upload.
+  - A pre-request variable with a typed value (`value: { type, data }`).
+  - A param with no `query` or `path` type, an assertion whose operator is not in the list, a script with no type, and two scripts of one type.
+  - A settings value Bruno's reader would drop: a boolean other than true or false, a timeout that is not a number or `inherit`, and a negative or non-numeric max redirects.
+  - A hand-written shape: a flow list or flow items (`headers: [{ name: a }]`), a quoted or repeated key, a scalar where a list or map belongs, and a line outside every entry.
+
+Params and the URL field keep each other in step, in both directions, as Bruno does:
+
+- The URL splits at its first `?` outside `{{ }}`. The query params are the `&` pairs after it up to a `#`, split at the first `=` and not decoded. A pair with no `=` has no value and a pair with no name is dropped.
+- The path params are the `:name` segments before the `?`, and `:name` inside a segment such as `Items(id=:id)`.
+- An edit of the URL field makes the new list: the URL's query params (enabled), then new path params with empty values, then the disabled query params as they were, then the enabled path params the URL still has, as they were.
+- This drops the description of every enabled query param, and every disabled path param. A list equal to the old one leaves the params block alone. A file with no params block and a URL with no query or `:name` segment gets only its `url` line changed.
+- An edit of the Query table rebuilds the URL: the part before the first `?`, then `?` and the enabled rows that have a name as `name=value`, not encoded, joined by `&`. A `#fragment` is dropped. The table edit keeps the rows' descriptions.
+- Path rows come from the `:name` segments. Their names cannot be edited, they have no checkbox, and they cannot be added or removed.
+- The Query table shows what the URL sends. When the enabled rows match the URL's query params, it shows the rows as they are. Otherwise it shows the URL's query params, enabled, then the disabled rows, as a URL field edit would make them. So a file whose URL has a query and no params rows shows that query. A Params edit then writes both the rows and the URL, and keeps every param the URL had that you did not remove. A path row stays at a Params edit, even when its `:name` has left the URL.
+- Editing the `url` line in File changes that line and nothing else. The params are not rewritten.
+
+Body:
+
+- The mode menu is at the top of the tab, with Multipart Form, Form URL Encoded, JSON, XML, TEXT and No Body, and a ✓ on the current one.
+- JSON, XML and TEXT show a code editor. The two form modes show rows (Key, Value), and multipart rows are text only. No Body shows "No Body".
+- A mode switch keeps the text between JSON, XML and TEXT and the rows between the two form modes. Any other switch starts empty. No Body removes the `body` block. A switch does not touch headers, and the CLI sets the content type when it sends.
+- Prettify, for JSON only, reformats with two-space indents and keeps `{{variables}}` outside strings. When the text is not JSON the tab says "Unable to prettify. Invalid JSON format." and nothing changes.
+
+Auth:
+
+- The mode menu has Basic Auth, Bearer Token, API Key, Inherit and No Auth.
+- Basic Auth has Username and Password. Bearer Token has Token. API Key has Key, Value and Add To, which is Header or Query Params.
+- Password, Token and the API key Value are masked, one dot per character, with an eye button per field. A reveal ends when the tab or the Request changes.
+- Inherit shows "The auth comes from the folder or Collection." and has no fields. Brunr does not look up which folder or Collection it comes from, so Inherit and No Auth have no badge.
+- A mode change drops the old mode's fields and writes only the new mode's `type`, as Bruno does. A new Basic Auth writes both fields once either has text, and a new API Key writes `placement: header` at once. After that each field is written as typed.
+
+Vars, Script, Assert, Tests, Docs, Settings:
+
+- **Vars.** Pre Request variables are rows of Name and Value. Post Response variables are rows of Name and Expr, written as Bruno writes them: a `set-variable` entry in `runtime.actions` with a `jsonq` selector and the scope `runtime`. A post-response row that already exists keeps its scope and description. Other entries of `runtime.actions` keep their lines and places.
+- **Script.** Pre Request and Post Response are stacked JavaScript editors with Bruno's headings.
+- **Tests.** One JavaScript editor.
+- Scripts and tests are trimmed when written and left out when empty, as Bruno does. The editor keeps what is typed, such as a trailing newline, while the file holds the trimmed code. A script that differs from the file only by surrounding whitespace leaves the file unchanged.
+- **Assert.** Expr, an Operator menu with Bruno's 28 operators in its order (eq to isArray, the list scrolls) and Value. The operators isEmpty to isArray take no value. Their Value cell is greyed out, and choosing one clears the value.
+- **Docs.** One Markdown editor. A docs text of only whitespace removes the section.
+- **Settings.** URL Encoding, Automatically Follow Redirects and Forward Authorization on Redirect are toggles. Timeout (ms) takes a whole number or `inherit`, and Max Redirects takes a whole number. A text that is not valid shows in red with "Use a number of milliseconds, or inherit." or "Use a whole number, 0 or more." and is not written.
+- A Request with no settings block shows Bruno's defaults: URL Encoding off, Timeout `inherit`, Follow Redirects on, Max Redirects 5, Forward Authorization on. The first change writes all five keys. A settings block that lacks a key shows the value Bruno's reader gives it, which is on for URL Encoding and 0 for Timeout.
+
+Where Brunr's pane differs from Bruno's:
+
+- The tab strip wraps. Bruno moves tabs that do not fit into a menu.
+- The body mode menu is at the top of the Body tab. Bruno puts it at the right of the tab bar.
+- Script shows both editors at once. Bruno has Pre Request and Post Response sub-tabs.
+- A body mode switch keeps only the text or rows described above. Bruno keeps every mode's content in memory.
+- Prettify handles JSON only, and its message shows in the Body tab. Bruno also prettifies XML and shows a toast.
+- The API key placement item reads "Query Params". Bruno's reads "Query Param".
+- Timeout is one field that takes a number or `inherit`. Bruno has a control to inherit or override, which shows the timeout of its Preferences.
+- Not built: description columns, drag to reorder, Bulk Edit, the list of inherited headers, the multipart Content-Type column and file rows, Settings' Tags and Enable App, naming the folder or Collection that Inherit comes from, Auth modes beyond the five, and the file, SPARQL and GraphQL body modes.
+
+## Tree actions
+
+The edit actions work on Collections on this computer. A row of another Machine has no edit entries and no edit keys. The keys act on the selected row while the panel holds the keyboard, and the row menu lists each action with its key.
+
+| Action | Key | Rows |
+|---|---|---|
+| New Request | `n` | Collection, folder, Request |
+| New folder | `shift-n` | Collection, folder, Request |
+| Clone | menu only | Request |
+| Rename | `f2` | folder, Request |
+| Delete | `delete` | folder, Request |
+| Move to… | `m` | folder, Request |
+| Move up, Move down | `alt-up`, `alt-down` | folder, Request |
+
+Each action:
+
+- **New Request** opens the dialog "New Request" with Name, File name, Method (the seven of the method menu) and URL, and the button Create. The Request goes in the selected folder, the selected Request's folder or the Collection root. The file name follows the name until you edit it. The Request is numbered last, selected and shown in the pane, which opens when the tab has none. The query params and `:name` path params of the URL are written into the file.
+- **New folder** opens "New folder" with Name and Directory name. It creates the directory and a folder file holding the name, the number and the auth mode `inherit`.
+- **Clone** opens `Clone "<name>"` with the name `<name> copy`, then `<name> copy 2` and so on, after an existing copy suffix is removed. Its number is the count of Requests in the folder plus one.
+- **Rename** opens `Rename "<name>"`. The name inside the file always changes. The file or directory name changes only when you edit its field. A folder with no folder file gets one.
+- **Delete** asks `Delete "<name>"?` or `Delete folder "<name>"?`. The detail says "It goes to the trash." or "The folder and the 3 Requests in it go to the trash.", and adds "It has unsaved changes." when it or a Request in it has a Draft. The buttons are Cancel and Move to trash. The remaining items in the folder are renumbered.
+- **Move to…** opens a picker `Move "<name>" to` with the Collection and its folders, indented, then the Collection root and folders of the other Collections of the same format on this computer. The item's own folder is greyed out, and a folder's own subfolders are not listed.
+- **Move up** and **Move down** move a Request among Requests and a folder among folders, as the panel shows them.
+
+The trash and permanent delete:
+
+- The trash is the Recycle Bin on Windows, Trash on macOS and `gio trash` on Linux.
+- When the trash fails or does not exist, a second dialog `"<name>" cannot go to the trash` gives the reason, says it cannot be undone and offers Delete permanently. Nothing is deleted permanently without that second confirmation, and never outside the Collection.
+
+Bruno's naming and numbering rules, which Brunr follows:
+
+- A file name comes from the name: `<>:"/\|?*` and control characters become `-`, leading spaces and hyphens and trailing dots and spaces are removed, and spaces inside stay.
+- A name is refused when it is empty, over 255 characters or a Windows reserved device name (CON, PRN, AUX, NUL, COM0 to COM9, LPT0 to LPT9). The reason shows under the field as you type, for example "Name cannot be empty." or "Special characters aren't allowed in the name. Invalid character 'x'."
+- A taken file or directory name gets ` 1`, ` 2` and so on, compared ignoring case.
+- The items of a folder are numbered 1 to n in one list of folders and Requests. A Request with no number counts as 1. A change writes only the files whose number changed.
+- A new Request or folder is numbered one more than the count of folders and Requests in its parent, and a clone one more than the count of Requests in its folder.
+- The panel orders each folder as Bruno's sidebar does: folders first, then Requests. Folders sort by name and then move to their number. Requests sort by number, and ties sort by name ignoring case.
+
+Moves:
+
+- A move goes to a folder or the root of the same Collection, or to a Collection of the same format on this computer. The item keeps its file name unless the target has it, and then the clash rule applies.
+- The source folder's remaining items are renumbered. The target's items are renumbered only for a drop between rows. A move onto a folder or Collection keeps the item's number.
+- A move between Collections of different formats is refused. A drop onto such a Collection shows the toast "Not moved: another format" with both formats named, and Move to… lists only Collections of the same format.
+
+Drag and drop:
+
+- Drag a Request or folder by its row. The dragged row dims.
+- A drop on the middle third of a folder row, or on a Collection row, moves the item in. The row is highlighted with a border in the accent colour.
+- A drop on the top or bottom third of a folder row, or the top or bottom half of a Request row, places the item there in that row's folder. A line in the accent colour shows where.
+- A row with no highlight or line takes no drop: a folder onto itself or its own subfolders, an item onto the folder it is already in, a drop that changes nothing, and a row of another Machine.
+- Esc, or releasing the button away from the rows, cancels the drag.
+
+Running an action:
+
+- While one runs, the panel header shows a spinner and the edit actions are off. Afterwards the tree reloads, the new or moved item is selected and its folders unfold.
+- A failed action names the step that failed, for example "Step 2 of 3 (writing folder.yml) failed: ...", and says how many earlier steps already ran. The tree reloads either way.
+- A rename or move carries the Draft to the new path, with the new name or number made in the Draft too, and a pane that shows the Request follows it. A delete drops the Drafts under it, and a pane that shows it empties.
+- An open dialog does not survive a mod reload. It then says "Brunr was reloaded. Close this dialog and open it again."
+
+Broken files:
+
+- A Request file that does not parse stays in the tree under its file name, with a warning mark and no method. The footer shows the parse message.
+- It opens as text, so it can be fixed and saved. It can be renamed (the file name only), moved with Move to… and deleted. It cannot run, be cloned or be moved up or down, and a drop places it at the end of a folder.
+- It is not counted in a folder's Requests, not renumbered and not sent in a Run.
+
+## Environments
+
+The Environment editor is a window, 760 by 540px, that opens from:
+
+- "Edit…" beside an Environment in the Environment picker, and "Manage Environments…" at its bottom.
+- "Edit Environments…" in a Collection row's menu.
+
+Both exist for Collections on this computer only. You drag the window by its title bar. It stays open when you click elsewhere, and its × closes it. Several editors can be open at once.
+
+The left side lists the Collection's Environments with New. The selected one has Clone, Rename and Delete, and "Edit .env…" opens the `.env` editor for the same Collection. The right side is the selected Environment's table:
+
+- Each row has an enabled checkbox, a Name, a masked Value, an eye that reveals that row and an × that removes it.
+- The empty last row, "Add a variable", adds a variable when you type in it.
+- Show and Hide in the header reveal or mask every value.
+- Save and Discard are at the bottom, and `Unsaved` shows in the header while the table has changes.
+
+Rules of the table:
+
+- Every value is masked when a file opens. A mask shows one dot per character. Reveals last until the editor closes.
+- A name may hold letters, digits, `_`, `-` and `.`, as in Bruno. An empty or invalid name shows in red and blocks Save. A name used twice shows the warning "Another variable has this name. The last one is used." and does not block Save.
+- A save changes the variables and keeps what the table does not show: `extends`, `color` and external secrets in YAML, and the matching blocks in bru. The file is written in Bruno's own shape for its format.
+- A save after the file changed on disk shows "<file> changed on disk since it was opened." with Reload (drops your edits) and Overwrite.
+
+A secret variable shows "Secret. Its value is kept by Bruno, not in this file." and cannot be edited. Its row has Move to .env:
+
+- It asks for the name in `.env`, filled in as upper case with underscores (`apiKey` becomes `API_KEY`), and for the value, masked with its own eye.
+- It adds `NAME=value` to the `.env` in the Collection folder, creating the file when needed, and rewrites the variable as `{{process.env.NAME}}`.
+- When the name is already in `.env`, the dialog says "NAME is already in .env. Move replaces its value." and the button becomes Replace.
+- It is off while the table has unsaved changes.
+
+New, Clone, Rename and Delete ask for a name or a confirmation inside the editor window:
+
+- New and Clone take a name. A Clone starts as `<name> copy`, and a taken name gets ` copy`, ` copy 2` and so on. A clone keeps the variables and `extends` and drops `color`.
+- Rename changes the file name and the YAML `name:`. Another Environment whose `extends` is the old name alone follows the rename.
+- Delete asks `Delete Environment "<name>"?` and moves the file to the trash. When the trash fails, a second question offers a permanent delete.
+- A Collection's chosen Environment follows a rename. After a delete of the chosen one, the Collection's default applies again.
+
+Unsaved edits:
+
+- Closing the window, choosing another Environment, and New, Clone, Rename and Delete ask "Discard unsaved changes?" with Keep editing and Discard. Discard drops the edits.
+- A layout switch, quitting Herdr or a mod reload closes the window without asking and the edits are lost.
+- Esc cancels an open question, otherwise it closes the window.
+
+## The .env editor
+
+The `.env` editor is a window of the same size. It opens from "Edit .env…" in a Collection row's menu and from the button at the bottom of the Environment editor, for Collections on this computer.
+
+- The left side lists the `.env` and `.env.*` files in the Collection folder, `.env` first. The name must be `.env` or `.env.<letters, digits, . _ ->`. New suggests `.env`, or `.env.local` when `.env` exists. The selected file has Delete, which moves it to the trash, with the same second question when the trash fails.
+- Only `.env` feeds a Run. With another file selected, a note says "Only .env feeds a Run. Brunr does not pass <file> to the Bruno CLI."
+- The file opens in the Table view: Name and Value (masked), with the same reveal, add and remove as the Environment table and no enabled column. "Raw (shows values)" shows the text itself, unmasked. Switching carries unsaved edits across.
+- A table save changes only the lines you edited. Comments, blank lines, order, `export` prefixes and quotes stay. Names and values are read by dotenv's rules. A table save masks every value again.
+- A Raw save writes the text as typed.
+- Conflicts and unsaved edits work as in the Environment editor.

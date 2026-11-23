@@ -1,0 +1,22 @@
+info:
+  name: Upload
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/products"
+  body:
+    type: multipart-form
+    data:
+      - name: f
+        type: file
+        value:
+          - a.txt
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: true

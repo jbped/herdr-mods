@@ -51,7 +51,8 @@ function addNodes(rows, nodes, entry, depth, parent, isOpen) {
       rows.push({ key, kind: "folder", depth, parent, ck: entry.key, machine: entry.machine ?? null, path: n.path, name: n.name, open, count: countRequests(n) });
       if (open) addNodes(rows, n.children, entry, depth + 1, key, isOpen);
     } else {
-      rows.push({ key, kind: "request", depth, parent, ck: entry.key, machine: entry.machine ?? null, path: n.path, name: n.name, method: n.method, url: n.url, type: n.type });
+      rows.push({ key, kind: "request", depth, parent, ck: entry.key, machine: entry.machine ?? null, path: n.path, name: n.name, method: n.method, url: n.url, type: n.type,
+        ...(n.broken ? { broken: true, error: n.error } : {}) });
     }
   }
 }
@@ -62,7 +63,9 @@ export const runsMany = foldable;
 /**
  * What a key does on the selected row: `{ act, ... }` or null.
  * Acts: move (`to`, an index), fold (`key`, `open`), run (`row`), runMany (`row`), env (`row`),
- * global (`row`), file (`row`), bruno (`row`), leave.
+ * global (`row`), open (`row`: show it in the pane), bruno (`row`), leave, and the edit actions
+ * on this computer (`row`): newRequest (n), newFolder (shift-n), rename (f2), delete, moveUp
+ * (alt-up), moveDown (alt-down), moveTo (m).
  */
 export function keyAction(keystroke, rows, at) {
   const row = rows[at] ?? null;
@@ -85,21 +88,33 @@ export function keyAction(keystroke, rows, at) {
       if (foldable(row) && rows[at + 1]?.parent === row.key) return { act: "move", to: at + 1 };
       return null;
     case "enter":
-      if (row.kind === "request") return { act: "run", row };
+      if (row.kind === "request") return row.broken ? null : { act: "run", row };
       if (foldable(row)) return { act: "fold", key: row.key, open: !row.open };
       if (row.kind === "global") return { act: "global", row };
       return null;
     case "r":
       if (runsMany(row)) return { act: "runMany", row };
-      if (row.kind === "request") return { act: "run", row };
+      if (row.kind === "request" && !row.broken) return { act: "run", row };
       return null;
     case "e":
       if (row.kind === "global") return { act: "global", row };
       return row.ck ? { act: "env", row } : null;
-    case "o": return row.kind === "request" ? { act: "file", row } : null;
+    case "o": return row.kind === "request" ? { act: "open", row } : null;
     case "b": return row.ck && row.machine == null ? { act: "bruno", row } : null;
   }
-  return null;
+  return editKey(keystroke, row);
+}
+
+const EDIT_KEYS = { n: "newRequest", "shift-n": "newFolder", N: "newFolder", f2: "rename", delete: "delete", "alt-up": "moveUp", "alt-down": "moveDown", m: "moveTo" };
+
+/** The edit action a key starts on a row of this computer, or null. */
+function editKey(keystroke, row) {
+  const act = EDIT_KEYS[keystroke];
+  if (!act || !row.ck || row.machine != null) return null;
+  const item = row.kind === "request" || row.kind === "folder";
+  if (act === "newRequest" || act === "newFolder") return { act, row };
+  if (!item || ((act === "moveUp" || act === "moveDown") && row.broken)) return null;
+  return { act, row };
 }
 
 /** The layout block that shows the panel: `{ id, shown }`, or null when no layout block has it. */
