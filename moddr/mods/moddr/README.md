@@ -16,18 +16,20 @@ Moddr lists the folders in `~/.config/herdr-app/mods/` that Herdr did not ship, 
 
 ## States
 
-| Badge | Meaning |
+Mods are listed in sections: Updates, Needs a look (edited here, unknown version, error, not checked), Up to date, Not tracked. Each row shows a colored dot, the name, the repo and its status:
+
+| Status | Meaning |
 |---|---|
 | no source | not tracked. The details say whether Moddr looked, what it found, or that you stopped tracking it |
 | not checked | tracked, never checked |
-| checking | a check of this mod is running |
+| checking… | a check of this mod is running |
 | up to date | the local files equal the newest upstream version |
 | N updates | N commits touched the source after the installed version. "30+" when the installed version is older than the last 30 |
 | edited here | no updates, and local files differ from the installed version |
 | unknown version | the local files match none of the newest 11 versions, and no installed version is saved |
 | error | the last check failed. The message is under the row |
 
-A mod with updates and local edits shows the updates badge and both lists. A source Moddr found itself says "(found by Moddr)".
+A mod with updates and local edits shows its updates and both lists. A source Moddr found itself says "found by Moddr". The open row's main action is the solid button: Update, Discuss drift, or Set source.
 
 ## Keys
 

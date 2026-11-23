@@ -3,8 +3,8 @@
   "title": "Moddr",
   "overlay": {
     "kind": "dialog",
-    "width": 560,
-    "height": 0.7
+    "width": 640,
+    "height": 0.75
   },
   "palette": [
     {

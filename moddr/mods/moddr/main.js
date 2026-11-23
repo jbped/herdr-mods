@@ -10,9 +10,9 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, InputState, Input } from "gpui-base";
-import { checking, closeOverlay, props, run, shared, theme } from "herdr";
+import { checking, closeOverlay, props, run, settings, shared, theme } from "herdr";
 import { SEARCH, parseSource, resolve, sourceUrl, state } from "./track.js";
-import { Ctx, RUNNING, SUMMARY, busyElsewhere, io, settings } from "./engine.js";
+import { Ctx, RUNNING, SUMMARY, busyElsewhere, io, settings as settings_ } from "./engine.js";
 import { backups, openDrift, restore, update } from "./update.js";
 
 const HALF_PAGE = 6;
@@ -25,16 +25,21 @@ const KEYS = [
   ["enter", "check this one"], ["u", "update"], ["d", "discuss drift with an agent"], ["s", "set source"],
   ["m", "mark installed"], ["z", "restore the last backup"], ["x", "stop tracking"], ["q", "close"],
 ];
-const BADGE = {
-  untracked: ["no source", "dim"],
-  unchecked: ["not checked", "muted"],
-  checking: ["checking", "accent"],
-  error: ["error", "blocked"],
-  unknown: ["unknown version", "working"],
-  updates: ["update", "done"],
-  edited: ["edited here", "working"],
-  current: ["up to date", "idle"],
-};
+const SECTIONS = [
+  { key: "updates", title: "Updates" },
+  { key: "attention", title: "Needs a look" },
+  { key: "current", title: "Up to date" },
+  { key: "untracked", title: "Not tracked" },
+];
+
+/** The list section a mod is in, from its saved state (a running check does not move it). */
+function section(entry) {
+  const s = state(entry);
+  if (s === "updates") return "updates";
+  if (s === "current") return "current";
+  if (s === "untracked") return "untracked";
+  return "attention";
+}
 
 /** "now", "5m", "3h", "2d", then "Nov 16". */
 function ago(at, now = Date.now()) {
@@ -50,6 +55,14 @@ function ago(at, now = Date.now()) {
 }
 
 const short = (sha) => String(sha ?? "").slice(0, 7);
+
+/** A backup's id, 20261123-191918-3ca957c, as "Nov 23, 19:19 · 3ca957c". */
+function backupName(id) {
+  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}(?:-(.+))?$/.exec(String(id ?? ""));
+  if (!m) return String(id ?? "");
+  const label = { "before-restore": "before a restore", drift: "before a drift talk" }[m[6]] ?? m[6];
+  return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[4]}:${m[5]}${label ? ` · ${label}` : ""}`;
+}
 const repoText = (s) => `${s.owner}/${s.repo}${s.path ? ` · ${s.path}` : ""}`;
 
 export default class Moddr extends View {
@@ -58,7 +71,7 @@ export default class Moddr extends View {
     this.view = props()?.badge ? "badge" : "dialog";
     this.seen = 0; // the summary this copy last loaded
     if (this.view === "badge") return this.initBadge(cx);
-    this.at = 0;
+    this.sel = null; // the selected mod's name: rows move between sections as their state changes
     this.help = false;
     this.editing = null; // the mod whose source is being typed
     this.editError = null;
@@ -72,8 +85,8 @@ export default class Moddr extends View {
     this.input.on("submit", (_e, cx) => this.saveSource(cx));
     this.input.on("change", (_e, cx) => { this.editError = null; cx.notify(); });
     this.handle.focus();
-    cx.timer.after(600, () => { if (!this.editing) this.handle.focus(); });
     if (checking()) return;
+    cx.timer.after(600, () => { if (!this.editing) this.handle.focus(); });
     cx.spawn(async (cx) => {
       await this.ctx.load();
       await this.loadBackups();
@@ -124,7 +137,25 @@ export default class Moddr extends View {
     });
   }
 
-  selected() { return this.ctx.names[this.at] ?? null; }
+  /** The mods in the order the list shows them: by section, then by name. */
+  ordered() {
+    const out = [];
+    for (const g of SECTIONS) out.push(...this.ctx.names.filter((n) => section(this.ctx.entry(n)) === g.key));
+    return out;
+  }
+
+  selected() {
+    const list = this.ordered();
+    return list.includes(this.sel) ? this.sel : list[0] ?? null;
+  }
+
+  /** Moves the selection by `by` rows, or to an end with Infinity. */
+  move(by) {
+    const list = this.ordered();
+    if (!list.length) return;
+    const at = Math.max(0, list.indexOf(this.selected()));
+    this.sel = list[Math.max(0, Math.min(list.length - 1, at + by))];
+  }
 
   async loadBackups() {
     for (const n of this.ctx.names) this.saved[n] = await backups(n);
@@ -245,6 +276,7 @@ export default class Moddr extends View {
     cx.spawn(async (cx) => { await this.ctx.persist([name]); this.ctx.share(); cx.notify(); });
   }
 
+
   close() {
     const id = props()?.overlay;
     if (id != null) closeOverlay(id);
@@ -265,19 +297,18 @@ export default class Moddr extends View {
       cx.notify();
       return;
     }
-    const last = Math.max(0, this.ctx.names.length - 1);
     const plain = !m.control && !m.alt && !m.platform;
     const shift = Boolean(m.shift);
     const name = this.selected();
     if (k === "escape" || (plain && !shift && k === "q")) this.close();
-    else if (ev.keystroke === "ctrl-d") this.at = Math.min(last, this.at + HALF_PAGE);
-    else if (ev.keystroke === "ctrl-u") this.at = Math.max(0, this.at - HALF_PAGE);
+    else if (ev.keystroke === "ctrl-d") this.move(HALF_PAGE);
+    else if (ev.keystroke === "ctrl-u") this.move(-HALF_PAGE);
     else if (!plain) return;
     else if (k === "?" || (shift && k === "/")) this.help = !this.help;
-    else if (k === "down" || (!shift && k === "j")) this.at = Math.min(last, this.at + 1);
-    else if (k === "up" || (!shift && k === "k")) this.at = Math.max(0, this.at - 1);
-    else if (k === "G" || (shift && k === "g") || k === "end") this.at = last;
-    else if (k === "g" || k === "home") this.at = 0;
+    else if (k === "down" || (!shift && k === "j")) this.move(1);
+    else if (k === "up" || (!shift && k === "k")) this.move(-1);
+    else if (k === "G" || (shift && k === "g") || k === "end") this.move(Infinity);
+    else if (k === "g" || k === "home") this.move(-Infinity);
     else if (!shift && k === "r") this.refresh(cx);
     else if (!shift && k === "f") this.refresh(cx, true);
     else if (k === "enter") { if (name && this.ctx.entry(name)?.source) this.checkOne(name, cx); }
@@ -288,7 +319,8 @@ export default class Moddr extends View {
     else if (!shift && k === "x") this.untrack(name, cx);
     else if (!shift && k === "z") this.askRestore(name);
     else return;
-    this.scroll.scroll_to_item(this.at);
+    this.sel = this.selected();
+    if (this.rowIndex != null) this.scroll.scroll_to_item(this.rowIndex(this.sel));
     cx.stop_propagation();
     cx.notify();
   }
@@ -331,139 +363,217 @@ export default class Moddr extends View {
 
   renderDialog(t) {
     const ctx = this.ctx;
-    const names = ctx.names;
-    this.at = Math.max(0, Math.min(this.at, names.length - 1));
-    const tracked = ctx.tracked();
-    const counts = {};
-    for (const n of tracked) { const s = state(ctx.entry(n), ctx.busy.has(n)); counts[s] = (counts[s] ?? 0) + 1; }
+    const mono = String(settings()?.font ?? "") || "JetBrains Mono";
     const elsewhere = !ctx.running && busyElsewhere(false);
-    const lastAt = Number(ctx.data.lastRun?.at) || Math.max(0, ...tracked.map((n) => ctx.entry(n)?.check?.at ?? 0));
-    const every = settings(ctx.data).every;
-    const status = ctx.phase === "finding" ? "finding sources…" : ctx.phase === "checking" ? "checking…" : elsewhere ? "checking in the background…" : null;
-    const summary = !names.length ? "" : [
-      `${tracked.length} of ${names.length} tracked`,
-      counts.updates ? `${counts.updates} with updates` : null,
-      status ?? (lastAt ? `checked ${ago(lastAt)}` : null),
-      every ? `every ${every}h` : "manual",
-      ctx.auth(),
-    ].filter(Boolean).join(" · ");
     const busy = ctx.running || elsewhere;
+    const free = !this.op && !busy;
+    const sel = this.selected();
+    const tracked = ctx.tracked();
+    const updates = tracked.filter((n) => state(ctx.entry(n)) === "updates").length;
+    const lastAt = Number(ctx.data.lastRun?.at) || 0;
+    const every = settings_(ctx.data).every;
 
-    const button = (id, label, on, enabled = true) =>
-      div().id(id).flex_none().px(8).py(3).rounded(4).bg(t.raised).text_size(12)
-        .text_color(enabled ? t.foreground : t.dim)
-        .when(enabled, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { on(cx); cx.notify(); }))
-        .child(label);
+    // ---- small parts ----
+    const text = (s, size, color) => div().text_size(size).text_color(color).child(s);
+    const keyHint = (k) => div().text_size(10.5).text_color(t.dim).font_family(mono).child(k);
+    const button = (id, label, on, { key: k = null, primary = false, enabled = true } = {}) =>
+      h_flex().id(id).flex_none().h(26).px(10).gap(6).items_center().rounded(5).text_size(12)
+        .when(primary, (el) => el.bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim))
+        .when(!primary, (el) => el.border(1).border_color(t.border).text_color(enabled ? t.foreground : t.dim))
+        .when(enabled, (el) => el.cursor_pointer()
+          .hover((x) => (primary ? x.opacity(0.9) : x.bg(t.hover)))
+          .on_click((_e, cx) => { on(cx); cx.notify(); }))
+        .child(label)
+        .when(Boolean(k), (el) => el.child(div().text_size(10.5).font_family(mono).text_color(primary && enabled ? t.solid_foreground : t.dim).opacity(primary ? 0.7 : 1).child(k)));
+    const link = (id, label, on, k) =>
+      h_flex().id(id).flex_none().gap(5).items_center().text_size(11.5).text_color(t.muted).cursor_pointer()
+        .hover((x) => x.text_color(t.foreground)).on_click((_e, cx) => { on(cx); cx.notify(); })
+        .child(label).when(Boolean(k), (el) => el.child(keyHint(k)));
 
-    const badge = (s, e) => {
-      const [label, color] = BADGE[s];
-      const n = e?.check?.behind?.length ?? 0;
-      const text = s === "updates" ? `${n}${e.check.more ? "+" : ""} ${n === 1 && !e.check.more ? "update" : "updates"}` : label;
-      return div().flex_none().px(6).py(1).rounded(4).border(1).border_color(t[color]).text_size(11).text_color(t[color]).child(text);
+    // ---- a row ----
+    const STATUS = {
+      untracked: ["no source", t.dim], unchecked: ["not checked", t.muted], checking: ["checking…", t.accent],
+      error: ["error", t.blocked], unknown: ["unknown version", t.working], edited: ["edited here", t.working], current: ["up to date", t.dim],
+    };
+    const status = (s, e) => {
+      if (s === "updates") {
+        const n = e.check.behind.length;
+        return [`${n}${e.check.more ? "+" : ""} ${n === 1 && !e.check.more ? "update" : "updates"}`, t.done];
+      }
+      return STATUS[s];
     };
 
     const details = (name, e, s) => {
       const c = e?.check;
-      const lines = v_flex().gap(4).pt(6).text_size(12);
-      const note = (text, color = t.muted) => div().text_color(color).child(text);
-      if (s === "untracked") {
-        if (e?.ignored) lines.child(note("Not tracked, and Moddr does not look for its source. Press s to set one."));
-        else if (e?.candidate) lines.child(note(`${repoText(e.candidate)} has a mod of this name, but the files here match none of its recent versions. Press s to track it anyway.`));
-        else if (e?.discovered) lines.child(note(`No source found ${ago(e.discovered)}. Press s to set one, or f to look again.`));
-        else lines.child(note("Not looked for yet. Press r to look for its source, or s to set one."));
+      const box = v_flex().gap(8).pt(8).pl(18);
+      const op = this.op?.name === name ? this.op : null;
+      const ask = this.confirm?.name === name ? this.confirm.kind : null;
+      const saved = this.saved[name] ?? [];
+
+      // What it is and where from.
+      if (e?.source) {
+        const from = `${e.source.path || "repo root"}${e.source.ref ? ` on ${e.source.ref}` : ""}${e.found ? " · found by Moddr" : ""}`;
+        const ver = !e.installed ? ""
+          : c?.latest && c.latest.sha !== e.installed ? `${short(e.installed)} → ${short(c.latest.sha)}` : short(e.installed);
+        box.child(h_flex().gap(8).items_center().text_size(11.5).text_color(t.dim)
+          .child(div().flex_1().min_w(0).truncate().child(from))
+          .child(div().flex_none().font_family(mono).text_size(11).child(ver)));
       }
-      if (e?.source) lines.child(note(`${sourceUrl(e.source)}${e.found ? " (found by Moddr)" : ""}`, t.dim));
-      if (c?.error) lines.child(note(c.error, t.blocked));
-      if (s === "unknown") lines.child(note(`The files here match none of the last ${1 + SEARCH} versions upstream. Press m to count the newest as installed.`));
+
+      // The one-line reason, when the state needs one.
+      const why = s === "untracked"
+        ? (e?.ignored ? "Not tracked. Moddr won't look for its source."
+          : e?.candidate ? `Found in ${e.candidate.owner}/${e.candidate.repo}, but no version matches your files.`
+          : e?.discovered ? `No source found ${ago(e.discovered)} ago.` : "Not looked for yet.")
+        : s === "unknown" ? `Your files match none of the last ${1 + SEARCH} upstream versions.`
+        : s === "current" ? `Same as the newest upstream, ${ago(c?.latest?.date)} old.`
+        : null;
+      if (why) box.child(text(why, 12, t.muted));
+      if (c?.error) box.child(text(c.error, 12, t.blocked));
+
+      // New commits.
       if (c?.behind?.length) {
-        lines.child(note(`New upstream since ${short(e.installed)}:`, t.foreground));
+        const list = v_flex().gap(3);
         for (const b of c.behind.slice(0, SHOWN_COMMITS)) {
-          lines.child(h_flex().gap(8)
-            .child(div().flex_none().w(52).text_color(t.dim).child(short(b.sha)))
-            .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(b.message))
-            .child(div().flex_none().text_color(t.dim).child(ago(b.date))));
+          list.child(h_flex().gap(10).items_center()
+            .child(div().flex_none().w(56).font_family(mono).text_size(11).text_color(t.dim).child(short(b.sha)))
+            .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(b.message))
+            .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(b.date))));
         }
         const rest = c.behind.length - SHOWN_COMMITS;
-        if (rest > 0 || c.more) lines.child(note(`and ${c.more ? "more" : rest} older`, t.dim));
+        if (rest > 0 || c.more) list.child(text(`${c.more ? "more" : rest} older`, 11, t.dim));
+        box.child(list);
       }
-      if (c?.edited?.length) lines.child(note(e.installed ? `Changed here since ${short(e.installed)}: ${c.edited.join(", ")}` : `Differs from the newest upstream: ${c.edited.join(", ")}`, t.working));
-      if (s === "current") lines.child(note(`At ${short(e.installed)}, the newest upstream (${ago(c.latest?.date)}).`));
-      const saved = this.saved[name] ?? [];
-      if (saved.length) lines.child(note(`Backup: ${saved[0].id}${saved.length > 1 ? ` and ${saved.length - 1} older` : ""}`, t.dim));
-      const op = this.op?.name === name ? this.op : null;
-      if (op?.step) lines.child(note(`${op.kind === "drift" ? "Preparing the drift space" : op.kind === "update" ? "Updating" : "Restoring"}: ${op.step}…`, t.accent));
-      if (op?.error) lines.child(note(op.error, t.blocked));
-      const ask = this.confirm?.name === name ? this.confirm.kind : null;
-      if (ask === "update") {
-        const edits = c?.edited ?? [];
-        lines.child(v_flex().gap(4).p(8).rounded(4).border(1).border_color(edits.length ? t.working : t.accent).bg(t.raised)
-          .child(note(`Update ${name} to ${short(c?.latest?.sha)}${c?.behind?.length ? `, bringing in ${c.behind.length}${c.more ? "+" : ""} commits` : ""}?`, t.foreground))
-          .when(edits.length > 0, (el) => el.child(note(`This replaces your changes to ${edits.join(", ")}. Press d instead to talk them through with an agent.`, t.working)))
-          .child(note("Your files are backed up first, and Restore puts them back. Press y to update, any other key to cancel.", t.muted))
-          .child(h_flex().gap(6)
-            .child(button(`moddr-yes-${name}`, "Update", (cx) => this.change(cx, name, "update")))
-            .child(button(`moddr-no-${name}`, "Cancel", () => { this.confirm = null; }))));
+
+      // Files changed here.
+      if (c?.edited?.length) {
+        box.child(h_flex().flex_wrap().gap(4).items_center()
+          .child(div().text_size(11.5).text_color(t.working).mr(4).child(e.installed ? "Edited here" : "Differs"))
+          .children(c.edited.slice(0, 12).map((f) => div().px(6).py(1).rounded(4).bg(t.raised).font_family(mono).text_size(11).text_color(t.muted).child(f)))
+          .when(c.edited.length > 12, (el) => el.child(text(`+${c.edited.length - 12}`, 11, t.dim))));
       }
-      if (ask === "restore") {
-        lines.child(v_flex().gap(4).p(8).rounded(4).border(1).border_color(t.working).bg(t.raised)
-          .child(note(`Put back the backup ${saved[0]?.id}? The files there now are backed up first. Press y to restore, any other key to cancel.`, t.foreground))
-          .child(h_flex().gap(6)
-            .child(button(`moddr-ryes-${name}`, "Restore", (cx) => this.change(cx, name, "restore")))
-            .child(button(`moddr-rno-${name}`, "Cancel", () => { this.confirm = null; }))));
+
+      // Progress, a question, or the actions.
+      if (op?.step) {
+        box.child(h_flex().gap(8).items_center().text_size(12).text_color(t.accent)
+          .child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90))
+          .child(`${op.kind === "drift" ? "Preparing the drift space" : op.kind === "update" ? "Updating" : "Restoring"} · ${op.step}`));
+        return box;
       }
+      if (op?.error) box.child(text(op.error, 12, t.blocked));
+      if (ask) {
+        const edits = ask === "update" ? c?.edited ?? [] : [];
+        const q = ask === "update"
+          ? `Update to ${short(c?.latest?.sha)}?${edits.length ? ` Replaces your changes to ${edits.length} ${edits.length === 1 ? "file" : "files"}.` : ""} Your files are backed up first.`
+          : `Restore the backup from ${backupName(saved[0]?.id)}? Your current files are backed up first.`;
+        box.child(h_flex().gap(10).items_center().p(10).rounded(6).bg(t.raised).border(1).border_color(edits.length || ask === "restore" ? t.working : t.border)
+          .child(div().flex_1().min_w(0).text_size(12).text_color(t.foreground).child(q))
+          .child(button(`moddr-yes-${name}`, ask === "update" ? "Update" : "Restore", (cx) => this.change(cx, name, ask), { key: "y", primary: true }))
+          .child(button(`moddr-no-${name}`, "Cancel", () => { this.confirm = null; }, { key: "n" })));
+        return box;
+      }
+
       const canUpdate = Boolean(e?.source) && ["updates", "edited", "unknown"].includes(s) && name !== "moddr";
-      const free = !this.op && !busy;
-      lines.child(h_flex().gap(6).pt(2).flex_wrap()
-        .when(canUpdate, (el) => el.child(button(`moddr-update-${name}`, "Update", () => this.askUpdate(name), free)))
-        .when(Boolean(e?.source && c?.latest) && s !== "current", (el) => el.child(button(`moddr-drift-${name}`, "Discuss drift", (cx) => this.discuss(cx, name), free)))
-        .when(saved.length > 0, (el) => el.child(button(`moddr-restore-${name}`, "Restore", () => this.askRestore(name), free))))
-      lines.child(h_flex().gap(6).pt(2)
-        .child(button(`moddr-set-${name}`, e?.source ? "Change source" : "Set source", () => this.startEdit(name)))
-        .when(Boolean(e?.source), (el) => el
-          .child(button(`moddr-check-${name}`, "Check", (cx) => this.checkOne(name, cx), !ctx.busy.has(name) && !busy))
-          .when(s === "unknown", (el) => el.child(button(`moddr-mark-${name}`, "Mark installed", (cx) => this.markInstalled(name, cx))))
-          .child(button(`moddr-untrack-${name}`, "Stop tracking", (cx) => this.untrack(name, cx)))));
-      return lines;
+      const canDrift = Boolean(e?.source && c?.latest) && s !== "current";
+      const main = s === "updates" && canUpdate ? "update" : canDrift ? "drift" : !e?.source ? "source" : null;
+      const actions = h_flex().gap(6).items_center();
+      if (canUpdate) actions.child(button(`moddr-update-${name}`, "Update", () => this.askUpdate(name), { key: "u", primary: main === "update", enabled: free }));
+      if (canDrift) actions.child(button(`moddr-drift-${name}`, "Discuss drift", (cx) => this.discuss(cx, name), { key: "d", primary: main === "drift", enabled: free }));
+      if (s === "unknown") actions.child(button(`moddr-mark-${name}`, "Mark installed", (cx) => this.markInstalled(name, cx), { key: "m", enabled: free }));
+      if (!e?.source) actions.child(button(`moddr-set-${name}`, "Set source", () => this.startEdit(name), { key: "s", primary: true, enabled: free }));
+      if (saved.length) actions.child(button(`moddr-restore-${name}`, "Restore", () => this.askRestore(name), { key: "z", enabled: free }));
+      const more = h_flex().flex_1().justify_end().gap(14).items_center();
+      if (e?.source) {
+        more.child(link(`moddr-check-${name}`, "Check", (cx) => this.checkOne(name, cx), "enter"));
+        more.child(link(`moddr-src-${name}`, "Source", () => this.startEdit(name), "s"));
+        more.child(link(`moddr-untrack-${name}`, "Stop tracking", (cx) => this.untrack(name, cx), "x"));
+      }
+      box.child(h_flex().pt(2).gap(6).items_center().child(actions).child(more));
+      if (saved.length) box.child(text(`Last backup ${backupName(saved[0].id)}${saved.length > 1 ? `, ${saved.length - 1} older` : ""}`, 11, t.dim));
+      return box;
     };
 
-    const row = (name, i) => {
+    const row = (name) => {
       const e = ctx.entry(name);
       const s = state(e, ctx.busy.has(name));
-      const open = i === this.at;
+      const [label, color] = status(s, e);
+      const open = name === sel;
       return v_flex()
         .id(`moddr-row-${name}`)
         .flex_none()
-        .px(14)
-        .py(8)
-        .border_b(1)
-        .border_color(t.border)
-        .when(open, (el) => el.bg(t.selected))
+        .mx(6)
+        .px(10)
+        .py(7)
+        .rounded(6)
+        .when(open, (el) => el.bg(t.selected).pb(12))
         .when(!open, (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)))
-        .on_click((_ev, cx) => { if (!this.editing) { this.at = i; this.handle.focus(); cx.notify(); } })
+        .on_click((_ev, cx) => { if (!this.editing) { this.sel = name; this.confirm = null; this.handle.focus(); cx.notify(); } })
         .child(h_flex().gap(10).items_center()
-          .child(div().flex_none().font_semibold().text_size(13).child(name))
-          .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(e?.source ? repoText(e.source) : ""))
-          .child(badge(s, e)))
+          .child(div().flex_none().size(8).rounded(4).bg(color))
+          .child(div().flex_none().font_semibold().text_size(13).text_color(t.foreground).child(name))
+          .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(e?.source ? `${e.source.owner}/${e.source.repo}` : ""))
+          .child(div().flex_none().text_size(12).text_color(color).child(label)))
         .when(open, (el) => el.child(details(name, e, s)));
     };
 
+    // ---- sections ----
+    const children = [];
+    const index = {};
+    for (const g of SECTIONS) {
+      const names = ctx.names.filter((n) => section(ctx.entry(n)) === g.key);
+      if (!names.length) continue;
+      children.push(h_flex().flex_none().px(16).pt(children.length ? 14 : 10).pb(4).gap(6).items_center()
+        .child(div().text_size(11).font_semibold().text_color(t.muted).child(g.title))
+        .child(div().text_size(11).text_color(t.dim).child(String(names.length))));
+      // The first row of a section scrolls to its heading, so the heading stays in view.
+      names.forEach((n, i) => { index[n] = i === 0 ? children.length - 1 : children.length; children.push(row(n)); });
+    }
+    children.push(div().flex_none().h(8));
+    this.rowIndex = (n) => index[n] ?? 0;
+
+    // ---- source editor ----
     const editor = this.editing
-      ? v_flex().flex_none().px(14).py(8).gap(6).border_b(1).border_color(t.border).bg(t.raised)
-          .child(div().text_size(12).text_color(t.muted).child(`Source of ${this.editing}: a GitHub folder holding the mod or its share`))
+      ? v_flex().flex_none().mx(12).mt(10).p(10).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
+          .child(text(`Source of ${this.editing}`, 12, t.foreground))
           .child(h_flex().h(28).px(8).rounded(4).border(1).border_color(t.input).bg(t.background).items_center()
             .child(Input.new(this.input).flex_1().h_full().text_size(12.5).text_color(t.foreground)))
-          .when(this.resolving, (el) => el.child(div().text_size(11.5).text_color(t.accent).child("Looking it up on GitHub…")))
-          .when(Boolean(this.editError), (el) => el.child(div().text_size(11.5).text_color(t.blocked).child(this.editError)))
-          .child(div().text_size(11).text_color(t.dim).child("enter saves · escape cancels"))
+          .child(text(this.resolving ? "Looking it up on GitHub…" : this.editError ?? "A GitHub folder that holds the mod, or its share. enter saves, escape cancels.",
+            11.5, this.resolving ? t.accent : this.editError ? t.blocked : t.dim))
       : null;
 
-    const runError = ctx.data.lastRun?.error;
-    const key = (k, what) => h_flex().gap(5).child(div().text_color(t.accent).child(k)).child(div().text_color(t.dim).child(what));
-    const legend = this.help
-      ? h_flex().flex_none().flex_wrap().px(14).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
+    // ---- header ----
+    const when = lastAt ? `checked ${ago(lastAt)} ago`.replace("now ago", "just now") : "not checked yet";
+    const sub = busy
+      ? div().text_color(t.accent).child(ctx.phase === "finding" ? "Finding sources…" : "Checking…")
+      : h_flex().gap(6)
+        .when(updates > 0, (el) => el.child(div().text_color(t.done).child(`${updates} with ${updates === 1 ? "an update" : "updates"}`)).child(div().text_color(t.dim).child("·")))
+        .child(div().text_color(t.dim).child(when));
+    const header = h_flex().flex_none().h(52).px(16).gap(10).items_center().border_b(1).border_color(t.border)
+      .child(v_flex().flex_1().min_w(0).gap(1)
+        .child(div().font_semibold().text_size(14).child("Mods"))
+        .child(div().text_size(11.5).child(sub)))
+      .child(h_flex().id("moddr-refresh").flex_none().h(28).px(10).gap(6).items_center().rounded(5).border(1).border_color(t.border).text_size(12)
+        .text_color(busy ? t.dim : t.foreground)
+        .when(!busy && ctx.names.length > 0, (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)).on_click((_e, cx) => { this.refresh(cx); cx.notify(); }))
+        .child(busy ? div().text_color(t.accent).frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90) : svg("mods/moddr/refresh.svg").size(13).text_color(t.muted))
+        .child(busy ? "Checking" : "Refresh")
+        .child(keyHint("r")));
+
+    // ---- banners ----
+    const runError = !busy ? ctx.data.lastRun?.error : null;
+    const banner = (msg, color) => h_flex().flex_none().mx(12).mt(10).px(10).py(7).gap(8).items_start().rounded(6).bg(t.raised)
+      .child(div().flex_none().mt(5).size(6).rounded(3).bg(color))
+      .child(div().flex_1().text_size(11.5).text_color(t.muted).child(msg));
+
+    // ---- footer ----
+    const key = (k, what) => h_flex().gap(5).child(div().font_family(mono).text_color(t.muted).child(k)).child(div().text_color(t.dim).child(what));
+    const footer = this.help
+      ? h_flex().flex_none().flex_wrap().px(16).py(8).gap_x(16).gap_y(4).border_t(1).border_color(t.border).text_size(11)
           .children(KEYS.map(([k, what]) => key(k, what)))
-      : h_flex().flex_none().h(28).px(14).gap(14).items_center().border_t(1).border_color(t.border).text_size(11)
-          .child(key("j/k", "move")).child(key("r", "refresh")).child(key("u", "update")).child(key("d", "discuss drift")).child(key("s", "source")).child(key("?", "keys"));
+      : h_flex().flex_none().h(30).px(16).gap(14).items_center().border_t(1).border_color(t.border).text_size(11)
+          .child(key("j k", "move")).child(key("r", "refresh")).child(key("f", "find sources")).child(key("?", "all keys"))
+          .child(div().flex_1())
+          .child(div().text_color(t.dim).child(`${every ? `every ${every}h` : "manual"} · ${ctx.auth()}`));
 
     return v_flex()
       .id("moddr")
@@ -472,18 +582,13 @@ export default class Moddr extends View {
       .size_full()
       .bg(t.popover)
       .text_color(t.foreground)
-      .child(h_flex().flex_none().h(40).px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().text_size(13).child("Mods"))
-        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(summary))
-        .child(button("moddr-refresh", busy ? "Refreshing…" : "Refresh", (cx) => this.refresh(cx), !busy && names.length > 0)))
-      .when(Boolean(ctx.error), (el) => el.child(
-        div().flex_none().px(14).py(8).border_b(1).border_color(t.border).text_size(11.5).text_color(t.blocked).child(ctx.error)))
-      .when(Boolean(runError) && !busy, (el) => el.child(
-        div().flex_none().px(14).py(8).border_b(1).border_color(t.border).text_size(11.5).text_color(t.working).child(runError)))
+      .child(header)
+      .when(Boolean(ctx.error), (el) => el.child(banner(ctx.error, t.blocked)))
+      .when(Boolean(runError), (el) => el.child(banner(runError, t.working)))
       .when(Boolean(editor), (el) => el.child(editor))
-      .child(names.length
-        ? v_flex().id("moddr-rows").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).children(names.map(row))
+      .child(ctx.names.length
+        ? v_flex().id("moddr-rows").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).children(children)
         : v_flex().flex_1().items_center().justify_center().text_size(12).text_color(t.dim).child("No mods of your own in the mods folder."))
-      .child(legend);
+      .child(footer);
   }
 }
