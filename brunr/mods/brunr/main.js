@@ -11,7 +11,7 @@
 // Collection asks first), p runs a Request with other values for its URL's {{variables}}, e picks the Environment, o shows the Request's file, y copies its URL,
 // b opens Bruno desktop, 1-4 pick the Response's view, / searches a Run's Requests, f fills the
 // window, ctrl-s saves the shown Request's Draft (or the open editor), ctrl-r reads everything
-// again, n, shift-n, f2, m, alt-up, alt-down and delete edit the tree, ? shows or hides the key
+// again, n, shift-n, shift-r, m, ctrl-up, ctrl-down and delete edit the tree, ? shows or hides the key
 // list, esc closes.
 //
 // Config: brunr.json in the app home. Nothing from a Response is written to disk. Request files

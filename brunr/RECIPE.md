@@ -1,175 +1,116 @@
 # Brunr
 
-A side panel that lists Bruno Collections as a tree in the Herdr theme's colours, as Bruno's own sidebar does. Double-click a Request and the Bruno CLI runs it. The Response opens in a pane beside your terminal with Response, Headers, Timeline and Tests views. A folder or Collection Run shows a summary and a list of Requests with pass or fail marks, grouped under their folders. Each Collection has an Environment chip, and a Global environment row sits above the Collections of a Bruno workspace.
+A dialog over the Herdr window, or a tab of its own, with three columns: your Bruno Collections as a tree in the Herdr theme's colours, the selected Request with Bruno's tabs and its file as text, and the last Run's Response with Response, Headers, Timeline and Tests views. The Bruno CLI runs a Request, a folder or a whole Collection. The tree's menu, keys and drag and drop create, clone, rename, move and delete Requests and folders by Bruno's rules, and an Environment editor and a `.env` editor take the columns' place while they are open.
 
 ![Brunr](preview.png)
 
 ## What you see
 
-The preview shows a Response pane on the left and the Brunr panel on the right, 320px wide. The panel lists a made-up "Shop" API with a `local` chip that carries a warning icon, its "Products" and "Orders" folders unfolded and the nested "top sellers" folder folded. The Response pane shows a Run of the whole Collection: "8 Requests, 6 passed, 2 failed, 0 skipped, 11.22 s". Its Request list is a tree: "Products" with `3/4` in the fail colour, "top sellers" nested under it with `1/1`, "Orders" with `2/3`, and "Get Health" at the top level. The failed "Missing Product" is selected and shown beside the list with `404 Not Found`, 1.51 s, 44 B, "Headers 6", "Tests 0/1" and its JSON body. The panel is one block in your own layout. It has an 8px radius, a 1px border in `border` (`accent` while it holds the keyboard), a `chrome` fill and 12.5px text in `foreground`. Top to bottom:
+The preview is from an earlier build, before the dialog: it shows a Response pane on the left and a Brunr side panel on the right. The dialog described here keeps the tree's rows, the Response side's look and the colours shown there, and adds the Request column between them. It has no side panel.
 
-- **Header**, 38px, with a bottom border: "Brunr" in 13px semibold, then a 13px turning ring in `dim` while Collections load, then a 22px refresh icon button in `muted`.
-- **Notices**, only when there are any, each in an 8px margin with 10px by 7px padding, a 6px radius and 11.5px text on `raised`:
-  - A config problem: a 13px warning icon and the sentence, in `blocked`. For example "brunr.json is not valid JSON" or "No Bruno Collection in /srv/shop on buildbox".
-  - A missing CLI card with a 1px `border` outline: the title "No Bruno CLI on this computer. Runs are off." in `ansi3` and semibold, the step in `muted`, the command in the terminal font at 11px, and a 22px "Copy" button on `solid`.
-- **The tree**, the only part that scrolls, with 4px side padding. Rows are 26px high, 6px apart inside, with a 5px radius and an indent of 14px per level. A hovered row is on `hover`. The selected row is on `hover`, or on `selected` while the panel holds the keyboard.
-  - **Machine heading**, 24px, only when Collections sit on more than one Machine: the name in upper case, 10.5px semibold `dim`. "This computer" names this one.
-  - **Global environment row**, only for a workspace that has Global environments: a 13px globe icon and the label in `muted`, and on the right a chip with the chosen name or "None".
-  - **Collection row**: a 14px fold arrow in `dim`, the name in medium weight, a 12px turning ring while loading, a `blocked` warning icon when the folder cannot be read (the tooltip has the reason), a pill 16px high with the number of files that could not be read (10px `blocked` on `raised`), and the Environment chip.
-  - **Environment chip**: 18px high, at most 120px wide, a 1px `border` outline, a 4px radius and 10.5px text. It shows the Environment name in `foreground`, or "No Environment" in `dim`. An `ansi3` warning icon, 11px, comes first when the Environment has secret variables.
-  - **Folder row**: a fold arrow, a 13px folder icon in `muted` and the name.
-  - **Request row**: a 14px spacer, a 34px method badge and the name. The badge is 10px semibold. GET is `ansi2`, POST `ansi5`, PUT `ansi3`, PATCH `ansi6`, DELETE `ansi1` (shown as "DEL"), and any other method is `muted` (OPTIONS shows "OPT", GRAPHQL "GQL" and CONNECT "CONN").
-  - **Play button**, 18px, at the right of a folder or Collection row while it is hovered or selected. It is a 10px play icon in `done`, or in `dim` and inert when Runs are not possible. The row that is running shows a 12px turning ring in `working` instead. A running folder or Collection row shows "4/16" in 10.5px `muted` before the ring, and the Request running now shows the ring on its own row when it is visible.
-  - **Empty states** in 12px `dim`: "Reading Collections…", "No Bruno workspace at <path>. Set "workspace" or "collections" in <brunr.json path>." and "The workspace lists no Collections. Add one in Bruno, or list one under "collections" in <brunr.json path>."
-- **Footer**, with a top border, 12px by 9px padding, a 5px gap and 11.5px text:
-  - During a folder or Collection Run, first an 11px turning ring in `working` and "Running: Slow 05" in `muted`, when the running Request is known.
-  - Nothing selected, or a Machine heading: "Click selects. Double-click or Enter runs a Request." in `dim`.
-  - A Request: its method badge (40px) and its URL in the terminal font at 11px.
-  - A folder: "4 Requests. r or the play button runs them." in `dim`.
-  - A Collection: "4 Requests on this computer." in `dim`, in `blocked` the reason the folder cannot be read, and the first five unreadable files as `path: message`.
-  - Any row of a Collection ends with "Environment:" and the name, and for an Environment with secrets an `ansi3` line "Secret variables are empty in CLI Runs: apiKey. Move them to .env."
+The dialog fills the window as a 1120px wide box, 85% of the window high and centred, or the whole window in full screen or as a tab. A press beside the box closes it. Its frame has 22px padding, a 16px radius, a 1px `border`, a `popover` fill, 14px between sections and 13px text. Top to bottom:
 
-The Response pane is a pane in the tab, on `background` with 12.5px text.
+- **Title row**: "Brunr" in 16px semibold, then "4 Collections · 33 Requests" in 11px `dim`, a 13px turning ring in `working` while Collections load, a Run runs or a tree action runs, then 26px bordered buttons on `raised` with an 8px radius: "Run", "Run folder" or "Run Collection" with a 10px play icon in `done` (only when a Run can start), reload, full screen (dialog only) and the settings gear, then "Esc" in 11px `dim`.
+- **Columns**, 14px apart:
+  - **Tree**, 340px wide (400px in full screen). Notices first, each on `raised` with an 8px radius and 12px text: a config problem in `blocked` with a 13px warning icon, or "No Bruno CLI on this computer. Runs are off." in `ansi3` semibold with the install step in `muted`, the command in the terminal font and a "Copy" button. Then the rows, which scroll: 32px high, an 8px radius, 13.5px text, 8px left padding plus 14px per level. The selected row is on `selected`, or on `hover` while the keyboard is elsewhere. A Machine heading is a section label. A Global environment row has a 13px globe icon and its name in `muted` and an Environment chip. A Collection row has a 16px fold arrow in `dim`, the name in medium weight, a ring while it loads, a `blocked` warning icon when it cannot be read, the count of unreadable files in `blocked`, and the Environment chip: 22px high, at most 130px wide, an 8px radius, a 1px `border`, the name in `foreground` or "No Environment" in `dim`, and an 11px `ansi3` warning icon first when the Environment has secret variables. A folder row has the arrow, a 13px folder icon in `muted`, the name and its Request count in 11px `dim`. A Request row has a 16px spacer, a 36px method badge in 10.5px semibold (GET `ansi2`, POST `ansi5`, PUT `ansi3`, PATCH `ansi6`, DELETE `ansi1` shown as "DEL", others `muted`, OPTIONS "OPT", GRAPHQL "GQL", CONNECT "CONN") and the name, then a 7px `ansi3` dot while it has a Draft. A Request file that does not parse shows a 12px `blocked` warning icon in the badge's place and its file name in `muted`. A running row has a 12px ring in `working`, and a running folder or Collection shows "2/5" before it. Under the rows, a box on `raised` with 12px text: the selected Request's badge and URL in the terminal font, a folder's or Collection's Request count, a broken file's parse message in `blocked`, the first five unreadable files, "Environment: local" and the secret warning in `ansi3`.
+  - **Request column**, on `background` with an 8px radius and a 1px `border`. A 44px bar: the method menu (28px, the method in its colour, a 10px chevron), the URL field (28px, the terminal font at 11.5px) and Run. A 34px line: the name in semibold, the path in `dim`, "Unsaved" in `ansi3` with a 7px dot, then Save and Discard (26px, an 8px radius, on `raised`). Notes on `raised` with a 12px warning icon. Then the tab strip, 26px tabs with an 8px radius, wrapping: Params, Body, Headers, Auth, Vars, Script, Assert, Tests, Docs, Settings and File, the shown one on `selected`, a count in 10px `accent` or a 6px `accent` dot when its section has content. Then the tab's fields or the File editor with YAML colours, and at the bottom the warnings with their line numbers. With no Request it says "Select a Request to see it here." in `dim`.
+  - **Response side**, the same box. "No Response yet. Select a Request and press enter to run it." in `dim`. A Run shows a 42px top line (the name in semibold at most 220px, a 44px badge, the URL in the terminal font at 11.5px `muted`, a 20px status chip on `raised` in `done`, `ansi3` or `blocked`, the time and size in `muted`), the view tabs and the view. A folder or Collection Run adds a 34px summary line ("8 Requests", "6 passed" in `done`, "2 failed" in `blocked`, "0 skipped" in `ansi3`, the time at the right), a 40px toolbar (a 26px "Search" field and the Result, Status, Method and Sort controls) and the Run list of 28px rows grouped under folder rows with `<passed>/<total>` in 10.5px. The list is 240px wide at the left when the Response side is 640px wide or more, else above the views.
+  - When the dialog is 1100px wide or more, the Request column and the Response side share the room right of the tree. Narrower, the Request column sits above the Response side and is 46px high while empty.
+- **Note line**, when there is one: 11px text in `dim`, or `blocked` for a failure.
+- **Legend**, after a 1px divider: each key in `accent` semibold and its meaning in `dim`, 11px, 12px apart, wrapping.
 
-- **Nothing yet**: "No Response here yet. Run a Request from the Brunr panel." in `dim`.
-- **Running**: the top line, then a 22px turning ring in `working` and "Running List Products against local…" in `muted`.
-- **Folder or Collection Run in progress**: a 30px line with a 12px turning ring in `working` and "4 of 16" in `muted`, then the list of finished Requests in the 28px row look below (✓ or ✗ from the HTTP status, method badge, name, status), and last the running Request with an 11px turning ring in place of the mark and its name in `muted`. The list is grouped by folder as in the result below. A folder's total is its planned number of Requests, and each folder holding the running Request has an 11px turning ring left of its count. Request rows cannot be selected. Folder rows fold. Beside or below the list, the 22px ring and "Running Slow lane against local…". When the Run ends, the result replaces it.
-- **Top line**, 40px, with a bottom border: the Request name in semibold (at most 220px), a 44px method badge, the URL in the terminal font at 11.5px in `muted`, then a 20px chip on `raised` with the status and its text ("404 Not Found", semibold, 11.5px, `done` for 2xx, `ansi3` for 3xx, `blocked` for anything else and "Error" when there was no response), then the time ("4 ms", "1.24 s") and size ("44 B", "1.2 KB") in `muted`.
-- **View tabs**, 32px: Response, "Headers 6", Timeline and "Tests 0/1". The current one has a 2px `accent` bottom border. Tests is `blocked` when any assertion or test failed.
-  - **Response**: a read-only editor at 12px in the terminal font with soft wrap. Syntax colours are `ansi5` keywords, `ansi2` strings, `dim` comments, `ansi4` functions, `ansi3` types, `ansi1` numbers and `ansi6` constants and booleans. JSON is pretty-printed. It says "No body" or the error text when there is none.
-  - **Headers**: rows with the name in `muted` in a 200px column and the value beside it.
-  - **Timeline**: the method and resolved URL, the request headers in `muted`, "Body" and the request body when there is one, then the status and time.
-  - **Tests**: a row per assertion or test with a ✓ in `done` or ✗ in `blocked`, its name in the terminal font, "assertion" or "test" in `dim`, and the error in `blocked`. "No assertions or tests." when there are none.
-- **Folder or Collection Run**: a 30px summary line first, "5 Requests", "3 passed" in `done`, "1 failed" in `blocked`, "1 skipped" in `ansi3` (a zero count is `dim`) and the total time on the right in `dim`. Then a list of 28px rows: a ✓ or ✗, a 34px method badge, the name, and the status colored as above, or "ERR" with no response. The list is 240px wide at the left with a 1px right border when the pane is at least 720px wide. Otherwise it sits on top, as high as its rows up to 180px. The first failed Request is selected, or the first when none failed. The top line and tabs show the selected one.
-- **Run list as a tree**: the list groups Requests under their folders. A 28px folder row comes before a folder's first Request: a 12px chevron in `dim` (down when unfolded, right when folded), a 13px folder icon in `muted`, the folder's name (its folder file's name, else the directory name) and at the right `<passed>/<total>` in 10.5px, `blocked` when any Request beneath it failed, else `done`. Each depth indents rows by 14px. The Run target gets no row, so a "Products" Run shows "top sellers" as a folder row and the Requests directly in Products at the top level. A Run with every Request directly in its target has no folder rows and looks like a flat list. Requests keep the Run order, and a folder whose Requests are not consecutive gets a new row each time it starts again.
-- **Run list toolbar**: for a Run with more than one Request, a 36px row with a bottom border between the summary line and the list, across the pane. Left to right: a 24px text field with the placeholder "Search" that takes the free width and shrinks first, then four 24px controls with a 1px `border` and 11.5px text that cycle on click. Each shows a fixed label in `muted`, then its current value: "Result" with "All", "Failed" or "Passed", then "Status" with "Any", "2xx", "3xx", "4xx", "5xx" or "Error", then "Method" with "Any" and the methods that occur in the Run (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS in that order, then any others alphabetically), then "Sort" with "Run order", "Slowest", "Fastest", "Status" or "Name". The defaults read "Result All", "Status Any", "Method Any" and "Sort Run order". A control away from its first value has its value and border in `accent`, and the field while it holds text has its text and border in `accent`. The label stays `muted`. While a filter is on, the summary line adds "showing 2 of 8" in `accent`. When nothing matches, the list shows "No Requests match." in `dim` and a "Clear filters" button in `accent`, and the views show "No Requests match.". While the Run is in progress the toolbar is drawn in `dim` and does nothing.
-- **Message**: when the CLI fails or sends nothing, the top line and a box on `surface` with a 1px `border`, a 6px radius and 12px margin, holding the message in the terminal font at 11.5px, line by line.
-- **File**: a 36px bar with "Read only" in 11px `dim` and the file's path, then the editor.
+Over the dialog, 60px from the top and 22px from the left, on `popover` with a 12px radius, a 1px `border` and a large shadow:
 
-Popups and dialogs:
+- **Picker**, 400px wide (460px with a detail): the title in semibold, an optional detail in 11px `muted`, then 32px rows (48px with a warning line) with a dot in `accent` on the current one, a hint at the right in 11px `dim`, an "Edit…" button (20px, a 1px `border`) on Environment rows, Collection names in bold and greyed-out rows in `dim`, then a divider and the legend "j/k move, enter choose, esc back". The row menu, the Environment and Global environment pickers, Move to… and every question are pickers.
+- **Forms**, 460px wide: New Request, New folder, Rename and Clone, with 32px fields under 11px `muted` labels, a message under each in 11px `blocked`, the method chips (24px, the method's colour, an `accent` border on the chosen one), Cancel and the action's button on `solid`, and the legend "tab next, enter create, esc back". The "run with values" form has the same look.
 
-- **Row menu**, 220px wide, 28px items with a hint on the right in 10.5px `dim` (Enter, o, r, e, b) and 1px separators. A disabled item is `dim`. Items: Run, Open file, "Run folder" or "Run Collection", Environment, "Global environment", "Open Bruno" (only on this computer), Copy URL, Copy path, Reload.
-- **Environment picker**, 300px wide: a 34px title "Environment of Shop" with "Esc" at the right, then 28px rows with a ✓ in `accent` on the current one. "No Environment" is `muted`. A row for an Environment with secrets is 44px high with an `ansi3` warning icon and the warning text under the name. A picker opened by a key is a dialog in the middle, and one opened by a click is a popup at the pointer.
-- **Global environment picker**, the same, titled "Global environment", with "No Global environment" first.
-- **Confirm dialog**, 440 by 170px, Herdr's own `confirm` mod: `Run 4 Requests in "Products" against local?` and "The Bruno CLI sends them one after another. Enter runs, Esc cancels." On another Machine the second line ends "on <machine>."
+An open editor replaces the three columns with one box on `background`: a 36px title line ("Environments · Shop" or ".env files · Shop" in 13px semibold, a 24px close button), a 200px list on `surface` at the left (New at the top, the selected item on `selected` with Clone, Rename and Delete under it, "Edit .env…" at the bottom), and the table at the right: a 26px header (Name, Value, "Show" or "Hide" with an eye), 30px rows with a 16px enabled box (an `accent` ✓), a 190px name field and a value field in the terminal font at 12px, masked as dots, a 24px eye and a 24px ×, and a 44px footer with the status, Discard and Save on `solid`. A secret row shows "Secret. Its value is kept by Bruno, not in this file." in `muted` and a "Move to .env" button. Questions are a 440px card on `surface` centred on `canvas`.
 
 ## How it behaves
 
 Brunr shows Run results, not agent statuses. It does not touch agents.
 
-- Collections start unfolded and folders folded. Folds are remembered.
-- Click selects a row. Double-click runs a Request, or folds a Collection or folder. The arrow folds. The chip opens the picker. Right-click opens the menu. Selecting a row never runs it.
-- A Collection on this computer is watched. A change reloads that Collection. A Collection on another Machine reloads every 30 seconds.
-- Run states: running (turning rings on the row and in the pane, other Run buttons inert with the tooltip "Another Run is in progress"), done with all Requests passing or not, and a message for a CLI failure or timeout ("The Run timed out.").
-- A folder or Collection Run shows progress while it runs: the count on the row and in the pane, the finished Requests as they finish with a mark from their HTTP status, and the running Request in the pane, on its tree row and in the footer. Assertion results appear only when the Run ends.
-- Clicking a folder row in the Response pane's list folds or unfolds it. Folders start unfolded. Folds last for one Run and reset when a new Run starts. When the Run ends, the folders holding the selected and the first failed Request unfold. The live list and the result use the same rows, so the list does not jump when the Run ends.
-- The toolbar filters a finished Run's list by text (every word in the name, path or URL, ignoring case), by result (pass and fail as the marks show them, never the HTTP status alone) by status class and by HTTP method, combined. It sorts by Run order, slowest or fastest response time, status number or name ignoring case, inside each folder, with folders in Run order, no-response Requests last and ties in Run order. A folder with nothing left is hidden, and folder counts always describe the whole Run. A hidden selection moves to the first Request shown. "Clear filters" resets the four filters and keeps the sort. The filters and sort stay for later Runs in the same pane and are never saved. When a new Run ends and the chosen method does not occur in it, the method filter goes back to "Any". The live list ignores them.
-- A Request Run starts at once. A folder or Collection Run asks first. A folder with no Requests shows the toast "Nothing to run".
-- The Response goes to the focused tab's Response pane. A tab without one gets a pane split to the right of the focused pane. With no focused pane, a new tab opens. The pane's content goes when the pane closes.
-- `ctrl-shift-u` is a toggle. It shows a hidden panel and gives it the keyboard. It hides a shown panel, handing the keyboard back when the panel held it and leaving it alone otherwise. Keys in the panel: `up`/`k`, `down`/`j`, `home`, `end`, `left`/`h`, `right`/`l`, `enter`, `r`, `e`, `o`, `b`, `esc`/`q`. A key with `ctrl`, `alt` or the platform key is ignored.
-- `o` shows the Request's file in the pane, read only. `b` and "Open Bruno" start Bruno desktop and show the toast "Bruno desktop was not found" when it is missing.
-- Copy URL and Copy path put text on the clipboard.
-- A chosen Environment of the Collection is used by every Run of it. A Global environment is added to Runs of the workspace's Collections.
+- `ctrl-shift-u` opens Brunr as a dialog or a tab, as the settings say, and pressed again closes the dialog or goes back from the tab.
+- Click selects a row and shows a Request in the Request column without sending it. Double-click runs a Request or folds a folder. The arrow folds. The chip opens the Environment picker. Right-click opens the row's menu. Selecting a folder keeps the last Request shown.
+- Keys on the tree: `j`/`k` and the arrows move, `h`/`l` fold, `enter` runs or folds, `r` runs, `p` runs with other values, `e` picks the Environment, `o` shows the File tab, `y` copies the URL, `b` opens Bruno desktop, `n` New Request, `shift-n` New folder, `shift-r` Rename, `m` Move to…, `ctrl-up`/`ctrl-down` Move up and down, `delete` Delete, `1`-`4` the views, `/` search, `f` full screen, `ctrl-s` save, `ctrl-r` reload, `?` the key list, `,` the settings, `esc` steps back then closes. `ctrl-h` and `ctrl-l` move the keyboard between the tree, the Request column and the Response side.
+- Typing in the Request column edits a Draft. The tree row gets its dot and the column "Unsaved". `ctrl-s` or Save writes it, asking first in a picker when the text has warnings or the file changed on disk. A Run of a Request with a Draft saves it first.
+- A Request Run starts at once. A folder or Collection Run asks `Run 4 Requests in "Products" against local?` first, and asks about Drafts in it. During the Run the tree row and the Response side show "4 of 16" and the running Request.
+- A tree action runs its file operation, reloads the tree and selects the result. A rename or move carries Drafts along and the Request column follows. A delete goes to the system trash after a confirmation, and a permanent delete needs a second one when the trash fails.
+- A drag over a folder's middle third or a Collection highlights the row with an `accent` border. Over a folder's top or bottom third or a Request's top or bottom half, a 2px `accent` line shows the place. The dragged row is at half opacity. A drop with no highlight does nothing. A drop onto a Collection of the other format says so under the columns.
+- An editor opens in place of the columns. `esc` cancels its question or closes it, asking "Discard unsaved changes?" when the table has edits. `ctrl-s` saves the editor's file and not a Request's Draft.
+- A Collection on this computer is watched and reloads when it changes. A Collection on another Machine reloads every 30 seconds and is read-only.
 
 ## Built from
 
-Layout block, added to the user's layout in the row that holds the tab block, on the right:
-
-```json
-{ "id": "brunr", "type": "block", "content": { "mod": "brunr" }, "size": { "px": 320 } }
-```
-
-One mod, `brunr`, in `mods/brunr/`. Its `mod.json` has `"place": "right"`, `"size": 320`, `"title": "Brunr"`, `"focusable": true` and an overlay `{ "kind": "popup", "at": "top", "offset": 0, "width": 1, "height": 1, "frame": "none" }`. Its palette entries are "Brunr: Toggle" (`layout.toggle` with `{ "id": "brunr" }`), "Brunr: Keys" (`mod.open` with `{ "name": "brunr" }`) and "Brunr: Reload" (`brunr.reload`).
-
-One entry, `main.js`, draws every part. The copy is chosen by `props()`:
-
-- `{ "view": "response", "tab": <tab> }`: the Response pane.
-- `{ "picker": {...} }` and `{ "menu": {...} }`: the popups over the panel.
-- `{ "overlay": <id> }` alone: the pass-through the key opens. It shows the panel if hidden, asks it to take the keyboard and closes at once.
-- No props: the panel.
-
-Modules: `main.js`, `panel.js`, `response.js`, `popup.js`, `tree.js`, `runtree.js`, `runfilter.js`, `store.js`, `sources.js`, `machine.js`, `plan.js`, `progress.js`, `report.js`, `parser.js`, `yaml.js`. Only `machine.js` calls `exec`, `readTextFile`, `watchFolder` and `fs`. `progress.js` imports nothing. `runtree.js` builds the Response pane's Run list rows and imports only `progress.js`. `runfilter.js` filters and sorts a finished Run's list and imports only `runtree.js`.
+One mod, `brunr`, in `mods/brunr/`. Its `mod.json`: `"place": "none"`, `"title": "Brunr"`, an overlay `{ "kind": "popup", "width": 1, "height": 1, "frame": "none" }` and the palette entries "Brunr: Open" (`mod.open` with `{ "name": "brunr" }`) and "Brunr: Reload" (`brunr.reload`). No layout block.
 
 Keys, in `keys.json`:
 
 ```json
-{ "global": { "ctrl-shift-u": "mod.open:brunr" }, "mod:brunr": { "ctrl-shift-u": "brunr.hide" } }
+{ "global": { "ctrl-shift-u": "mod.open:brunr" } }
 ```
+
+The copy is chosen by `props()`: the key opens a 1 by 1 popup copy that opens Brunr as a tab or as a dialog (`openOverlay` with `kind: "dialog"`, `width: 1`, `height: 1`, `frame: "none"`, `props: { dialog: true }`) and closes. Each dialog and tab is a new copy. Shared state is read through `brunr.saved.<name>` keys, so every copy sees the same settings, folds and Environment choices.
+
+Modules: `main.js` (the dialog, the tree, keys, Runs, the "run with values" form), `request.js` and the `form*.js` files (the Request column and form), `drafts.js`, `save.js`, `saveflow.js`, `lint.js`, `edit.js`, `urlsync.js`, `lines.js`, `yamlblock.js`, `yamlwrite.js` (Drafts and saving), `picker.js` (every menu and question), `treeactions.js`, `treeform.js`, `treeops.js`, `fileops.js`, `envops.js`, `collpaths.js`, `names.js`, `effects.js` (tree actions and file changes), `editors.js`, `envedit.js`, `envview.js`, `dotedit.js`, `dotview.js`, `editparts.js`, `envtable.js`, `envfile.js`, `dotenv.js` (the editors), `response.js`, `tree.js`, `runtree.js`, `runfilter.js`, `store.js`, `sources.js`, `machine.js`, `plan.js`, `progress.js`, `report.js`, `parser.js`, `yaml.js`, and `kit/` (frame, rows, controls, legend, settings panel, opening as a dialog or tab).
 
 Config, `brunr.json` in the app home: `{ "workspace": "<path of a workspace.yml>", "collections": [ { "machine": "<name, optional>", "path": "<Collection root or a folder of them>" } ] }`.
 
-Herdr calls: `appHome`, `home`, `checking`, `exec`, `readTextFile`, `watchFolder`, `window`, `props`, `layout`, `focused`, `panes`, `settings`, `theme`, `shared`, `setShared`, `notify`, `openOverlay`, `closeOverlay`, `nextCommand` and `run`. Commands run: `layout.show`, `layout.hide`, `pane.go` (`left` and `right`), `pane.split` (`direction: "right"`, `mod: "brunr"`, `props: { view: "response", tab }`) and `tab.new`. Commands it receives through `nextCommand`: `reload`, `focus`, `hide` and `runConfirmed`. The shipped `confirm` mod is opened as a dialog with `command: { name: "brunr.runConfirmed" }`. UI from `gpui-kit` and `gpui-base`: `View`, `div`, `svg`, `v_flex`, `h_flex`, `ScrollHandle`, `Editor`, `EditorState`, `Input` and `InputState`.
-
-State: `localStorage` keys `open`, `envs` and `globals`. Shared state keys `brunr.tick` (a counter) and `brunr.request` (the last popup choice for the panel). Runs live in a module-level map in memory. The Response pane's filters and sort live on that pane's copy.
+Herdr calls: `appHome`, `home`, `checking`, `exec`, `readTextFile`, `writeTextFile`, `watchFolder`, `window`, `props`, `layout`, `focused`, `panes`, `spaces`, `settings`, `theme`, `shared`, `setShared`, `openOverlay`, `closeOverlay`, `nextCommand` and `run`. UI from `gpui-kit` and `gpui-base`: `View`, `div`, `svg`, `v_flex`, `h_flex`, `ScrollHandle`, `Editor`, `EditorState`, `Input` and `InputState`, with `cx.bind_keys`, `key_context` and `on_action` for `esc` and the save key.
 
 Programs, all through `exec`:
 
-- `bru run ...` with its output going to a progress file, on the Collection's Machine. Not on Windows: `sh -c 'out=$1; shift; exec "$@" >"$out" 2>&1' sh <file> bru run ...`. On Windows: `node -e <fixed script> -- <file> run ...`, which reads the CLI script's path out of `bru.cmd` on the PATH, else in `%APPDATA%\npm`, and starts it with `node` and no shell. When it finds no script it exits 86 and Brunr starts `bru.cmd run ...` directly, without progress.
-- `bru --version` and `node --version`, on the Collection's Machine. On Windows, for this computer, the same `node -e` lookup starts the CLI's script with `--version`, and `bru.cmd --version` is the fallback.
-- Listing: `sh -c` on any Machine, `powershell -NoProfile -NonInteractive -Command` on Windows for this computer when `fs` is refused. Reading on another Machine: `sh -c` with `cat`. Reports on another Machine: `cat` and `rm`.
-- Open Bruno: `cmd /d /c start` with `Bruno.exe` from `<home>/AppData/Local/Programs/Bruno/` on Windows, `open /Applications/Bruno.app` on macOS and `bruno` found with `command -v bruno` on Linux.
+- `bru run ...` with its output going to a progress file, on the Collection's Machine. Not on Windows: `sh -c 'out=$1; shift; exec "$@" >"$out" 2>&1' sh <file> bru run ...`. On Windows: `node -e <fixed script> -- <file> run ...`, which reads the CLI script's path out of `bru.cmd` on the PATH, else in `%APPDATA%\npm`, and starts it with `node` and no shell.
+- `bru --version` and `node --version` on each Machine.
+- Listing: `sh -c` on any Machine, `powershell -NoProfile -NonInteractive -Command` on Windows when `fs` is refused. Reading on another Machine: `sh -c` with `cat`. Reports on another Machine: `cat` and `rm`.
+- File changes on this computer: `writeTextFile` with the expected text, and `node -e <fixed script>` for mkdir, move and the permanent delete. The trash: PowerShell's Recycle Bin call through `node` on Windows, `trash` on macOS and `gio trash` on Linux.
+- Open Bruno: `cmd /d /c start` with `Bruno.exe` on Windows, `open /Applications/Bruno.app` on macOS and `bruno` on Linux.
 
-Art: nine SVG icons on a 16 by 16 viewBox in `mods/brunr/icons/`: `chevron-down`, `chevron-right`, `collection`, `folder`, `globe`, `play`, `reload`, `spinner` and `warning`. They take `currentColor` from the text colour set where they are drawn.
+Art: fourteen SVG icons on a 16 by 16 viewBox in `mods/brunr/icons/`: `chevron-down`, `chevron-right`, `close`, `collection`, `expand`, `eye`, `eye-off`, `folder`, `globe`, `play`, `reload`, `shrink`, `spinner` and `warning`. They take `currentColor`.
 
 ## Watch out
 
-Facts of the Bruno CLI (4.2.1) that a fresh build gets wrong:
-
-- A failed assertion leaves the result's `status` as `"pass"`. Only `assertionResults[].status` and the summary's `failedRequests` show it. Compute pass or fail from the assertions and tests.
-- A network error has `status: "error"`, `response.status: "error"`, null `statusText`, `headers`, `data` and `url`, `responseTime: 0`, `size: 0` and an `error` string such as `connect ECONNREFUSED ...`. Treat the Request as having no response.
-- Every Run, even of one Request, lists each unreadable Collection file as a result with `status: "skipped"` and the parse error. Count these as skipped, not as Responses. When nothing else remains, show "The Bruno CLI ran no Request." and one `path: first line of the error` per file.
-- A result's `path` keeps the extension for YAML (`products/List Products.yml`) and drops it for bru.
-- `response.url` drops the port. Take the URL from `request.url`.
-- JSON bodies arrive already parsed as objects. HTML arrives as a string.
-- `request.headers` can hold `content-type: null` for a header that was not sent. Leave null headers out.
-- `runDuration` is in seconds.
-- A Request with no name runs as "Untitled Request" in YAML and with no name in bru. Name it after its file.
-- The CLI runs folders before root-level Requests, not in `seq` order. The tree orders by `seq`, then by name ignoring case, with Requests that have no `seq` last.
-- The CLI's order, read from 4.3.0's `createCollectionJsonFromPathname`: in each folder, subfolders first, then Requests, depth first. Subfolders are sorted by folder name with `localeCompare`, then each one with a positive integer `seq` is inserted at place `seq` (two with the same `seq` share the place). Requests are sorted by `seq` with a stable sort, a missing `seq` counting as 1, so ties keep the folder's listing order.
-- With stdout going to a file, the CLI writes one line as each Request finishes: `<path> (<status> <statusText>) - <n> ms`, or `<path> (<error>)` for a network error, or `<path> Skipped: (<reason>)`. The path has no extension in both formats. Colour codes appear only when colour is forced. Parse errors and their stacks come before the first Request.
-- On Windows, `bru.cmd` runs through `cmd.exe`, which reads `%`, `&` and quotes in arguments. The npm shim ends in `"%dp0%\node_modules\@usebruno\cli\bin\bru.js" %*`, so starting that script with `node` skips `cmd.exe`.
-- A request to `127.0.0.1:1` hung for about 100 seconds on WSL instead of being refused. Test a closed port with a port such as 47912.
-- A YAML file the CLI cannot parse aborts the whole Run, for example `description: Free text. It can contain colons: like this.` Its YAML library rejects an unquoted value with a colon and a space.
-- The CLI cannot read secrets stored in Bruno desktop, skips Requests with prompt variables, and does OAuth2 only for the `client_credentials` and `password` grants.
-- The default Environment of a YAML Collection is `extensions.bruno.presets.defaultEnvironment` in `opencollection.yml`.
-- The Environment name that `--env` takes is the file name without the extension, not the `name:` key inside the file.
-- The YAML item types `folder`, `script` and `app` are files in a Collection but not Requests.
-
 Facts of Herdr that a fresh build gets wrong:
 
-- `exec` finds a bare name only as an `.exe`, and on the Herdr version tested it could not start `bru.cmd` by name either ("program not found"). Start the CLI's script with `node` instead. The PATH that `exec` sees is the one Herdr was started with, which can lack the npm global folder, so also look in `%APPDATA%\npm`.
-- `fs` reads are refused outside the granted roots (the home folder). `readTextFile` reads anywhere. List a Collection with `fs` first and fall back to one `exec` listing.
-- Work a popup starts in the turn that closes it never runs, and its `cx.timer.after` never fires. A popup passes its choice through shared state (`brunr.request`) and the panel takes it the next time it draws.
-- Only Herdr moves the keyboard off a terminal, one `pane.go` at a time. The key's pass-through copy asks the panel to step right every 150ms, at most 8 times, until the panel's `focus` command arrives.
-- `"place": "right"` is not enough to place the panel. On the Herdr version tested, the shipped `main` layout did not dock it, and a personal layout docked it at the window root, full height, with a generated id. The layout block above is what places it, and it replaces a block Herdr added. The open and hide key finds the block by its mod, so it works with any id. The palette toggle uses the id `brunr`.
-- A hidden panel hears no commands, which is why the key opens through `mod.open`.
-- localStorage is kept by Herdr in store files under `data/brunr/`. The cleanup of `run-*.json` and `run-*.log` leaves that file alone.
+- A Herdr window (`kind: "window"`) sits under a dialog, so an editor opened as a window from the dialog is hidden. Draw it inside the dialog.
+- The app closes the top dialog on `esc` before the mod's key handler hears it. Put the dialog in a key context with `esc` bound to the mod's own action while a picker, form, editor, field or drag is open. The same `esc` can arrive twice, so ignore a second one within 300ms.
+- An Input or an Editor keeps `ctrl-h`, `ctrl-l` and its own keys. Bind the save key in a key context around the fields with `cx.bind_keys`, so `ctrl-s` reaches the dialog from any field.
+- Herdr's global keys reach Herdr first: `f2` renames a tab and `alt-up` and `alt-down` step through agents. Keys for a dialog must avoid them.
+- A `cx` kept from an earlier turn is no longer valid. A callback that runs later, such as a question's button, must use the `cx` of its own turn.
+- A drag that ends on another row fires no click on either row. A release outside the rows must end the drag, so the frame and the area around the dialog also listen for the button going up.
+- `exec` cannot start `bru.cmd` by name on Windows. Start the CLI's script with `node`. `fs` reads are refused outside the home folder, and `readTextFile` reads anywhere.
+
+Facts of the Bruno CLI (4.3.0):
+
+- A failed assertion leaves the result's `status` as `"pass"`. Compute pass or fail from the assertions and tests.
+- Every Run lists each unreadable Collection file as a skipped result with its parse error. Count these as skipped, not as Responses.
+- A YAML file the CLI cannot parse aborts the whole Run. Lint before a save and warn.
+- The CLI's order: in each folder, subfolders first by name then moved to their `seq`, then Requests by `seq`, a missing `seq` counting as 1.
+- `--env` takes the Environment's file name without the extension.
 
 Limits and assumptions:
 
-- At most 2000 files are read per Collection, and the walk goes 24 folders deep through `fs` or PowerShell. A body over 400000 characters is cut in the editor. Timeouts are 60 seconds for a Request, 10 minutes for a folder or Collection, and 20 seconds for each CLI check, listing and read.
-- One Run at a time across the mod. A Run cannot be cancelled. Dot files, dot folders and `node_modules` are never listed. `.env` is never opened.
-- The progress file is read every 500 ms with `cx.timer` while the Run is in progress, and the timer stops when the Run ends, times out or fails to start. The spinners are native `spin` animations.
-- The running Request is named only while the finished Requests match the expected order. Ties in `seq` are taken in file name order ignoring case.
-- A Global environment applies only to Collections listed in the workspace file, and needs both the name and the workspace folder to be passed.
-- A Collection is identified by its Machine and root path. The same folder on two Machines is two Collections.
-- Open Bruno cannot target a Request.
-- The report and progress files are the only things written, and both are deleted after each Run.
+- Editing works on this computer only, because the change-checked write exists only here.
+- `p` passes typed values as command-line arguments, which other programs can see during the Run.
+- Closing the dialog during a Run leaves its report file in `data/brunr/` until Brunr next opens. Closing it with a press beside it or the key drops an editor's unsaved edits without asking.
+- At most 2000 files per Collection. One Run at a time. A Run cannot be cancelled. Timeouts are 60 seconds for a Request and 10 minutes for a folder or Collection.
+- A masked value still shows its length. The Raw view shows values.
 
 ## Done when
 
 1. `herdr-app check` passes on the mod folder, and `sh brunr/tests/run.sh` passes.
-2. With a workspace that lists a Collection, the panel shows it as a tree with method badges, and a folder starts folded.
-3. Double-clicking a Request opens a Response pane to its right and shows a status, time, size and a pretty-printed JSON body. Headers, Timeline and Tests views switch.
-4. A Request whose assertion fails shows its status, "Tests 0/1" in `blocked` and the assertion's error under Tests.
-5. Running a folder asks `Run 4 Requests in "Products" against local?` first. After Enter the pane shows the summary line, a list with ✓ and ✗ marks and the first failure selected.
-6. The Environment chip opens a picker, remembers the choice after a reload, and shows the warning icon for an Environment with a secret variable.
-7. With a Global environment file next to `workspace.yml`, the Global environment row appears and a Run passes `--global-env` and `--workspace-path`.
-8. A `brunr.json` entry with a `machine` shows that Machine's Collections under a heading and runs `bru` there. The report file is gone afterwards.
-9. Adding a Request file to a Collection on this computer shows it in the tree without a reload.
-10. With `bru` off the PATH the tree still shows, Runs are inert, and a notice gives the install step with a working Copy button.
-11. `ctrl-shift-u` shows a hidden panel with an `accent` border, and the same key hides it. `j`, `k`, `enter`, `r`, `e`, `o` and `q` act as described.
-12. Closing the Response pane clears its Run. No `run-*.json` or `run-*.log` file stays in `data/brunr/`.
-13. A folder Run of slow Requests shows "1 of 16", then a higher count, with the running Request named in the pane, on its tree row and in the footer, then the normal result. On Windows this works for a Collection root with spaces and an Environment name with `%` and `&`.
-14. A Collection Run over nested folders lists its Requests under folder rows with `<passed>/<total>` counts, both while it runs (the running Request under its folder, a ring beside that folder's count) and in the result. Clicking a folder row folds it, and the next Run starts unfolded.
-15. After a Collection Run of the fixture, "Failed" lists only Missing Product and Closed Port under Products `3/4` and Orders `2/3`, "4xx" lists only Missing Product, "Slowest" puts the slowest Request first in each folder, and a text that matches nothing shows "No Requests match." with "Clear filters". "Failed" stays on through a second Run and the toolbar is disabled while it runs.
+2. With a workspace that lists a Collection, the dialog shows it as a tree with method badges, and a folder starts folded.
+3. A click on a Request shows it in the Request column with Bruno's tabs and sends nothing. Typing in the URL field marks the tree row and the column "Unsaved", and `ctrl-s` writes the file.
+4. Double-clicking a Request shows a status, time, size and a pretty-printed JSON body. Headers, Timeline and Tests switch.
+5. Running a folder asks `Run 4 Requests in "Products" against local?` first, then shows the summary line and the list with ✓ and ✗ marks.
+6. `n` on a folder opens New Request. A name with `?` gives a file name with `-`, and Create writes the file numbered last and shows it in the Request column.
+7. `shift-r` on a Request with a Draft renames its file, and the Draft and the Request column follow it.
+8. `m` lists the Collection's folders and the other Collections of the same format. Choosing one moves the file, and `bru run` still runs it there.
+9. Dragging a Request onto a folder's middle moves it in. Dragging it onto a Collection of the other format moves nothing and says why.
+10. `delete` asks, then puts the file in the system trash, and the Request column empties when it showed it.
+11. A Request file that does not parse shows a warning mark and opens on the File tab, and Run is off.
+12. "Edit…" in the Environment picker opens the Environment editor with every value masked. An edit, `ctrl-s` and `bru run` use the new value, and a Request's Draft stays unsaved.
+13. Move to .env on a secret writes `.env` and rewrites the variable as `{{process.env.NAME}}`.
+14. "Edit .env…" opens the `.env` table. A table save changes only the edited line and keeps comments. Raw shows the text.
+15. `esc` in an editor with unsaved edits asks "Discard unsaved changes?", and Discard closes it without writing.
+16. After all of the above, no typed value is in the app home's `shared.json` or anywhere else outside the Collection files.

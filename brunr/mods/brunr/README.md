@@ -1,6 +1,6 @@
 # Brunr
 
-A dialog for Herdr that lists Bruno Collections as a tree, runs their Requests with the Bruno CLI and shows each Response beside the tree. It opens over the window or as its own tab. It reads and runs. It never edits a Collection.
+A dialog for Herdr that lists Bruno Collections as a tree, shows the selected Request beside it to edit, runs Requests with the Bruno CLI and shows each Response. It opens over the window or as its own tab. On this computer it also creates, renames, moves and deletes Requests and folders, and edits Environments and `.env` files.
 
 This file is the reference. What the mod offers and how to install it is in the page one folder up.
 
@@ -40,13 +40,13 @@ The tree stays current in two ways:
 
 The reload button, `ctrl-r`, the palette entry "Brunr: Reload" and the `brunr.reload` command read `brunr.json`, the workspace, every Collection and the CLI check again.
 
-Brunr reads only the files it needs from a Collection: the config file, and the Request, folder and Environment files of the Collection's format (`.yml` or `.bru`). Dot files, dot folders and `node_modules` are never listed or read, so `.env` is never opened. It reads at most 2000 files per Collection.
+Brunr reads only the files it needs from a Collection: the config file, and the Request, folder and Environment files of the Collection's format (`.yml` or `.bru`). Dot files, dot folders and `node_modules` are never listed or read when the tree loads, so loading never opens `.env`. Only the `.env` editor reads it (see The .env editor). It reads at most 2000 files per Collection.
 
 ## Environments and secrets
 
 An Environment is a file in the Collection. Its name is the file name without the extension, which is what `--env` takes.
 
-- The Environment chip on a Collection row and the `e` key pick the Environment of that Collection. "No Environment" is a choice.
+- The Environment chip on a Collection row and the `e` key pick the Environment of that Collection. "No Environment" is a choice. On this computer the picker also has "Edit…" beside each Environment and "Manage Environments…" at the bottom, which open the Environment editor.
 - Until a choice is made, or when the chosen Environment no longer exists, the Collection's default Environment is used.
 - The choice is remembered per Collection.
 
@@ -57,7 +57,7 @@ Secrets:
 - The CLI cannot read secrets stored in Bruno desktop.
 - Change a secret variable to a normal variable whose value is `{{process.env.NAME}}`, and put the value in the Collection's `.env`. Bruno desktop reads that too.
 - Brunr warns on an Environment that still has secret variables. The warning shows on the chip, in the picker and in the details under the tree, and names the variables.
-- Brunr reads only variable names from Environments. It never reads a `.env` file. The CLI reads it during a Run.
+- The tree and the picker read only variable names. A value is read only when the Environment editor or the `.env` editor opens. The CLI reads `.env` during a Run.
 
 ## Runs
 
@@ -83,7 +83,7 @@ Rules:
 - A Request Run times out after 60 seconds, and a folder or Collection Run after 10 minutes. A timed-out Run shows "The Run timed out."
 - One Run goes at a time across the whole mod. The Run button hides while a Run is in progress, and a Run key says "A Run is in progress".
 - A Run cannot be cancelled. Closing the dialog during a Run ends its result with "Brunr was closed before the Run finished."
-- A Request Run starts at once. A folder or Collection Run first asks `Run 4 Requests in "Products" against local?` in a picker over the dialog, with "Run 4 Requests" and "Cancel". Enter picks and Esc cancels. A folder with no Requests says so and runs nothing.
+- A Request Run starts at once. A Request with a Draft is saved first (see The Request column). A folder or Collection Run first asks `Run 4 Requests in "Products" against local?` in a picker over the dialog, with "Run 4 Requests" and "Cancel". Enter picks and Esc cancels. A folder with no Requests says so and runs nothing.
 - `p` runs the selected Request with other values for the `{{variables}}` in its URL. A form has one box per variable, each marked "from the Environment", "secret in the Environment" or "not in the Environment". An empty box keeps the Environment's value. Each filled box is passed as `--env-var NAME=VALUE` for that Run only. The boxes remember what was typed until the dialog closes. Nothing is saved, and Environment values are never read.
 - Runs are off for a Machine where `bru` does not start. At start and on reload Brunr runs `bru --version` and `node --version` on each Machine, with a 20 second timeout. A notice then gives the step: install Node.js first when it is missing, else `npm i -g @usebruno/cli`. It has a Copy button.
 - Each Run writes the CLI's JSON report and a progress file, and deletes both after reading them. On this computer they are `data/brunr/run-*.json` and `run-*.log` in the app home. On another Machine they are `/tmp/brunr-*.json` and `/tmp/brunr-*.log`.
@@ -95,7 +95,7 @@ Progress during a folder or Collection Run:
 - Brunr works out the order the CLI sends the Requests in, so it can name the Request that runs next. In each folder the CLI sends the subfolders first, sorted by name and then moved to their `seq` place, then the Requests by `seq`, a missing `seq` counting as 1. When the finished Requests do not match that order, the running Request is not named and only the counts and the finished list show.
 - A finished Request's live mark comes from its HTTP status only: ✓ for 2xx and 3xx, ✗ otherwise. Assertions and tests are not shown live. The final result replaces the live list, so a Request can change from ✗ to ✓ or back.
 
-A Run's output shows on the Response side of the dialog, right of the tree. The last Run is kept in memory, so closing and opening Brunr shows it again.
+A Run's output shows on the Response side of the dialog. The last Run is kept in memory, so closing and opening Brunr shows it again.
 
 ## The Response side
 
@@ -150,118 +150,17 @@ How the toolbar works:
 - The filters and sort stay as they are for later Runs until the dialog closes, so `Failed` stays on while a folder runs again. The one exception is the method: when a new Run ends and the chosen method does not occur in it, the method goes back to `Any`.
 - While a Run is in progress the toolbar is disabled and the live list shows every Request in Run order, since pass and fail are not known yet.
 
-When the CLI sends no Request, or fails before it starts, the Response side shows its message in a box. Open file shows a Request's file there, read only.
+When the CLI sends no Request, or fails before it starts, the Response side shows its message in a box.
 
 Everything on the Response side is held in memory. It is never written to disk.
 
-## Keys
+## The Request column
 
-`ctrl-shift-u` (in `keys.json`, `mod.open:brunr`) opens Brunr as a dialog or a tab, as the settings say. Pressed again, it closes the dialog, or goes back to the tab you came from. The palette entry "Brunr: Open" does the same.
+The dialog has three columns: the tree, the Request column and the Response side. When the dialog is 1100px wide or more they sit side by side, and the Request column and the Response side share the room right of the tree. In a narrower dialog or tab the Request column sits above the Response side, and it is 46px high while it shows nothing.
 
-In the dialog, the keyboard is on the tree or on the Response. `ctrl-h` puts it on the tree and `ctrl-l` on the Response. The selected tree row is dimmer while the Response has it.
+A click on a Request row, `j` or `k` onto one, and `o` show the Request in the Request column. Nothing is sent. `o` and the row menu's Open file show it on its File tab. Selecting a folder, a Collection or the Global environment row keeps the last Request shown, as Bruno keeps a Request's tab open. Double-click and `enter` on the tree still run the Request.
 
-| Key | Action |
-|---|---|
-| `up` / `k`, `down` / `j` | previous / next row in the tree, or previous / next Request of a Run on the Response side |
-| `home` / `end` | first / last row |
-| `left` / `h` | fold the Collection or folder, else go to the parent row |
-| `right` / `l` | unfold, else go to the first child |
-| `enter` | run a Request, fold or unfold a Collection or folder, pick on the Global environment row |
-| `r` | run the Request, folder or Collection |
-| `p` | run the Request with other values for its URL's `{{variables}}` |
-| `e` | pick the Environment (or the Global environment on its row) |
-| `o` | open the Request's file on the Response side |
-| `y` | copy the Request's URL |
-| `b` | open Bruno desktop (Collections on this computer only) |
-| `1` to `4` | Response, Headers, Timeline or Tests view |
-| `/` | search a Run's Requests |
-| `f` | fill the window, or leave full screen (dialog only) |
-| `ctrl-r` | read everything again |
-| `?` | show or hide the key list |
-| `,` | open the settings |
-| `ctrl-x` | close the tab (tab only) |
-| `esc` | close a picker, the form, the settings or the Search box, else close the dialog |
-
-`r`, `p`, `e`, `o`, `y`, `b`, `f` and `ctrl-r` can be switched off or moved to another key in the settings. The other keys always work. Each key is also a command: `herdr-app do brunr.<command>`.
-
-In a picker: `up` / `k` / `ctrl-k`, `down` / `j` / `ctrl-j`, `enter` or `space`, and `esc`. In the "run with values" form: `tab` / `down` and `shift-tab` / `up` move between boxes, `enter` runs and `esc` closes.
-
-Mouse:
-
-- Click selects a row. Double-click runs a Request or folds a Collection or folder.
-- The arrow folds. The Run button at the top runs the selected row.
-- The Environment chip opens the picker.
-- Right-click opens the row's menu over the dialog, each item with its key: Run, Run folder or Run Collection (when a Run can start), Open file, Environment, Global environment, Open Bruno (this computer only), Copy URL, Copy path and Reload. Copy path copies the Collection root, or the file or folder inside it, as a path on its Machine. The menu takes the picker keys.
-- The title row also has reload, full screen (dialog only) and the settings gear.
-
-Command palette entries: "Brunr: Open" and "Brunr: Reload".
-
-## Settings
-
-The gear or `,` opens them:
-
-- Open as a tab instead of a dialog. Switching it moves Brunr at once.
-- Open the dialog in full screen.
-- Show key hints. Off hides the key list under the dialog. `?` shows it again.
-- A switch per shortcut key, and the key it is on.
-
-## State
-
-- Shared state holds the settings and what used to be in localStorage: which Collections and folders are unfolded, the Environment chosen per Collection (keyed by Machine and root) and the Global environment chosen per workspace file. Every copy of the mod reads the same values, since each dialog and each tab is a new copy. The keys are `brunr.saved.<name>`, `brunr.open-as`, `brunr.back` (the tab to go back to) and `brunr.dialog` (the open dialog).
-- Collections start unfolded and folders folded until you change them.
-- Folds in the Response side's list are held in memory for one Run.
-- The filters and sort are held in memory until the dialog closes. They are never written to disk or shared state.
-- The last Run is held in memory, in module code, so it outlives the dialog.
-- Runs and Responses are never written to disk. The report and progress files are the only exception, and they live for the length of one Run.
-
-## Limits
-
-- Requests with prompt variables are skipped by the CLI.
-- OAuth2 works only for the `client_credentials` and `password` grants.
-- A YAML file the CLI cannot parse aborts the whole Run, for example an unquoted value containing a colon followed by a space. Brunr's own reader is more forgiving, so the tree can show a Request the CLI will not run.
-- A file Brunr cannot read adds to a count on the Collection row, and the details under the tree name the first five.
-- There is no cancel for a Run.
-- Run progress shows HTTP statuses only. Assertion and test results appear when the Run ends.
-- The running Request is named only while the CLI sends Requests in the order Brunr expects. Requests with the same `seq` keep the folder's listing order, which Brunr takes as the file name ignoring case, as Windows lists files. Another Machine may list them in another order.
-- On Windows, a timed-out Run may leave the CLI running until it ends by itself, since Brunr ends the `node` that started it.
-- Secrets stored in Bruno desktop are empty in a CLI Run (see Environments and secrets).
-- On Windows Brunr finds `bru.cmd` on the PATH Herdr was started with, or in `%APPDATA%\npm`. Herdr cannot start a `.cmd` file by name, so the CLI check and each Run start the CLI's script with `node`, and `node` must be on that PATH. A `bru.cmd` installed elsewhere and missing from that PATH shows the missing CLI notice.
-- Bruno desktop cannot be told to open a specific Request, so "Open Bruno" only starts the app. Brunr looks for it at `<home>/AppData/Local/Programs/Bruno/Bruno.exe` on Windows, `/Applications/Bruno.app` on macOS and `bruno` on the PATH elsewhere.
-- Collections on another Machine are listed and read with `sh` and `cat`, so that Machine needs both.
-- A Global environment applies only to Collections listed in the workspace file.
-- Paths are used as the Machine gives them. A Collection on WSL is not the same Collection as the same folder seen from Windows.
-
-## How it works
-
-The key opens a tiny overlay copy of the mod that opens Brunr as a dialog or a tab, as the settings say, and closes at once. Each dialog and each tab is a new copy of the mod.
-
-- `main.js`: the entry. Draws the dialog and the tree, loads and watches Collections, handles keys, clicks and Runs, and holds the pickers and the "run with values" form.
-- `response.js`: draws the Response side.
-- `tree.js`: the rows, the key map, the URL variables and the confirmation and secret texts. No Herdr calls.
-- `runtree.js`: the Run list as rows of folders and Requests, with counts and folds, for the live list and the result alike. No Herdr calls.
-- `runfilter.js`: the filters and sort. Takes a finished Run's Responses and gives the Requests to list, in order, with the whole Run's folder counts. No Herdr calls.
-- `store.js`: saved state and the in-memory Run store.
-- `sources.js`: reads `brunr.json` and the workspace and finds Collection roots. Loads one Collection.
-- `machine.js`: every `exec`, `readTextFile`, `watchFolder` and `fs` call. Lists and reads files, checks the CLI, runs `bru` with its output going to the progress file, reads that file on a `cx.timer` while the Run is in progress, reads and deletes reports and progress files and starts Bruno desktop.
-- `plan.js`: turns a target, the chosen Environments and any "run with values" values into the `bru run` arguments, and lists the Requests a Run sends in the CLI's order. No Herdr calls.
-- `progress.js`: turns the progress file's text into the finished Requests and the running one. No imports.
-- `report.js`: turns the CLI's JSON report, exit code and output into Responses. No Herdr calls.
-- `parser.js` and `yaml.js`: read Collection files in both formats and a small YAML subset.
-- `kit/`: shared UI pieces: the frame, list rows, controls, the key legend, the settings panel and opening as a dialog or a tab.
-- `icons/`: the SVG icons.
-
-Tests are in `brunr/tests/` in the repo and run with `sh brunr/tests/run.sh`.
-
-
-## Editing (being ported)
-
-## Editing a Request
-
-The pane beside your terminal has a Request side and a Response side. In a pane 900px wide or more the Request side is on the left and the Response side on the right, each half of the width. In a narrower pane the Request side is on top.
-
-A click on a Request row shows the Request on the Request side when the focused tab has a Brunr pane. A click never opens a pane and never sends anything. `o` and the row menu's Open show the Request in the pane, and open the pane when the tab has none. Double-click and `enter` still run the Request.
-
-The Request side, top to bottom:
+The Request column, top to bottom:
 
 - A bar with the method menu (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS), the URL field and Run.
 - A line with the Request's name, its path in the Collection, an `Unsaved` mark while it has a Draft, Save and Discard.
@@ -269,36 +168,39 @@ The Request side, top to bottom:
 - Bruno's tabs and the shown tab's content (see The Request form). A Request that does not get the tabs shows its file as text instead, under the line "The form is available for HTTP Requests in YAML Collections."
 - The warnings for the text, each with its line. A click on one opens the File tab and moves the cursor to that line.
 
+The keyboard is on the tree, the Request column or the Response side. `ctrl-h` and `ctrl-l` move it left and right, and skip the Request column while it shows nothing. There, `enter` puts the keyboard in the URL field. A field keeps `ctrl-h` and `ctrl-l` for itself, so from a field press `esc` first: it goes back to the tree, and then `ctrl-h` and `ctrl-l` move. Keys typed in a field never run a tree key. `esc`, the save key, `ctrl-h` and `ctrl-l` still reach the dialog.
+
 The bar and the text:
 
 - The method menu changes the method line and nothing else. It is greyed out when the file has no method line.
-- The URL field changes the `url` line, and the params follow it (see Params). It is greyed out when the file has no `url` line.
+- The URL field changes the `url` line, and the params follow it (see The Request form). It is greyed out when the file has no `url` line.
 - A change to the method or `url` line, in File or by a tab, shows in the bar.
 - A Request whose text does not parse cannot run, so Run is off until it parses.
 
 A Draft is a Request's unsaved edits:
 
-- A Request with a Draft has a dot on its tree row and `Unsaved` in the pane.
-- Drafts are held in memory. They survive switching to another Request and closing the pane. They are lost when Herdr quits or the mod reloads.
+- A Request with a Draft has a dot on its tree row and `Unsaved` in the column.
+- Drafts are held in memory. They survive switching to another Request and closing the dialog. They are lost when Herdr quits or the mod reloads.
 - Discard goes back to the file on disk, read again.
 
-Save (`ctrl-s` while the pane holds the keyboard, or the Save button):
+Save (`ctrl-s` from the tree, the column or any of its fields, or the Save button):
 
-- Text with warnings asks first: `Save "List Products" with a warning?` (or `with 2 warnings?`), each warning with its line, then Cancel and Save anyway. Cancel keeps the Draft.
+- Text with warnings asks first in a picker: `Save "List Products" with a warning?` (or `with 2 warnings?`), each warning with its line, then Cancel and Save anyway. Cancel keeps the Draft.
 - The warnings are: text that does not read as a Request, a YAML file whose `info.type` is folder, script or app, a tab in YAML indentation, a key twice in one YAML map, and a plain YAML value that starts with `{{`, `@`, a backtick, `*`, `&` or `!`, or that holds a colon followed by a space. The CLI rejects or misreads these.
-- When the text does not read as a Request at all, the dialog adds "Brunr will list it as a broken file and leave it out of Runs."
-- A save writes the file only when it is still the text the Draft started from. When it changed on disk, the dialog `"List Products" changed on disk` offers Reload from disk (drops your edits) or Overwrite.
+- When the text does not read as a Request at all, the question adds "Brunr will list it as a broken file and leave it out of Runs."
+- A save writes the file only when it is still the text the Draft started from. When it changed on disk, the question `"List Products" changed on disk` offers Reload from disk (drops your edits) or Overwrite.
+- Closing the dialog during a save finishes the file being written. A save that waits on a question stops there, and its Draft stays.
 
 When the shown file changes on disk:
 
-- With no Draft, the Request side shows the new text.
+- With no Draft, the Request column shows the new text.
 - With a Draft, a line says "The file changed on disk." with Reload (drops the Draft) and Keep mine. Keep mine keeps the Draft, and the next save still asks Reload from disk or Overwrite.
 
 Runs with Drafts:
 
-- Run (the button, double-click, `enter`, `r`) on a Request with a Draft saves it first by the same path, warning and conflict dialogs included. When the save is cancelled or refused, nothing runs. The pane's Run button works while the panel is hidden.
+- Run (the column's button, the title row's Run, double-click, `enter`, `r`, `p`) on a Request with a Draft saves it first by the same path, questions included. When the save is cancelled or refused, nothing runs.
 - A folder or Collection Run saves nothing by itself. When Requests in it have Drafts it asks `2 Requests have unsaved changes.` with Cancel, Run without saving and Save and run. Save and run stops at the first Request that does not save, names it and does not run.
-- A toast names a Request and never shows its text.
+- The line under the columns names a Request and never shows its text.
 
 A Request on another Machine opens read-only with the note "Editing works on this computer only." Run still works there. Its tabs show and change nothing: menus and buttons are greyed out, editors are read-only, and text typed into a field goes back to what the file holds.
 
@@ -329,8 +231,8 @@ The tabs, in order, and what each edits:
 | File | the whole file | the text, with syntax colours for YAML | none |
 
 - A badge count of 0 shows nothing. A section the form cannot read shows a dot.
-- The pane opens on the tab used last, and on Params the first time. Only the tab's name is remembered.
-- The strip wraps onto more lines when the pane is narrow, so every tab stays reachable.
+- The column opens on the tab used last, and on Params the first time. Only the tab's name is remembered.
+- The strip wraps onto more lines when the column is narrow, so every tab stays reachable.
 - Every row table has an enabled checkbox, its fields and an × that removes the row. Typing in the empty last row adds a row. A row whose fields are all emptied is removed, because empty rows are not written.
 
 One Draft, two views:
@@ -391,7 +293,7 @@ Vars, Script, Assert, Tests, Docs, Settings:
 - **Settings.** URL Encoding, Automatically Follow Redirects and Forward Authorization on Redirect are toggles. Timeout (ms) takes a whole number or `inherit`, and Max Redirects takes a whole number. A text that is not valid shows in red with "Use a number of milliseconds, or inherit." or "Use a whole number, 0 or more." and is not written.
 - A Request with no settings block shows Bruno's defaults: URL Encoding off, Timeout `inherit`, Follow Redirects on, Max Redirects 5, Forward Authorization on. The first change writes all five keys. A settings block that lacks a key shows the value Bruno's reader gives it, which is on for URL Encoding and 0 for Timeout.
 
-Where Brunr's pane differs from Bruno's:
+Where Brunr's form differs from Bruno's:
 
 - The tab strip wraps. Bruno moves tabs that do not fit into a menu.
 - The body mode menu is at the top of the Body tab. Bruno puts it at the right of the tab bar.
@@ -404,32 +306,34 @@ Where Brunr's pane differs from Bruno's:
 
 ## Tree actions
 
-The edit actions work on Collections on this computer. A row of another Machine has no edit entries and no edit keys. The keys act on the selected row while the panel holds the keyboard, and the row menu lists each action with its key.
+The edit actions work on Collections on this computer. A row of another Machine has no edit entries and no edit keys. The keys act on the selected row while the tree has the keyboard, and the row menu (right-click) lists each action with its key. Each key can be switched off or moved in the settings.
 
 | Action | Key | Rows |
 |---|---|---|
 | New Request | `n` | Collection, folder, Request |
 | New folder | `shift-n` | Collection, folder, Request |
 | Clone | menu only | Request |
-| Rename | `f2` | folder, Request |
+| Rename | `shift-r` | folder, Request |
 | Delete | `delete` | folder, Request |
 | Move to… | `m` | folder, Request |
-| Move up, Move down | `alt-up`, `alt-down` | folder, Request |
+| Move up, Move down | `ctrl-up`, `ctrl-down` | folder, Request |
 
-Each action:
+A Collection row's menu also has "Environments…" and "Edit .env…" (see The Environment editor and The .env editor). The menu leaves out Move up or Move down when the item cannot move that way.
 
-- **New Request** opens the dialog "New Request" with Name, File name, Method (the seven of the method menu) and URL, and the button Create. The Request goes in the selected folder, the selected Request's folder or the Collection root. The file name follows the name until you edit it. The Request is numbered last, selected and shown in the pane, which opens when the tab has none. The query params and `:name` path params of the URL are written into the file.
-- **New folder** opens "New folder" with Name and Directory name. It creates the directory and a folder file holding the name, the number and the auth mode `inherit`.
+New Request, New folder, Rename and Clone open a form over the dialog, in the look of the "run with values" form: the fields, a message under each, Cancel and the action's button, and the keys `tab` (next field), `enter` (the action) and `esc` (back). Keys typed while the form is open never run a tree key.
+
+- **New Request** has Name, File name, Method (the seven of the method menu, one click each) and URL, and the button Create. The Request goes in the selected folder, the selected Request's folder or the Collection root. The file name follows the name until you edit it. The Request is numbered last, selected and shown in the Request column. The query params and `:name` path params of the URL are written into the file.
+- **New folder** has Name and Directory name. It creates the directory and a folder file holding the name, the number and the auth mode `inherit`.
 - **Clone** opens `Clone "<name>"` with the name `<name> copy`, then `<name> copy 2` and so on, after an existing copy suffix is removed. Its number is the count of Requests in the folder plus one.
 - **Rename** opens `Rename "<name>"`. The name inside the file always changes. The file or directory name changes only when you edit its field. A folder with no folder file gets one.
-- **Delete** asks `Delete "<name>"?` or `Delete folder "<name>"?`. The detail says "It goes to the trash." or "The folder and the 3 Requests in it go to the trash.", and adds "It has unsaved changes." when it or a Request in it has a Draft. The buttons are Cancel and Move to trash. The remaining items in the folder are renumbered.
-- **Move to…** opens a picker `Move "<name>" to` with the Collection and its folders, indented, then the Collection root and folders of the other Collections of the same format on this computer. The item's own folder is greyed out, and a folder's own subfolders are not listed.
-- **Move up** and **Move down** move a Request among Requests and a folder among folders, as the panel shows them.
+- **Delete** asks in a picker `Delete "<name>"?` or `Delete folder "<name>"?`. The detail says "It goes to the trash." or "The folder and the 3 Requests in it go to the trash.", and adds "It has unsaved changes." when it or a Request in it has a Draft. The choices are Cancel and Move to trash. The remaining items in the folder are renumbered.
+- **Move to…** opens a picker `Move "<name>" to` with the Collection and its folders, indented, then the Collection root and folders of the other Collections of the same format on this computer. Collection names are bold. The item's own folder is greyed out and skipped by `j` and `k`, and a folder's own subfolders are not listed.
+- **Move up** and **Move down** move a Request among Requests and a folder among folders, as the tree shows them.
 
 The trash and permanent delete:
 
 - The trash is the Recycle Bin on Windows, Trash on macOS and `gio trash` on Linux.
-- When the trash fails or does not exist, a second dialog `"<name>" cannot go to the trash` gives the reason, says it cannot be undone and offers Delete permanently. Nothing is deleted permanently without that second confirmation, and never outside the Collection.
+- When the trash fails or does not exist, a second question `"<name>" cannot go to the trash` gives the reason, says it cannot be undone and offers Delete permanently. Nothing is deleted permanently without that second answer, and never outside the Collection.
 
 Bruno's naming and numbering rules, which Brunr follows:
 
@@ -438,17 +342,17 @@ Bruno's naming and numbering rules, which Brunr follows:
 - A taken file or directory name gets ` 1`, ` 2` and so on, compared ignoring case.
 - The items of a folder are numbered 1 to n in one list of folders and Requests. A Request with no number counts as 1. A change writes only the files whose number changed.
 - A new Request or folder is numbered one more than the count of folders and Requests in its parent, and a clone one more than the count of Requests in its folder.
-- The panel orders each folder as Bruno's sidebar does: folders first, then Requests. Folders sort by name and then move to their number. Requests sort by number, and ties sort by name ignoring case.
+- The tree orders each folder as Bruno's sidebar does: folders first, then Requests. Folders sort by name and then move to their number. Requests sort by number, and ties sort by name ignoring case.
 
 Moves:
 
 - A move goes to a folder or the root of the same Collection, or to a Collection of the same format on this computer. The item keeps its file name unless the target has it, and then the clash rule applies.
 - The source folder's remaining items are renumbered. The target's items are renumbered only for a drop between rows. A move onto a folder or Collection keeps the item's number.
-- A move between Collections of different formats is refused. A drop onto such a Collection shows the toast "Not moved: another format" with both formats named, and Move to… lists only Collections of the same format.
+- A move between Collections of different formats is refused. A drop onto such a Collection says "Not moved: another format." under the columns, with both formats named, and Move to… lists only Collections of the same format.
 
 Drag and drop:
 
-- Drag a Request or folder by its row. The dragged row dims.
+- Drag a Request or folder by its row. The dragged row dims. A drag never selects or runs a row.
 - A drop on the middle third of a folder row, or on a Collection row, moves the item in. The row is highlighted with a border in the accent colour.
 - A drop on the top or bottom third of a folder row, or the top or bottom half of a Request row, places the item there in that row's folder. A line in the accent colour shows where.
 - A row with no highlight or line takes no drop: a folder onto itself or its own subfolders, an item onto the folder it is already in, a drop that changes nothing, and a row of another Machine.
@@ -456,27 +360,26 @@ Drag and drop:
 
 Running an action:
 
-- While one runs, the panel header shows a spinner and the edit actions are off. Afterwards the tree reloads, the new or moved item is selected and its folders unfold.
-- A failed action names the step that failed, for example "Step 2 of 3 (writing folder.yml) failed: ...", and says how many earlier steps already ran. The tree reloads either way.
-- A rename or move carries the Draft to the new path, with the new name or number made in the Draft too, and a pane that shows the Request follows it. A delete drops the Drafts under it, and a pane that shows it empties.
-- An open dialog does not survive a mod reload. It then says "Brunr was reloaded. Close this dialog and open it again."
+- While one runs, the title row shows a spinner and another edit action says "Another change is still running." Afterwards the tree reloads, the new or moved item is selected and its folders unfold. A Request that ends up selected shows in the Request column.
+- A failed action names the step that failed under the columns, for example "Step 2 of 3 (writing folder.yml) failed: ...", and says how many earlier steps already ran. The tree reloads either way. A form's own error shows in the form, which stays open.
+- A rename or move carries the Draft to the new path, with the new name or number made in the Draft too. The Request column follows the Request to its new path, also when it moved with its folder. A delete drops the Drafts under it, and the Request column empties when it showed the deleted Request.
 
 Broken files:
 
-- A Request file that does not parse stays in the tree under its file name, with a warning mark and no method. The footer shows the parse message.
-- It opens as text, so it can be fixed and saved. It can be renamed (the file name only), moved with Move to… and deleted. It cannot run, be cloned or be moved up or down, and a drop places it at the end of a folder.
+- A Request file that does not parse stays in the tree under its file name, with a warning mark and no method. Its tooltip and the details under the tree show the parse message.
+- Selecting it shows it on the File tab, so it can be fixed and saved. It can be renamed (the file name only), moved with Move to… and deleted. It cannot run, be cloned or be moved up or down, and a drop places it at the end of a folder.
 - It is not counted in a folder's Requests, not renumbered and not sent in a Run.
 
-## Environments
+## The Environment editor
 
-The Environment editor is a window, 760 by 540px, that opens from:
+A Herdr window sits under a dialog, so the editor is drawn inside the dialog, in place of its three columns, until it closes. It opens, for Collections on this computer, from:
 
-- "Edit…" beside an Environment in the Environment picker, and "Manage Environments…" at its bottom.
-- "Edit Environments…" in a Collection row's menu.
+- "Edit…" beside an Environment in the Environment picker, on that Environment.
+- "Manage Environments…" at the bottom of the picker, and "Environments…" in a Collection row's menu, on the first Environment.
 
-Both exist for Collections on this computer only. You drag the window by its title bar. It stays open when you click elsewhere, and its × closes it. Several editors can be open at once.
+Its title line reads "Environments · <Collection folder>" with a close button. The legend under it shows `ctrl-s` save and `esc` back.
 
-The left side lists the Collection's Environments with New. The selected one has Clone, Rename and Delete, and "Edit .env…" opens the `.env` editor for the same Collection. The right side is the selected Environment's table:
+The left side lists the Collection's Environments with New. The selected one has Clone, Rename and Delete, and "Edit .env…" at the bottom switches to the `.env` editor of the same Collection, asking first when there are unsaved edits. The right side is the selected Environment's table:
 
 - Each row has an enabled checkbox, a Name, a masked Value, an eye that reveals that row and an × that removes it.
 - The empty last row, "Add a variable", adds a variable when you type in it.
@@ -494,29 +397,150 @@ A secret variable shows "Secret. Its value is kept by Bruno, not in this file." 
 
 - It asks for the name in `.env`, filled in as upper case with underscores (`apiKey` becomes `API_KEY`), and for the value, masked with its own eye.
 - It adds `NAME=value` to the `.env` in the Collection folder, creating the file when needed, and rewrites the variable as `{{process.env.NAME}}`.
-- When the name is already in `.env`, the dialog says "NAME is already in .env. Move replaces its value." and the button becomes Replace.
+- When the name is already in `.env`, the question says "NAME is already in .env. Move replaces its value." and the button becomes Replace.
 - It is off while the table has unsaved changes.
 
-New, Clone, Rename and Delete ask for a name or a confirmation inside the editor window:
+New, Clone, Rename and Delete ask for a name or a confirmation inside the editor:
 
 - New and Clone take a name. A Clone starts as `<name> copy`, and a taken name gets ` copy`, ` copy 2` and so on. A clone keeps the variables and `extends` and drops `color`.
 - Rename changes the file name and the YAML `name:`. Another Environment whose `extends` is the old name alone follows the rename.
 - Delete asks `Delete Environment "<name>"?` and moves the file to the trash. When the trash fails, a second question offers a permanent delete.
-- A Collection's chosen Environment follows a rename. After a delete of the chosen one, the Collection's default applies again.
+- The Collection's remembered Environment follows a rename. After a delete of the remembered one, the Collection's default applies again.
 
-Unsaved edits:
+Keys and unsaved edits:
 
-- Closing the window, choosing another Environment, and New, Clone, Rename and Delete ask "Discard unsaved changes?" with Keep editing and Discard. Discard drops the edits.
-- A layout switch, quitting Herdr or a mod reload closes the window without asking and the edits are lost.
-- Esc cancels an open question, otherwise it closes the window.
+- `ctrl-s` (the save key) saves the open editor's file and never a Request's Draft. Once the editor closes, it saves the shown Request's Draft again.
+- `esc` cancels an open question, otherwise it closes the editor. Keys typed while an editor is open never run a tree key.
+- Closing with unsaved edits (the close button or `esc`), choosing another Environment, "Edit .env…", and New, Clone, Rename and Delete ask "Discard unsaved changes?" with Keep editing and Discard. Discard drops the edits.
+- Closing the whole dialog, quitting Herdr or a mod reload closes the editor without asking, and the edits are lost.
+- Nothing is kept as a Draft.
 
 ## The .env editor
 
-The `.env` editor is a window of the same size. It opens from "Edit .env…" in a Collection row's menu and from the button at the bottom of the Environment editor, for Collections on this computer.
+The `.env` editor is drawn in the dialog the same way. It opens from "Edit .env…" in a Collection row's menu and from the button at the bottom of the Environment editor, for Collections on this computer. Its title reads ".env files · <Collection folder>".
 
 - The left side lists the `.env` and `.env.*` files in the Collection folder, `.env` first. The name must be `.env` or `.env.<letters, digits, . _ ->`. New suggests `.env`, or `.env.local` when `.env` exists. The selected file has Delete, which moves it to the trash, with the same second question when the trash fails.
 - Only `.env` feeds a Run. With another file selected, a note says "Only .env feeds a Run. Brunr does not pass <file> to the Bruno CLI."
 - The file opens in the Table view: Name and Value (masked), with the same reveal, add and remove as the Environment table and no enabled column. "Raw (shows values)" shows the text itself, unmasked. Switching carries unsaved edits across.
 - A table save changes only the lines you edited. Comments, blank lines, order, `export` prefixes and quotes stay. Names and values are read by dotenv's rules. A table save masks every value again.
 - A Raw save writes the text as typed.
-- Conflicts and unsaved edits work as in the Environment editor.
+- Keys, conflicts and unsaved edits work as in the Environment editor.
+
+## Keys
+
+`ctrl-shift-u` (in `keys.json`, `mod.open:brunr`) opens Brunr as a dialog or a tab, as the settings say. Pressed again, it closes the dialog, or goes back to the tab you came from. The palette entry "Brunr: Open" does the same.
+
+In the dialog the keyboard is on the tree, the Request column or the Response side (see The Request column). The selected tree row is dimmer while the keyboard is elsewhere.
+
+| Key | Action |
+|---|---|
+| `up` / `k`, `down` / `j` | previous / next row in the tree, or previous / next Request of a Run on the Response side |
+| `home` / `end` | first / last row |
+| `left` / `h` | fold the Collection or folder, else go to the parent row |
+| `right` / `l` | unfold, else go to the first child |
+| `enter` | run a Request, fold or unfold a Collection or folder, pick on the Global environment row. On the Request column: into the URL field |
+| `ctrl-h` / `ctrl-l` | keyboard one place left / right |
+| `r` | run the Request, folder or Collection |
+| `p` | run the Request with other values for its URL's `{{variables}}` |
+| `e` | pick the Environment (or the Global environment on its row) |
+| `o` | show the Request on its File tab |
+| `y` | copy the Request's URL |
+| `b` | open Bruno desktop (Collections on this computer only) |
+| `n`, `shift-n` | New Request, New folder |
+| `shift-r` | Rename |
+| `m` | Move to… |
+| `ctrl-up` / `ctrl-down` | Move up / Move down |
+| `delete` | Delete |
+| `1` to `4` | Response, Headers, Timeline or Tests view |
+| `/` | search a Run's Requests |
+| `f` | fill the window, or leave full screen (dialog only) |
+| `ctrl-s` | save the shown Request's Draft, or the open editor's file |
+| `ctrl-r` | read everything again |
+| `?` | show or hide the key list |
+| `,` | open the settings |
+| `ctrl-x` | close the tab (tab only) |
+| `esc` | step back: close a picker, a form, an editor's question, an editor, the settings or the Search box, leave a field, else close the dialog |
+
+`r`, `p`, `e`, `o`, `y`, `b`, `f`, `ctrl-r`, `ctrl-s` and the seven edit keys can be switched off or moved to another key in the settings. The other keys always work, and so does every button and menu entry. Each key is also a command: `herdr-app do brunr.<command>`. The edit commands are `new-request`, `new-folder`, `rename`, `clone`, `move-to`, `move-up`, `move-down`, `delete`, `environments` and `edit-dotenv`, on the selected row.
+
+In a picker: `up` / `k` / `ctrl-k`, `down` / `j` / `ctrl-j`, `enter` or `space`, and `esc`. In the "run with values" form: `tab` / `down` and `shift-tab` / `up` move between boxes, `enter` runs and `esc` closes. In a tree form: `tab` and `shift-tab` move, `enter` confirms and `esc` closes.
+
+Mouse:
+
+- Click selects a row. Double-click runs a Request or folds a Collection or folder. A drag moves a Request or folder (see Tree actions).
+- The arrow folds. The Run button at the top runs the selected row.
+- The Environment chip opens the picker.
+- Right-click opens the row's menu over the dialog, each item with its key: Run, Run folder or Run Collection (when a Run can start), Open file, the edit actions (this computer only), Environment, Global environment, Open Bruno (this computer only), Copy URL, Copy path and Reload. Copy path copies the Collection root, or the file or folder inside it, as a path on its Machine. The menu takes the picker keys.
+- The title row also has reload, full screen (dialog only) and the settings gear.
+
+Command palette entries: "Brunr: Open" and "Brunr: Reload".
+
+## Settings
+
+The gear or `,` opens them:
+
+- Open as a tab instead of a dialog. Switching it moves Brunr at once.
+- Open the dialog in full screen.
+- Show key hints. Off hides the key list under the dialog. `?` shows it again.
+- A switch per shortcut key, and the key it is on.
+
+## State
+
+- Shared state holds the settings and what used to be in localStorage: which Collections and folders are unfolded, the Environment chosen per Collection (keyed by Machine and root), the Global environment chosen per workspace file and the name of the Request form's tab last shown. Every copy of the mod reads the same values, since each dialog and each tab is a new copy. The keys are `brunr.saved.<name>`, `brunr.open-as`, `brunr.back` (the tab to go back to), `brunr.dialog` (the open dialog) and `brunr.drafts` (a counter that changes when a Draft does, never its text).
+- Collections start unfolded and folders folded until you change them.
+- Drafts are held in memory, in module code, so they outlive the dialog. They are never written to shared state or disk except by a save to their own file.
+- An editor's values are held only in that editor's state while it is open. They never reach shared state, the Drafts, a picker, the line under the columns, a log or a command-line argument, and Brunr adds no action that copies one.
+- Folds in the Response side's list are held in memory for one Run.
+- The filters and sort are held in memory until the dialog closes. They are never written to disk or shared state.
+- The last Run is held in memory, in module code, so it outlives the dialog.
+- Runs and Responses are never written to disk. The report and progress files are the only exception, and they live for the length of one Run.
+
+## Limits
+
+- Requests with prompt variables are skipped by the CLI.
+- OAuth2 works only for the `client_credentials` and `password` grants.
+- A YAML file the CLI cannot parse aborts the whole Run, for example an unquoted value containing a colon followed by a space. Brunr's own reader is more forgiving, so the tree can show a Request the CLI will not run.
+- A file Brunr cannot read adds to a count on the Collection row, and the details under the tree name the first five.
+- There is no cancel for a Run.
+- Run progress shows HTTP statuses only. Assertion and test results appear when the Run ends.
+- The running Request is named only while the CLI sends Requests in the order Brunr expects. Requests with the same `seq` keep the folder's listing order, which Brunr takes as the file name ignoring case, as Windows lists files. Another Machine may list them in another order.
+- On Windows, a timed-out Run may leave the CLI running until it ends by itself, since Brunr ends the `node` that started it.
+- Secrets stored in Bruno desktop are empty in a CLI Run (see Environments and secrets).
+- On Windows Brunr finds `bru.cmd` on the PATH Herdr was started with, or in `%APPDATA%\npm`. Herdr cannot start a `.cmd` file by name, so the CLI check and each Run start the CLI's script with `node`, and `node` must be on that PATH. A `bru.cmd` installed elsewhere and missing from that PATH shows the missing CLI notice.
+- Bruno desktop cannot be told to open a specific Request, so "Open Bruno" only starts the app. Brunr looks for it at `<home>/AppData/Local/Programs/Bruno/Bruno.exe` on Windows, `/Applications/Bruno.app` on macOS and `bruno` on the PATH elsewhere.
+- Collections on another Machine are listed and read with `sh` and `cat`, so that Machine needs both.
+- A Global environment applies only to Collections listed in the workspace file.
+- Paths are used as the Machine gives them. A Collection on WSL is not the same Collection as the same folder seen from Windows.
+- `p` passes each typed value to the CLI as a command-line argument (`--env-var NAME=VALUE`), which other programs on the machine can see while the Run executes. Do not use it for secrets.
+- Closing the dialog during a Run leaves that Run's report file in the app's data folder (`data/brunr/`) until Brunr is next opened.
+- Editing works on this computer only. Requests, Environments and `.env` files on another Machine are read-only.
+- Herdr's own keys reach Herdr before the dialog: `f2` renames a tab and `alt-up` and `alt-down` step through agents. That is why Rename is on `shift-r` and Move up and Move down on `ctrl-up` and `ctrl-down`.
+- A press beside the dialog or `ctrl-shift-u` closes it, and with it an open editor, without asking about the editor's unsaved edits. `esc` asks.
+- A masked field shows one dot per character, so the length of a value is visible. The Raw view and a revealed row show values on screen and in screenshots. A revealed value or the Raw text can be selected and copied with the system keys, as any Herdr text field allows.
+- The editors are not separate windows. A Herdr window sits under a dialog, so they take the dialog's columns while open, and only one is open at a time.
+
+## How it works
+
+The key opens a tiny overlay copy of the mod that opens Brunr as a dialog or a tab, as the settings say, and closes at once. Each dialog and each tab is a new copy of the mod.
+
+- `main.js`: the entry. Draws the dialog and the tree, loads and watches Collections, handles keys, clicks and Runs, holds the "run with values" form and wires the other parts in.
+- `request.js`: the Request column. `formui.js`, `formpanes.js`, `form.js`, `formview.js`, `formtabs.js`, `formruntime.js`, `formsec.js`: the Request form, its tabs and the section readers and writers.
+- `drafts.js`: Drafts in memory. `save.js` and `saveflow.js`: the save path and its questions. `lint.js`: the warnings. `edit.js`, `urlsync.js`, `lines.js`, `yamlblock.js`, `yamlwrite.js`: line-level edits of Request and folder files.
+- `picker.js`: the dialog's picker, for menus, choices and questions.
+- `treeactions.js`: the tree's edit actions, drag and drop and the run of one operation. `treeform.js`: their forms. `treeops.js`: their rules. `fileops.js`, `envops.js`, `collpaths.js`, `names.js`: Bruno's file, naming and numbering rules. `effects.js`: the only place Brunr changes files, with change-checked writes, the trash and the permanent delete.
+- `editors.js`: the editors in the dialog. `envedit.js` and `envview.js`: the Environment editor. `dotedit.js` and `dotview.js`: the `.env` editor. `editparts.js`: what both share. `envtable.js`, `envfile.js`, `dotenv.js`: their rules.
+- `response.js`: draws the Response side.
+- `tree.js`: the rows, the key map, the URL variables and the confirmation and secret texts. No Herdr calls.
+- `runtree.js`: the Run list as rows of folders and Requests, with counts and folds, for the live list and the result alike. No Herdr calls.
+- `runfilter.js`: the filters and sort. Takes a finished Run's Responses and gives the Requests to list, in order, with the whole Run's folder counts. No Herdr calls.
+- `store.js`: saved state and the in-memory Run store.
+- `sources.js`: reads `brunr.json` and the workspace and finds Collection roots. Loads one Collection.
+- `machine.js`: every `exec`, `readTextFile`, `watchFolder` and `fs` call for reading and Runs. Lists and reads files, checks the CLI, runs `bru` with its output going to the progress file, reads that file on a `cx.timer` while the Run is in progress, reads and deletes reports and progress files and starts Bruno desktop.
+- `plan.js`: turns a target, the chosen Environments and any "run with values" values into the `bru run` arguments, and lists the Requests a Run sends in the CLI's order. No Herdr calls.
+- `progress.js`: turns the progress file's text into the finished Requests and the running one. No imports.
+- `report.js`: turns the CLI's JSON report, exit code and output into Responses. No Herdr calls.
+- `parser.js` and `yaml.js`: read Collection files in both formats and a small YAML subset.
+- `kit/`: shared UI pieces: the frame, list rows, controls, the key legend, the settings panel and opening as a dialog or a tab.
+- `icons/`: the SVG icons.
+
+Tests are in `brunr/tests/` in the repo and run with `sh brunr/tests/run.sh`.
