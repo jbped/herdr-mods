@@ -1,0 +1,174 @@
+# Moddr reference
+
+Moddr lists the folders in `~/.config/herdr-app/mods/` that Herdr did not ship, finds where each came from on GitHub, and compares each tracked one with its source.
+
+## Terms
+
+- **Source**: the GitHub folder a mod was installed from: owner, repo, branch (or the default branch) and the path of the mod's own folder.
+- **Installed version**: the newest upstream commit, among the last 30 that touched the source, whose files equal the local files.
+- **Update**: a commit that touched the source after the installed version.
+- **Trusted repo**: a repo where a mod is tracked even when its files match no recent version. See Finding sources.
+
+## Views
+
+- **List**: a dialog, opened by `ctrl-shift-g`, the palette's "Moddr: Open" or the badge.
+- **Badge**: a block in your layout, `{ "mod": "moddr", "props": { "badge": true } }`, 48px wide fits. A box icon in `muted`, or in `done` with the number of mods with updates. A spinner while a refresh runs. The tooltip names the mods with updates, or the last error. A click opens the list. `"bare": true` drops its background and top border.
+
+## States
+
+Mods are listed in sections: Updates, Needs a look (edited here, unknown version, error, not checked), Up to date, Not tracked. Each row shows the name and, outside Up to date and Not tracked, its status. `o` groups them by source repo instead, A to Z, then "No source", and every row shows its status:
+
+| Status | Meaning |
+|---|---|
+| no source | not tracked. The details say whether Moddr looked, what it found, or that you stopped tracking it |
+| not checked | tracked, never checked |
+| checking… | a check of this mod is running |
+| up to date | the local files equal the newest upstream version |
+| N updates | N commits touched the source after the installed version. "30+" when the installed version is older than the last 30 |
+| edited here | no updates, and local files differ from the installed version |
+| unknown version | the local files match none of the newest 11 versions, and no installed version is saved |
+| error | the last check failed. The message is under the row |
+
+The open row shows the new commits, the files you changed, and at most two buttons: Update for a mod that is only behind, Discuss drift for an edited or unknown one, Set source for an untracked one. The repo and versions are at the right. Every other action is a key, listed under `?`.
+
+## Keys
+
+| Key | Action |
+|---|---|
+| `j` / `down`, `k` / `up` | move |
+| `g` / `home`, `G` / `end` | first / last |
+| `ctrl-d` / `ctrl-u` | move 6 |
+| `r` | refresh: look for sources not looked for this week, then check every tracked mod |
+| `f` | refresh, looking again for every untracked mod's source |
+| `o` | group by state (the default) or by source repo, remembered for next time |
+| `enter` | check the selected mod |
+| `s` | set or change the selected mod's source |
+| `m` | save the newest upstream version as installed (unknown version only) |
+| `u` | update the selected mod (updates, edited here or unknown version). `y` or `enter` confirms, any other key cancels |
+| `d` | open a drift space for the selected mod |
+| `z` | restore the selected mod's newest backup. `y` or `enter` confirms |
+| `x` | stop tracking the selected mod. Moddr stops looking for its source until you set one |
+| `?` | every key |
+| `q` / `escape` | close. In the source box, `escape` cancels and `enter` saves |
+
+## When it refreshes
+
+- The badge looks 30 seconds after Herdr starts and then every 10 minutes. It refreshes when the last refresh is older than `every_hours`.
+- The list refreshes when it opens and one is due.
+- `r` and `f` refresh at once.
+- One copy refreshes at a time. Another copy that wants to meanwhile skips, and the list shows "checking in the background…" and loads the results when it ends.
+- After a refresh GitHub cut short, the next one is due after an hour.
+
+## Finding sources
+
+A refresh looks for each untracked mod not looked for in the last 7 days (`f`: all of them). It tries, in order:
+
+1. Repos linked from any mod's `README.md`, repos of tracked mods, and `repos` from `moddr.json`. These are trusted.
+2. With `search` on, for each mod still not found: trusted repos found during this refresh, then the top 3 repos GitHub's search returns for `<name> in:name,description,readme topic:herdr-mod`.
+3. Once more, the trusted repos, for mods looked up before a repo became trusted.
+
+In each repo, a folder named like the mod with a `main.js` in it is a match: `mods/<name>/` first, then the shallowest. The repo's default branch is used.
+
+- The files match a version: the mod is tracked, and the repo becomes trusted.
+- The files match no version and the repo is trusted: the mod is tracked with an unknown version.
+- The files match no version and the repo came from search: the folder is offered, not tracked. `s` fills it in.
+
+## Sources by hand
+
+The source box takes `https://github.com/<owner>/<repo>/tree/<branch>/<folder>`, `https://github.com/<owner>/<repo>` or `<owner>/<repo>/<folder>`. The folder may be the mod's own or a share folder holding it at `mods/<name>/`. Moddr checks that `main.js` is there before it saves. A branch name with a `/` in it is not supported. The box is filled with the current source, else the folder Moddr offered, else the first GitHub link in the mod's README.
+
+## How a check works
+
+1. `git hash-object --no-filters` hashes every local file, as git would for a commit. `jsconfig.json`, `*.d.ts`, dot files and `node_modules` are skipped: Herdr writes the first two into every mod folder.
+2. GitHub lists the last 30 commits that touched the source folder, and the file tree at the newest one. Equal hashes mean up to date, and the newest commit is saved as installed.
+3. Otherwise, with no installed version saved, the trees of the next 10 commits are tried, newest first. The first match is saved as installed. That search is not repeated until the local files or the newest commit change.
+4. The commits newer than the installed version are the updates. The installed version's tree gives the locally edited files.
+
+A current mod takes 2 requests, one behind or edited 3, an unknown one 12 the first time and 2 after. Finding sources takes 1 request per repo, 1 per search, and a check per folder found.
+
+Each update is notified once: a refresh that finds a newer upstream commit than the last one notified posts a toast naming the mods. Clicking it opens the list.
+
+Reinstalling a mod needs no step in Moddr: the next check finds the new files' version.
+
+## Updating
+
+`u`, or the Update button, asks first. The question says how many of your changed files it replaces. Then:
+
+1. `git clone --depth 1 --filter=blob:none --no-checkout` downloads the source's branch into `data/moddr/staging/<name>/`, a sparse checkout takes only the mod's folder, and `core.autocrlf=false` keeps the files byte for byte.
+2. The mod's folder is copied to `data/moddr/backups/<name>/<time>-<installed sha>/`. The newest 3 backups of each mod are kept.
+3. Only files that differ are written, one at a time with 1.5 seconds between: other files first, then `.js` modules, then `mod.json`, then `main.js`. Files gone upstream are removed. Herdr reloads the mod on every write, and a burst of writes has crashed it.
+4. The mod is checked again. It should read "up to date".
+
+Text files are written by Moddr. Other files (images, fonts, extensionless files) are copied with `cmd /c copy` on Windows and `cp` elsewhere, because Herdr's `fs.writeFile` writes nothing for binary data.
+
+Moddr cannot update itself: the first write would reload it mid-update. Its row has no Update button. Copy its folder from the source by hand.
+
+An update does not change your `keys.json` or layout. When a mod's install steps change, read its page.
+
+## Restoring
+
+`z` puts the newest backup back with the same one-file-at-a-time writes. The files there now are backed up first (`<time>-before-restore`), so `z` again undoes a restore.
+
+## Discussing drift
+
+`d`, or Discuss drift, on a tracked mod that is not up to date:
+
+1. Finds an agent: the first installed one in Herdr's agent list (most used first), on the focused space's machine when that machine can see this computer's files (WSL on Windows), else on this computer.
+2. Prepares `data/moddr/drift/<name>/`: `local/` (a copy of your files), `upstream/` (the source's newest files), `drift.diff` (`git diff --no-index local upstream`) and `BRIEF.md` (the source, versions, commits, edited files, the live folder, a fresh backup, and the safe way to write into a live mod).
+3. Opens a space named "<name> drift" there, with the agent asked to read `BRIEF.md`, explain the drift and recommend what to do, and not to change the live folder until you say so.
+
+The list closes when the space opens. Each `d` starts the folder afresh.
+
+## Signing in
+
+GitHub requests use the first of:
+
+1. `token` in `moddr.json`.
+2. The token `gh auth token --hostname github.com` prints, when the GitHub CLI is installed and signed in where Herdr runs. The list asks each time it opens, the badge before its first refresh. The token is kept in memory only.
+3. Nothing: unsigned requests, 60 an hour (10 searches a minute), public repos only.
+
+The list's footer ends with which one is in use. On Windows, gh must be installed on Windows itself: a gh inside WSL is not seen.
+
+## moddr.json
+
+`~/.config/herdr-app/moddr.json`, written by Moddr. The settings are added by hand:
+
+```json
+{
+  "every_hours": 6,
+  "search": true,
+  "repos": ["jbped/herdr-mods"],
+  "token": "github_pat_...",
+  "lastRun": { "at": 1763550000000, "error": null },
+  "mods": {
+    "notifyr": {
+      "source": { "owner": "jbped", "repo": "herdr-mods", "ref": null, "path": "notifyr/mods/notifyr" },
+      "installed": "3ca957c32b5f48552d8f7870a8c9274b78bfeb30",
+      "found": true,
+      "notified": "add86772c617d859ce899a9aab9cda33cd7897b0",
+      "check": { "at": 1763550000000, "latest": { "sha": "…", "message": "…", "date": "…" }, "behind": [], "more": false, "edited": [], "fp": "1a2b3c4d", "error": null }
+    },
+    "artifacts": { "discovered": 1763550000000, "candidate": { "owner": "…", "repo": "…", "ref": null, "path": "artifacts" } },
+    "old-thing": { "ignored": true }
+  }
+}
+```
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `every_hours` | `6` | hours between automatic refreshes, at least 1. `0` refreshes only when you press `r` or `f` |
+| `search` | `true` | look for sources in GitHub's `herdr-mod` repos. `false` uses only the README links, tracked repos and `repos` |
+| `repos` | `[]` | repos to look in first, trusted, as `owner/repo` or a GitHub URL |
+| `token` | none | a GitHub token. It wins over gh's. A fine-grained token with no permissions is enough for public repos. It is kept here as plain text: prefer gh, which keeps its token in the system's keyring |
+
+A write that finds the file changed by another copy reads it again and keeps that copy's other mods.
+
+## Limits
+
+- GitHub.com only. Private repos need gh or a token with access to them.
+- 30 commits are read per source. Older updates show as "30+".
+- A repo too big for GitHub to list in one tree answer cannot be searched or checked.
+- A found source follows the repo's default branch. Set the source by hand to follow another branch.
+- Background checks run only while the badge is in the shown layout, or the list is open.
+- Updates take the branch's newest commit, the same one the check compared with.
+- An update needs `git` with partial clone and sparse checkout (git 2.27 or newer).
