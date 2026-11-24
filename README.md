@@ -50,6 +50,17 @@ Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/jbped/
 ```
 
 ---
+### [Moddr](moddr/)
+
+[<img src="moddr/preview.png" width="720" alt="Moddr">](moddr/)
+
+Finds where each of your mods came from on GitHub, tells you when one has an update, and installs it.
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/jbped/herdr-mods/tree/main/moddr
+```
+
+---
 ### [Notifyr](notifyr/)
 
 [<img src="notifyr/preview.png" width="720" alt="Notifyr">](notifyr/)
