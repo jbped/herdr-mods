@@ -11,7 +11,7 @@ Moddr lists the folders in `~/.config/herdr-app/mods/` that Herdr did not ship, 
 
 ## Views
 
-- **List**: a dialog, opened by `ctrl-shift-g`, the palette's "Moddr: Open" or the badge.
+- **List**: a dialog, opened by `ctrl-shift-u`, the palette's "Moddr: Open" or the badge.
 - **Badge**: a block in your layout, `{ "mod": "moddr", "props": { "badge": true } }`, 48px wide fits. A box icon in `muted`, or in `done` with the number of mods with updates. A spinner while a refresh runs. The tooltip names the mods with updates, or the last error. A click opens the list. `"bare": true` drops its background and top border.
 
 ## States

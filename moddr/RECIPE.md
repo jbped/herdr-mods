@@ -6,7 +6,7 @@ A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHu
 
 ## What you see
 
-- **Badge**: a block the person places, 48px wide in a 28px status row, on `chrome` with a 1px top border in `border`. A 14px box icon (`box.svg`, tinted) in `muted`. With updates, the icon and an 11.8px count beside it are `done`. After a refresh GitHub cut short, the icon is `working`. While a refresh runs, a braille spinner in `accent` replaces the icon. Tooltip: "Updates: a, b", the error, "N tracked mods, none with updates. Checked 5m", or "Moddr has not checked yet", then ". Click to open Moddr (ctrl-shift-g)".
+- **Badge**: a block the person places, 48px wide in a 28px status row, on `chrome` with a 1px top border in `border`. A 14px box icon (`box.svg`, tinted) in `muted`. With updates, the icon and an 11.8px count beside it are `done`. After a refresh GitHub cut short, the icon is `working`. While a refresh runs, a braille spinner in `accent` replaces the icon. Tooltip: "Updates: a, b", the error, "N tracked mods, none with updates. Checked 5m", or "Moddr has not checked yet", then ". Click to open Moddr (ctrl-shift-u)".
 - **List**: a dialog 640px wide and 75% of the window high, on `popover`.
   - Header, 52px with a bottom border: "Mods" in 14px semibold over an 11.5px line: "2 with updates" in `done`, a `dim` "·", then "checked 5m ago" (or "just now", "not checked yet") in `dim`. While a refresh runs the line is "Finding sources…" or "Checking…" in `accent`. At the right a quiet "Refresh" in 12px `muted` with `refresh.svg` and a `dim` monospace "ctrl-r", `foreground` on hover; while busy a braille spinner in `accent`, inert.
   - Banners under the header, 12px in, on `raised` with radius 6: a 6px dot (`blocked` for a file error, `working` for the last refresh's error) and the message in 11.5px `muted`.
@@ -21,7 +21,7 @@ A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHu
 
 ## How it behaves
 
-- `ctrl-shift-g`, the palette entry "Moddr: Open", or a click on the badge opens the list. Again closes it.
+- `ctrl-shift-u`, the palette entry "Moddr: Open", or a click on the badge opens the list. Again closes it.
 - Update (`u` on updates, edited or unknown rows, a button on rows with updates, never on `moddr`): a one-line confirmation in the row, `y`/`enter` or "Update" goes. Then: sparse clone of the branch into `data/moddr/staging/<name>` with `core.autocrlf=false`; back up the folder to `data/moddr/backups/<name>/<time>-<sha7>` (3 kept); write only differing files, 1.5 s apart, others then `.js` then `mod.json` then `main.js`; remove files gone upstream; check again. Progress "Updating: Writing x (3 of 9)…" in `accent`, errors in `blocked`.
 - Restore (`z` when a backup exists): same confirmation and writes from the newest backup, after backing up to `<time>-before-restore`.
 - Drift (`a` on a tracked row not up to date, a button on edited or unknown rows): pick the first installed agent from `knownAgents`, on the focused space's machine if `test -d <WSL path of the config folder>` succeeds there, else here; write `data/moddr/drift/<name>/` with `local/`, `upstream/`, `drift.diff` and `BRIEF.md`; back up; `space.new { name: "<name> drift", folder, machine, argv: agent.run, task }`; close the list.
@@ -41,7 +41,7 @@ A dialog and a status-bar badge for the person's own mods. Moddr finds the GitHu
 - `herdr` also: `knownAgents`, `machines`, `spaces`, `focused`, and the commands `space.new` and `mod.open`. `fs/promises` `readFile`, `writeFile`, `unlink`, `rmdir`, `mkdir`, `exists`.
 - GitHub REST: `commits?sha&path&per_page=30`, `git/trees/{commit|HEAD}?recursive=1`, `search/repositories?q=…&per_page=3`, with `Authorization: Bearer` when there is a token.
 - Files: reads `installed.json` (its keys are Herdr's shipped mods) and each mod's `README.md`; reads and writes `moddr.json` with `writeTextFile`'s expected-text guard.
-- Layout block for the badge: `{ "mod": "moddr", "props": { "badge": true } }`. `keys.json`: `"ctrl-shift-g": "mod.open:moddr"`.
+- Layout block for the badge: `{ "mod": "moddr", "props": { "badge": true } }`. `keys.json`: `"ctrl-shift-u": "mod.open:moddr"`.
 
 ## Watch out
 

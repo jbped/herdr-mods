@@ -1,5 +1,5 @@
 {
   "global": {
-    "ctrl-shift-u": "mod.open:brunr"
+    "ctrl-shift-g": "mod.open:brunr"
   }
 }

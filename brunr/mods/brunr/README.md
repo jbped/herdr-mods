@@ -412,7 +412,7 @@ Keys and unsaved edits:
 - `ctrl-s` (the save key) saves the open editor's file and never a Request's Draft. Once the editor closes, it saves the shown Request's Draft again.
 - `esc` cancels an open question, otherwise it closes the editor. Keys typed while an editor is open never run a tree key.
 - Closing with unsaved edits (the close button or `esc`), choosing another Environment, "Edit .envâ€¦", and New, Clone, Rename and Delete ask "Discard unsaved changes?" with Keep editing and Discard. Discard drops the edits.
-- A press beside the dialog, `ctrl-shift-u`, and `ctrl-x` in a tab ask the same question before they close Brunr. Discard closes the editor and then Brunr.
+- A press beside the dialog, `ctrl-shift-g`, and `ctrl-x` in a tab ask the same question before they close Brunr. Discard closes the editor and then Brunr.
 - Quitting Herdr or a mod reload closes the editor without asking, and the edits are lost.
 - Nothing is kept as a Draft.
 
@@ -429,7 +429,7 @@ The `.env` editor is drawn in the dialog the same way. It opens from "Edit .envâ
 
 ## Keys
 
-`ctrl-shift-u` (in `keys.json`, `mod.open:brunr`) opens Brunr as a dialog or a tab, as the settings say. Pressed again, it closes the dialog, or goes back to the tab you came from. The palette entry "Brunr: Open" does the same.
+`ctrl-shift-g` (in `keys.json`, `mod.open:brunr`) opens Brunr as a dialog or a tab, as the settings say. Pressed again, it closes the dialog, or goes back to the tab you came from. The palette entry "Brunr: Open" does the same.
 
 In the dialog the keyboard is on the tree, the Request column or the Response side (see The Request column). The selected tree row is dimmer while the keyboard is elsewhere.
 
@@ -485,7 +485,7 @@ The gear or `,` opens them:
 
 - Open as a tab instead of a dialog. Switching it moves Brunr at once.
 - Open the dialog in full screen.
-- Open as a pane in the current tab. On: `ctrl-shift-u` splits the focused pane and shows Brunr at its right. Pressed again it moves the keyboard to Brunr's pane, and from there back to the pane you came from. `ctrl-x` closes the pane. This setting comes before "Open as a tab". Switching it on while the dialog is open moves Brunr to the pane at once.
+- Open as a pane in the current tab. On: `ctrl-shift-g` splits the focused pane and shows Brunr at its right. Pressed again it moves the keyboard to Brunr's pane, and from there back to the pane you came from. `ctrl-x` closes the pane. This setting comes before "Open as a tab". Switching it on while the dialog is open moves Brunr to the pane at once.
 - Show key hints. Off hides the key list under the dialog. `?` shows it again. The list shows the main keys (`?`, `j`/`k`, `enter`, `e`, `/`, `ctrl-s`, `esc`), and `?` switches between them and every key.
 - A switch per shortcut key, and the key it is on.
 

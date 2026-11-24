@@ -39,12 +39,12 @@ Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/jbped/
 Or by hand:
 
 1. Copy `mods/brunr/` to `~/.config/herdr-app/mods/`.
-2. Merge `keys.json` into `~/.config/herdr-app/keys.json`. It binds `ctrl-shift-u`.
+2. Merge `keys.json` into `~/.config/herdr-app/keys.json`. It binds `ctrl-shift-g`.
 3. Run `herdr-app check ~/.config/herdr-app/mods/brunr`.
 
 ## Use
 
-`ctrl-shift-u` opens Brunr. Pressed again, it closes the dialog, or goes back from the tab. Click selects a row and shows a Request, double-click runs it, and right-click opens a row's menu. Drag a Request or folder to move it.
+`ctrl-shift-g` opens Brunr. Pressed again, it closes the dialog, or goes back from the tab. Click selects a row and shows a Request, double-click runs it, and right-click opens a row's menu. Drag a Request or folder to move it.
 
 | Key | Action |
 |---|---|

@@ -13,7 +13,7 @@
       "args": {
         "name": "moddr"
       },
-      "about": "List your mods and whether their GitHub source has updates (ctrl-shift-g). Again closes it"
+      "about": "List your mods and whether their GitHub source has updates (ctrl-shift-u). Again closes it"
     }
   ]
 }
