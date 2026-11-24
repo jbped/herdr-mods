@@ -63,7 +63,6 @@ function backupName(id) {
   const label = { "before-restore": "before a restore", drift: "before a drift talk" }[m[6]] ?? m[6];
   return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[4]}:${m[5]}${label ? ` · ${label}` : ""}`;
 }
-const repoText = (s) => `${s.owner}/${s.repo}${s.path ? ` · ${s.path}` : ""}`;
 
 export default class Moddr extends View {
   init(_props, cx) {
@@ -385,11 +384,6 @@ export default class Moddr extends View {
           .on_click((_e, cx) => { on(cx); cx.notify(); }))
         .child(label)
         .when(Boolean(k), (el) => el.child(div().text_size(10.5).font_family(mono).text_color(primary && enabled ? t.solid_foreground : t.dim).opacity(primary ? 0.7 : 1).child(k)));
-    const link = (id, label, on, k) =>
-      h_flex().id(id).flex_none().gap(5).items_center().text_size(11.5).text_color(t.muted).cursor_pointer()
-        .hover((x) => x.text_color(t.foreground)).on_click((_e, cx) => { on(cx); cx.notify(); })
-        .child(label).when(Boolean(k), (el) => el.child(keyHint(k)));
-
     // ---- a row ----
     const STATUS = {
       untracked: ["no source", t.dim], unchecked: ["not checked", t.muted], checking: ["checking…", t.accent],
@@ -405,28 +399,19 @@ export default class Moddr extends View {
 
     const details = (name, e, s) => {
       const c = e?.check;
-      const box = v_flex().gap(8).pt(8).pl(18);
+      const box = v_flex().gap(8).pt(6);
       const op = this.op?.name === name ? this.op : null;
       const ask = this.confirm?.name === name ? this.confirm.kind : null;
       const saved = this.saved[name] ?? [];
+      const edits = c?.edited ?? [];
 
-      // What it is and where from.
-      if (e?.source) {
-        const from = `${e.source.path || "repo root"}${e.source.ref ? ` on ${e.source.ref}` : ""}${e.found ? " · found by Moddr" : ""}`;
-        const ver = !e.installed ? ""
-          : c?.latest && c.latest.sha !== e.installed ? `${short(e.installed)} → ${short(c.latest.sha)}` : short(e.installed);
-        box.child(h_flex().gap(8).items_center().text_size(11.5).text_color(t.dim)
-          .child(div().flex_1().min_w(0).truncate().child(from))
-          .child(div().flex_none().font_family(mono).text_size(11).child(ver)));
-      }
-
-      // The one-line reason, when the state needs one.
+      // One line saying why, only when the state is not obvious from the commits.
       const why = s === "untracked"
         ? (e?.ignored ? "Not tracked. Moddr won't look for its source."
-          : e?.candidate ? `Found in ${e.candidate.owner}/${e.candidate.repo}, but no version matches your files.`
+          : e?.candidate ? `${e.candidate.owner}/${e.candidate.repo} has a ${name} folder, but no version matches your files.`
           : e?.discovered ? `No source found ${ago(e.discovered)} ago.` : "Not looked for yet.")
         : s === "unknown" ? `Your files match none of the last ${1 + SEARCH} upstream versions.`
-        : s === "current" ? `Same as the newest upstream, ${ago(c?.latest?.date)} old.`
+        : s === "unchecked" ? "Not checked yet."
         : null;
       if (why) box.child(text(why, 12, t.muted));
       if (c?.error) box.child(text(c.error, 12, t.blocked));
@@ -436,21 +421,18 @@ export default class Moddr extends View {
         const list = v_flex().gap(3);
         for (const b of c.behind.slice(0, SHOWN_COMMITS)) {
           list.child(h_flex().gap(10).items_center()
-            .child(div().flex_none().w(56).font_family(mono).text_size(11).text_color(t.dim).child(short(b.sha)))
             .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(b.message))
             .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(b.date))));
         }
         const rest = c.behind.length - SHOWN_COMMITS;
-        if (rest > 0 || c.more) list.child(text(`${c.more ? "more" : rest} older`, 11, t.dim));
+        if (rest > 0 || c.more) list.child(text(`and ${c.more ? "more" : rest} older`, 11, t.dim));
         box.child(list);
       }
 
-      // Files changed here.
-      if (c?.edited?.length) {
-        box.child(h_flex().flex_wrap().gap(4).items_center()
-          .child(div().text_size(11.5).text_color(t.working).mr(4).child(e.installed ? "Edited here" : "Differs"))
-          .children(c.edited.slice(0, 12).map((f) => div().px(6).py(1).rounded(4).bg(t.raised).font_family(mono).text_size(11).text_color(t.muted).child(f)))
-          .when(c.edited.length > 12, (el) => el.child(text(`+${c.edited.length - 12}`, 11, t.dim))));
+      // Files changed here, as one line.
+      if (edits.length) {
+        const shown = edits.slice(0, 4).join(", ") + (edits.length > 4 ? ` and ${edits.length - 4} more` : "");
+        box.child(text(`${e.installed ? "You changed" : "Differs in"} ${shown}`, 12, t.working));
       }
 
       // Progress, a question, or the actions.
@@ -462,34 +444,32 @@ export default class Moddr extends View {
       }
       if (op?.error) box.child(text(op.error, 12, t.blocked));
       if (ask) {
-        const edits = ask === "update" ? c?.edited ?? [] : [];
         const q = ask === "update"
-          ? `Update to ${short(c?.latest?.sha)}?${edits.length ? ` Replaces your changes to ${edits.length} ${edits.length === 1 ? "file" : "files"}.` : ""} Your files are backed up first.`
-          : `Restore the backup from ${backupName(saved[0]?.id)}? Your current files are backed up first.`;
-        box.child(h_flex().gap(10).items_center().p(10).rounded(6).bg(t.raised).border(1).border_color(edits.length || ask === "restore" ? t.working : t.border)
-          .child(div().flex_1().min_w(0).text_size(12).text_color(t.foreground).child(q))
+          ? `${edits.length ? `Replace your changes to ${edits.length} ${edits.length === 1 ? "file" : "files"}?` : `Update ${name}?`} A backup is kept.`
+          : `Put back the backup from ${backupName(saved[0]?.id)}? A backup is kept.`;
+        box.child(h_flex().gap(8).items_center()
+          .child(div().flex_1().min_w(0).text_size(12).text_color(edits.length && ask === "update" ? t.working : t.foreground).child(q))
           .child(button(`moddr-yes-${name}`, ask === "update" ? "Update" : "Restore", (cx) => this.change(cx, name, ask), { key: "y", primary: true }))
           .child(button(`moddr-no-${name}`, "Cancel", () => { this.confirm = null; }, { key: "n" })));
         return box;
       }
 
-      const canUpdate = Boolean(e?.source) && ["updates", "edited", "unknown"].includes(s) && name !== "moddr";
-      const canDrift = Boolean(e?.source && c?.latest) && s !== "current";
-      const main = s === "updates" && canUpdate ? "update" : canDrift ? "drift" : !e?.source ? "source" : null;
-      const actions = h_flex().gap(6).items_center();
-      if (canUpdate) actions.child(button(`moddr-update-${name}`, "Update", () => this.askUpdate(name), { key: "u", primary: main === "update", enabled: free }));
-      if (canDrift) actions.child(button(`moddr-drift-${name}`, "Discuss drift", (cx) => this.discuss(cx, name), { key: "d", primary: main === "drift", enabled: free }));
-      if (s === "unknown") actions.child(button(`moddr-mark-${name}`, "Mark installed", (cx) => this.markInstalled(name, cx), { key: "m", enabled: free }));
-      if (!e?.source) actions.child(button(`moddr-set-${name}`, "Set source", () => this.startEdit(name), { key: "s", primary: true, enabled: free }));
-      if (saved.length) actions.child(button(`moddr-restore-${name}`, "Restore", () => this.askRestore(name), { key: "z", enabled: free }));
-      const more = h_flex().flex_1().justify_end().gap(14).items_center();
-      if (e?.source) {
-        more.child(link(`moddr-check-${name}`, "Check", (cx) => this.checkOne(name, cx), "enter"));
-        more.child(link(`moddr-src-${name}`, "Source", () => this.startEdit(name), "s"));
-        more.child(link(`moddr-untrack-${name}`, "Stop tracking", (cx) => this.untrack(name, cx), "x"));
-      }
-      box.child(h_flex().pt(2).gap(6).items_center().child(actions).child(more));
-      if (saved.length) box.child(text(`Last backup ${backupName(saved[0].id)}${saved.length > 1 ? `, ${saved.length - 1} older` : ""}`, 11, t.dim));
+      // At most two buttons, the first solid. Every other action is a key, listed under ?.
+      const self = name === "moddr";
+      const acts = [];
+      if (s === "updates" && !self) acts.push(["update", "Update", () => this.askUpdate(name), "u"]);
+      if (edits.length || s === "unknown") acts.push(["drift", "Discuss drift", (cx) => this.discuss(cx, name), "d"]);
+      if (s === "unknown") acts.push(["mark", "Mark installed", (cx) => this.markInstalled(name, cx), "m"]);
+      if (s === "untracked") acts.push(["set", "Set source", () => this.startEdit(name), "s"]);
+      if (s === "error" || s === "unchecked") acts.push(["check", "Check", (cx) => this.checkOne(name, cx), "enter"]);
+      const ver = !e?.installed ? ""
+        : c?.latest && c.latest.sha !== e.installed ? `${short(e.installed)} → ${short(c.latest.sha)}`
+        : `${short(e.installed)}${c?.latest?.date ? ` · ${ago(c.latest.date)} old` : ""}`;
+      const meta = e?.source ? `${e.source.owner}/${e.source.repo}${ver ? `  ${ver}` : ""}` : "";
+      if (!acts.length && !meta) return box;
+      box.child(h_flex().pt(2).gap(6).items_center()
+        .children(acts.slice(0, 2).map(([id, label, on, k], i) => button(`moddr-${id}-${name}`, label, on, { key: k, primary: i === 0, enabled: free })))
+        .child(div().flex_1().min_w(0).truncate().text_right().text_size(11).text_color(t.dim).font_family(mono).child(meta)));
       return box;
     };
 
@@ -498,6 +478,8 @@ export default class Moddr extends View {
       const s = state(e, ctx.busy.has(name));
       const [label, color] = status(s, e);
       const open = name === sel;
+      // Up to date and not tracked rows need no word: their section says it.
+      const quiet = s === "current" || s === "untracked";
       return v_flex()
         .id(`moddr-row-${name}`)
         .flex_none()
@@ -505,14 +487,12 @@ export default class Moddr extends View {
         .px(10)
         .py(7)
         .rounded(6)
-        .when(open, (el) => el.bg(t.selected).pb(12))
+        .when(open, (el) => el.bg(t.selected).pb(10))
         .when(!open, (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)))
         .on_click((_ev, cx) => { if (!this.editing) { this.sel = name; this.confirm = null; this.handle.focus(); cx.notify(); } })
         .child(h_flex().gap(10).items_center()
-          .child(div().flex_none().size(8).rounded(4).bg(color))
-          .child(div().flex_none().font_semibold().text_size(13).text_color(t.foreground).child(name))
-          .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(e?.source ? `${e.source.owner}/${e.source.repo}` : ""))
-          .child(div().flex_none().text_size(12).text_color(color).child(label)))
+          .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(quiet && !open ? t.muted : t.foreground).child(name))
+          .when(!quiet, (el) => el.child(div().flex_none().text_size(12).text_color(color).child(label))))
         .when(open, (el) => el.child(details(name, e, s)));
     };
 
@@ -552,12 +532,11 @@ export default class Moddr extends View {
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().font_semibold().text_size(14).child("Mods"))
         .child(div().text_size(11.5).child(sub)))
-      .child(h_flex().id("moddr-refresh").flex_none().h(28).px(10).gap(6).items_center().rounded(5).border(1).border_color(t.border).text_size(12)
-        .text_color(busy ? t.dim : t.foreground)
-        .when(!busy && ctx.names.length > 0, (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)).on_click((_e, cx) => { this.refresh(cx); cx.notify(); }))
-        .child(busy ? div().text_color(t.accent).frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90) : svg("mods/moddr/refresh.svg").size(13).text_color(t.muted))
-        .child(busy ? "Checking" : "Refresh")
-        .child(keyHint("r")));
+      .child(h_flex().id("moddr-refresh").flex_none().gap(6).items_center().text_size(12)
+        .text_color(busy ? t.accent : t.muted)
+        .when(!busy && ctx.names.length > 0, (el) => el.cursor_pointer().hover((x) => x.text_color(t.foreground)).on_click((_e, cx) => { this.refresh(cx); cx.notify(); }))
+        .child(busy ? div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90) : svg("mods/moddr/refresh.svg").size(13).text_color(t.muted))
+        .when(!busy, (el) => el.child("Refresh").child(keyHint("r"))));
 
     // ---- banners ----
     const runError = !busy ? ctx.data.lastRun?.error : null;
@@ -571,7 +550,7 @@ export default class Moddr extends View {
       ? h_flex().flex_none().flex_wrap().px(16).py(8).gap_x(16).gap_y(4).border_t(1).border_color(t.border).text_size(11)
           .children(KEYS.map(([k, what]) => key(k, what)))
       : h_flex().flex_none().h(30).px(16).gap(14).items_center().border_t(1).border_color(t.border).text_size(11)
-          .child(key("j k", "move")).child(key("r", "refresh")).child(key("f", "find sources")).child(key("?", "all keys"))
+          .child(key("j k", "move")).child(key("?", "all keys"))
           .child(div().flex_1())
           .child(div().text_color(t.dim).child(`${every ? `every ${every}h` : "manual"} · ${ctx.auth()}`));
 

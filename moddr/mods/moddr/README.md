@@ -16,7 +16,7 @@ Moddr lists the folders in `~/.config/herdr-app/mods/` that Herdr did not ship, 
 
 ## States
 
-Mods are listed in sections: Updates, Needs a look (edited here, unknown version, error, not checked), Up to date, Not tracked. Each row shows a colored dot, the name, the repo and its status:
+Mods are listed in sections: Updates, Needs a look (edited here, unknown version, error, not checked), Up to date, Not tracked. Each row shows the name and, outside Up to date and Not tracked, its status:
 
 | Status | Meaning |
 |---|---|
@@ -29,7 +29,7 @@ Mods are listed in sections: Updates, Needs a look (edited here, unknown version
 | unknown version | the local files match none of the newest 11 versions, and no installed version is saved |
 | error | the last check failed. The message is under the row |
 
-A mod with updates and local edits shows its updates and both lists. A source Moddr found itself says "found by Moddr". The open row's main action is the solid button: Update, Discuss drift, or Set source.
+The open row shows the new commits, the files you changed, and at most two buttons: Update for a mod that is only behind, Discuss drift for an edited or unknown one, Set source for an untracked one. The repo and versions are at the right. Every other action is a key, listed under `?`.
 
 ## Keys
 
@@ -91,7 +91,7 @@ Reinstalling a mod needs no step in Moddr: the next check finds the new files' v
 
 ## Updating
 
-`u`, or the Update button, asks first. The question names the commits it brings in and, when you edited the mod, the files it replaces. Then:
+`u`, or the Update button, asks first. The question says how many of your changed files it replaces. Then:
 
 1. `git clone --depth 1 --filter=blob:none --no-checkout` downloads the source's branch into `data/moddr/staging/<name>/`, a sparse checkout takes only the mod's folder, and `core.autocrlf=false` keeps the files byte for byte.
 2. The mod's folder is copied to `data/moddr/backups/<name>/<time>-<installed sha>/`. The newest 3 backups of each mod are kept.
@@ -106,7 +106,7 @@ An update does not change your `keys.json` or layout. When a mod's install steps
 
 ## Restoring
 
-`z`, or the Restore button, puts the newest backup back with the same one-file-at-a-time writes. The files there now are backed up first (`<time>-before-restore`), so `z` again undoes a restore. The row shows the newest backup's name.
+`z` puts the newest backup back with the same one-file-at-a-time writes. The files there now are backed up first (`<time>-before-restore`), so `z` again undoes a restore.
 
 ## Discussing drift
 
@@ -126,7 +126,7 @@ GitHub requests use the first of:
 2. The token `gh auth token --hostname github.com` prints, when the GitHub CLI is installed and signed in where Herdr runs. The list asks each time it opens, the badge before its first refresh. The token is kept in memory only.
 3. Nothing: unsigned requests, 60 an hour (10 searches a minute), public repos only.
 
-The list's header ends with which one is in use. On Windows, gh must be installed on Windows itself: a gh inside WSL is not seen.
+The list's footer ends with which one is in use. On Windows, gh must be installed on Windows itself: a gh inside WSL is not seen.
 
 ## moddr.json
 
