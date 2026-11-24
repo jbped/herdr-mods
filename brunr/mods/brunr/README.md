@@ -156,7 +156,7 @@ Everything on the Response side is held in memory. It is never written to disk.
 
 ## The Request column
 
-The dialog has three columns: the tree, the Request column and the Response side. When the dialog is 1150px wide or more they sit side by side, and the Request column and the Response side share the room right of the tree. In a narrower dialog or tab the Request column sits above the Response side, and it is 46px high while it shows nothing. A menu opened with the mouse appears under the button that opened it, and a row's right-click menu appears at the pointer. A menu opened with a key appears at the dialog's top left. The dialog takes 96% of the window's width and 92% of its height, and the tree takes 22% of the dialog, between 240px and 380px. When the Response side is under 620px wide, the Search box of a folder Run sits on its own line with the filter controls under it.
+The dialog has three columns: the tree, the Request column and the Response side. When the dialog is 1150px wide or more they sit side by side, and the Request column and the Response side share the room right of the tree. In a narrower dialog or tab the Request column sits above the Response side, and it is 46px high while it shows nothing. The header's pane button and `shift-f` move an open dialog to a pane, and the same button in the pane moves it back to a dialog. Drafts and the last Response come along. The move waits for a Run to finish, and it asks first when an editor has unsaved edits. In a pane under 760px wide the tree is a 190px strip across the top, with the Request column and the Response side under it. A menu opened with the mouse appears under the button that opened it, and a row's right-click menu appears at the pointer. A menu opened with a key appears at the dialog's top left. The dialog takes 96% of the window's width and 92% of its height, and the tree takes 22% of the dialog, between 240px and 380px. When the Response side is under 620px wide, the Search box of a folder Run sits on its own line with the filter controls under it.
 
 A click on a Request row, `j` or `k` onto one, and `o` show the Request in the Request column. Nothing is sent. `o` and the row menu's Open file show it on its File tab. Selecting a folder, a Collection or the Global environment row keeps the last Request shown, as Bruno keeps a Request's tab open. Double-click and `enter` on the tree still run the Request.
 
@@ -458,6 +458,7 @@ In the dialog the keyboard is on the tree, the Request column or the Response si
 | `ctrl-s` | save the shown Request's Draft, or the open editor's file |
 | `ctrl-r` | read everything again |
 | `?` | show every key under the dialog, or only the main ones |
+| `shift-f` | move Brunr from the dialog to a pane in the current tab, or from the pane back to the dialog |
 | `,` | open the settings |
 | `ctrl-x` | close the tab (tab only) |
 | `esc` | step back: close a picker, a form, an editor's question, an editor, the settings or the Search box, leave a field, else close the dialog |
@@ -482,6 +483,7 @@ The gear or `,` opens them:
 
 - Open as a tab instead of a dialog. Switching it moves Brunr at once.
 - Open the dialog in full screen.
+- Open as a pane in the current tab. On: `ctrl-shift-u` splits the focused pane and shows Brunr at its right. Pressed again it moves the keyboard to Brunr's pane, and from there back to the pane you came from. `ctrl-x` closes the pane. This setting comes before "Open as a tab". Switching it on while the dialog is open moves Brunr to the pane at once.
 - Show key hints. Off hides the key list under the dialog. `?` shows it again. The list shows the main keys (`?`, `j`/`k`, `enter`, `e`, `/`, `ctrl-s`, `esc`), and `?` switches between them and every key.
 - A switch per shortcut key, and the key it is on.
 
@@ -540,6 +542,7 @@ The key opens a tiny overlay copy of the mod that opens Brunr as a dialog or a t
 - `progress.js`: turns the progress file's text into the finished Requests and the running one. No imports.
 - `report.js`: turns the CLI's JSON report, exit code and output into Responses. No Herdr calls.
 - `parser.js` and `yaml.js`: read Collection files in both formats and a small YAML subset.
+- `openpane.js`: Brunr as a pane in the current tab: the setting, what the key does, and closing the pane.
 - `kit/`: shared UI pieces: the frame, list rows, controls, the key legend, the settings panel and opening as a dialog or a tab.
 - `icons/`: the SVG icons.
 

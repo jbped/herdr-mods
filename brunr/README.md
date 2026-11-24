@@ -57,6 +57,7 @@ Or by hand:
 | `ctrl-s` | save |
 | `n` | New Request |
 | `?` | show every key, or only the main ones |
+| `shift-f` | move Brunr to a pane in the tab, or back to the dialog |
 | `esc` | step back, or close |
 
 Collections on other Machines need `brunr.json`. The config file, every key, the Request form, tree actions, the editors, settings, secrets, Runs, limits and how it works: [`mods/brunr/README.md`](mods/brunr/README.md).

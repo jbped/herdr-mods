@@ -28,6 +28,7 @@ import { sectionLabel } from "./kit/pane.js";
 import { chip, toolButton, textInput } from "./kit/controls.js";
 import { Shortcuts } from "./kit/shortcuts.js";
 import * as closeguard from "./closeguard.js";
+import { OPEN_AS_PANE, opensAsPane, setOpensAsPane, paneOption, dialogOpen, togglePane, closePane } from "./openpane.js";
 import { isLauncher, launch, toggleDialog, dialogClosed, closeTab, sharedStorage, openAsOption, onOpenAsChange } from "./kit/open-as.js";
 import * as sources from "./sources.js";
 import * as machine from "./machine.js";
@@ -75,6 +76,9 @@ const TREE = { share: 0.22, min: 240, max: 380 };
 const treeWidth = (/** @type {number} */ width) => Math.round(Math.min(TREE.max, Math.max(TREE.min, width * TREE.share)));
 /** The frame is this wide or wider: the Request and the Response sit side by side, else the Request is above. */
 const THREE_COLUMNS = 1150;
+/** The frame is narrower than this (a pane beside a terminal): the tree sits above the Request and the Response, this high. */
+const NARROW = 760;
+const NARROW_TREE_H = 190;
 /** The Request column's key context: the save key is bound in it, so it works in a field or an editor. */
 const REQUEST_CONTEXT = "BrunrRequest";
 const saveAction = (/** @type {string} */ key) => `brunr-save-${key.replace(/[^a-z0-9]/gi, "_")}`;
@@ -89,7 +93,7 @@ const ESC_GAP_MS = 300;
 /** The command each key stands for. @type {Record<string, string>} */
 const KEYS = {
   up: "up", k: "up", down: "down", j: "down", left: "left", h: "left", right: "right", l: "right", home: "home", end: "end", enter: "enter",
-  r: "run", p: "vars", e: "env", o: "file", y: "url", b: "app", f: "full", "ctrl-r": "reload",
+  r: "run", p: "vars", e: "env", o: "file", y: "url", b: "app", f: "full", "shift-f": "pane", "ctrl-r": "reload",
   "1": "part-1", "2": "part-2", "3": "part-3", "4": "part-4", "/": "search",
   "ctrl-h": "focus-left", "ctrl-l": "focus-right", escape: "cancel", "?": "keys", "shift-/": "keys", ",": "settings",
   "ctrl-x": "close-tab",
@@ -103,6 +107,7 @@ const SHORTCUTS = [
   { id: "run", key: "r", what: "run" }, { id: "vars", key: "p", what: "run with values" }, { id: "env", key: "e", what: "environment" },
   { id: "file", key: "o", what: "open file" }, { id: "url", key: "y", what: "copy URL" },
   { id: "app", key: "b", what: "open Bruno" }, { id: "full", key: "f", what: "full screen" },
+  { id: "pane", key: "shift-f", what: "pane or dialog" },
   { id: "reload", key: "ctrl-r", what: "reload" }, { id: "save", key: "ctrl-s", what: "save" },
   ...actions.SHORTCUTS,
 ];
@@ -127,6 +132,8 @@ export default class Brunr extends View {
     if (this.launcher) {
       // An open dialog with unsaved editor edits asks first and stays. The launcher just closes.
       if (!checking() && closeguard.request()) closeOverlay(props()?.overlay);
+      // Chosen to open as a pane: the key splits, goes to the pane, or goes back. An open dialog closes first (launch).
+      else if (!checking() && opensAsPane(MOD) && !dialogOpen(MOD)) { try { togglePane(MOD); } catch { /* no pane to split */ } closeOverlay(props()?.overlay); }
       else if (!checking()) launch(MOD, HOW, cx);
       return;
     }
@@ -173,8 +180,12 @@ export default class Brunr extends View {
     /** The settings panel: a tab or a dialog, whether the dialog opens filling the window, and a switch per shortcut key. */
     this.shortcuts = new Shortcuts({
       mod: MOD, keys: SHORTCUTS, rebind: true, storage: sharedStorage(MOD),
-      options: [openAsOption(MOD), { id: "full", label: "Open the dialog in full screen" }],
-      onChange: (id, on) => onOpenAsChange(MOD, id, on, HOW),
+      options: [paneOption(MOD), openAsOption(MOD), { id: "full", label: "Open the dialog in full screen" }],
+      onChange: (id, on) => {
+        // Switching the pane row on moves an open dialog to the pane at once, as the tab row does.
+        if (id === OPEN_AS_PANE) { setOpensAsPane(MOD, on); if (on && props()?.overlay !== undefined) this.movePane(); }
+        else onOpenAsChange(MOD, id, on, HOW);
+      },
     });
     /** @type {boolean} the dialog fills the window */
     this.full = Boolean(p.full ?? (p.overlay !== undefined && this.shortcuts.option("full")));
@@ -416,8 +427,12 @@ export default class Brunr extends View {
     // With key hints hidden in the settings, ? brings them back. Otherwise it shows every key, or the main ones again.
     else if (c === "keys") { if (this.shortcuts.showHints) this.allKeys = !this.allKeys; else { this.shortcuts.setOption("hints", true); this.allKeys = true; } }
     else if (c === "full") this.toggleFull();
-    // In a tab: close it and go back to the tab you came from. A dialog closes with esc.
-    else if (c === "close-tab") { if (props()?.overlay === undefined && !this.editors.askClose(() => closeTab(MOD))) closeTab(MOD); }
+    else if (c === "pane") this.movePane();
+    // In a tab or a pane: close it and go back to where you came from. A dialog closes with esc.
+    else if (c === "close-tab") {
+      const shut = () => (props()?.pane ? closePane(MOD) : closeTab(MOD));
+      if (props()?.overlay === undefined && !this.editors.askClose(shut)) shut();
+    }
     else if (c === "reload") cx.spawn((cx) => this.reload(cx));
     else if (c === "search") { if (this.response.many) { this.focus = "response"; this.response.filterInput.focus(); } }
     else if (c.startsWith("part-")) this.response.setPart(Number(c.slice(5)) - 1);
@@ -464,6 +479,24 @@ export default class Brunr extends View {
     }
     // The same esc can arrive again after the keyboard moved out of a text box. It must not close the dialog too.
     else if (Date.now() - this.steppedBack > ESC_GAP_MS) this.dismiss();
+  }
+
+  /**
+   * Moves Brunr from the dialog to a pane in the current tab, or from that pane back to the dialog.
+   * Drafts and the last Response come along: they live in the mod's memory, not in the copy.
+   */
+  movePane() {
+    const p = props() ?? {};
+    if (p.overlay === undefined && !p.pane) return this.say("Brunr is open as a tab. Change how it opens in the settings.");
+    if (store.running()) return this.say("Wait for the Run to finish, then move Brunr.");
+    if (this.editors.askClose(() => this.movePane())) return;
+    try {
+      if (p.overlay !== undefined) {
+        // The pane opens first: closing the dialog ends this copy.
+        togglePane(MOD);
+        this.dismiss();
+      } else Promise.resolve(HOW.dialog()).finally(() => closePane(MOD));
+    } catch { this.say("There is no pane to split here.", true); }
   }
 
   toggleFull() {
@@ -775,6 +808,8 @@ export default class Brunr extends View {
         .child(svg(ICON("reload")).size(13).flex_none().text_color(t.foreground)))
       .when(props()?.overlay !== undefined, (el) => el.child(this.button(t, "brunr-full", `${this.full ? "Leave full screen" : "Full screen"}${this.tipKey("full")}`, "full").px(6)
         .child(svg(ICON(this.full ? "shrink" : "expand")).size(13).flex_none().text_color(t.foreground))))
+      .when(props()?.overlay !== undefined || Boolean(props()?.pane), (el) => el.child(this.button(t, "brunr-pane", `${props()?.pane ? "Open as a dialog" : "Move to a pane in this tab"}${this.tipKey("pane")}`, "pane").px(6)
+        .child(svg(ICON(props()?.pane ? "expand" : "panel")).size(13).flex_none().text_color(t.foreground))))
       .child(this.shortcuts.button(t))
       // With the key list hidden there is no footer: the way back to it sits here, beside "Esc".
       .when(!this.shortcuts.showHints, (el) => el.child(hint(t, ["?", "keys"], { id: "brunr-keys", click: (cx) => this.command("keys", cx) }).flex_none().text_size(SIZE.small)));
@@ -908,12 +943,20 @@ export default class Brunr extends View {
   }
 
   /** The tree column: notices, the rows, and the selected row's details. @param {Theme} t */
-  treePane(t) {
+  treePane(t, narrow = false) {
     const rows = this.rows;
     if (this.reveal) {
       const at = rows.findIndex((r) => r.key === this.sel);
       if (at >= 0) this.scroll.scroll_to_item(at);
       this.reveal = false;
+    }
+    // In a narrow pane the tree is a strip across the top, without the selection's details.
+    if (narrow) {
+      return v_flex().w_full().h(NARROW_TREE_H).flex_none().gap(SIZE.frameGap)
+        .children(this.notices(t))
+        .child(v_flex().id("brunr-tree").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(2)
+          .children(rows.map((r, i) => this.treeRow(t, r, i)))
+          .when(!rows.length, (el) => el.child(this.emptyNote(t))));
     }
     return v_flex().w(treeWidth(this.width)).flex_none().min_h(0).gap(SIZE.frameGap)
       .children(this.notices(t))
@@ -963,24 +1006,28 @@ export default class Brunr extends View {
     this.buildRows();
     const treeW = treeWidth(this.width);
     /** @type {import("./kit/legend.js").Hint[]} */
+    // A dialog closes with esc. A tab or a pane closes with its own key.
+    /** @type {[string, string]} */
+    const closeHint = props()?.overlay !== undefined ? ["esc", "close"] : ["ctrl-x", "close"];
     const all = [["?", "fewer keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["h/l", "fold"], ["enter", this.focus === "request" ? "edit" : "run"],
       ["ctrl-h", "left"], ["ctrl-l", "right"], ["1-4", "view"], ["/", "search"],
       // A key that is turned off is not listed.
       ...this.shortcuts.keys.filter((k) => !this.shortcuts.isOff(k.id) && this.shortcuts.keyFor(k.id)).map((k) => /** @type {[string, string]} */ (
         [this.shortcuts.keyFor(k.id), k.id === "full" ? (this.full ? "leave full screen" : "full screen") : k.what])),
-      [",", "settings"], ["esc", "close"]];
+      [",", "settings"], closeHint];
     // The main keys. ? shows the whole list.
     const show = (/** @type {string} */ id) => !this.shortcuts.isOff(id) && this.shortcuts.keyFor(id);
     /** @type {import("./kit/legend.js").Hint[]} */
     const few = [["?", "all keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["enter", this.focus === "request" ? "edit" : "run"],
       ...(show("env") ? [/** @type {[string, string]} */ ([this.shortcuts.keyFor("env"), "environment"])] : []), ["/", "search"],
-      ...(show("save") ? [/** @type {[string, string]} */ ([this.shortcuts.keyFor("save"), "save"])] : []), ["esc", "close"]];
+      ...(show("save") ? [/** @type {[string, string]} */ ([this.shortcuts.keyFor("save"), "save"])] : []), closeHint];
     const hints = this.allKeys ? all : few;
     const picker = this.pickers.open;
     const editing = this.editors.open;
     // Three columns when the frame is wide enough, else the Request above the Response.
     const three = this.width >= THREE_COLUMNS;
-    const rest = this.width - treeW - SIZE.frameGap - 2 * SIZE.framePad;
+    const narrow = this.width < NARROW;
+    const rest = narrow ? this.width - 2 * SIZE.framePad : this.width - treeW - SIZE.frameGap - 2 * SIZE.framePad;
     const saveKey = this.shortcuts.keyFor("save");
     const requestCol = this.request.render(t, { focused: this.focus === "request", canRun: this.canRun(this.selected()), stacked: !three })
       .key_context(REQUEST_CONTEXT)
@@ -990,8 +1037,8 @@ export default class Brunr extends View {
     const body = editing
       ? div().flex().flex_1().min_h(0).key_context(REQUEST_CONTEXT).child(this.editors.render(t))
         .when(Boolean(saveKey), (el) => el.on_action(saveAction(saveKey), (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { if (!this.shortcuts.isOff("save")) this.command("save", cx); cx.notify(); }))
-      : div().flex().flex_row().flex_1().min_h(0).gap(SIZE.frameGap)
-        .child(this.treePane(t))
+      : div().flex().when(narrow, (el) => el.flex_col()).when(!narrow, (el) => el.flex_row()).flex_1().min_h(0).gap(SIZE.frameGap)
+        .child(this.treePane(t, narrow))
         .child((three ? h_flex().items_stretch() : v_flex()).flex_1().min_w(0).min_h(0).gap(SIZE.frameGap).child(requestCol).child(responseCol));
     const panel = frame(t, { id: "brunr", title: "Brunr", handle: this.handle, onKey: (e, cx) => this.key(e, cx), fill: true, details: this.details(t),
       onResize: (width, cx) => { if (width !== this.width) { this.width = width; cx.notify(); } } })
