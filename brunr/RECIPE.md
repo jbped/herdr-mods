@@ -30,7 +30,7 @@ An open editor replaces the three columns with one box on `background`: a 36px t
 
 Brunr shows Run results, not agent statuses. It does not touch agents.
 
-- `ctrl-shift-u` opens Brunr as a dialog or a tab, as the settings say, and pressed again closes the dialog or goes back from the tab.
+- `ctrl-shift-g` opens Brunr as a dialog or a tab, as the settings say, and pressed again closes the dialog or goes back from the tab.
 - Click selects a row and shows a Request in the Request column without sending it. Double-click runs a Request or folds a folder. The arrow folds. The chip opens the Environment picker. Right-click opens the row's menu. Selecting a folder keeps the last Request shown.
 - Keys on the tree: `j`/`k` and the arrows move, `g`/`G` and `home`/`end` go to the first and last row, `ctrl-d`/`ctrl-u` move half the tree's height, `h`/`l` fold, `enter` runs or folds, `r` runs, `p` runs with other values, `e` picks the Environment, `t` shows the File tab, `y` copies the URL, `o` opens Bruno desktop, `n` New Request, `shift-n` New folder, `f2` Rename, `m` Move to…, `ctrl-up`/`ctrl-down` Move up and down, `delete` Delete, `1`-`4` the views, `/` search, `f` full screen, `ctrl-s` save, `ctrl-r` reload, `?` the key list, `,` the settings, `esc` steps back then closes, and `q` closes the dialog. `ctrl-h` and `ctrl-l` move the keyboard between the tree, the Request column and the Response side.
 - Typing in the Request column edits a Draft. The tree row gets its dot and the column "Unsaved". `ctrl-s` or Save writes it, asking first in a picker when the text has warnings or the file changed on disk. A Run of a Request with a Draft saves it first.
@@ -47,7 +47,7 @@ One mod, `brunr`, in `mods/brunr/`. Its `mod.json`: `"place": "none"`, `"title":
 Keys, in `keys.json`:
 
 ```json
-{ "global": { "ctrl-shift-u": "mod.open:brunr" } }
+{ "global": { "ctrl-shift-g": "mod.open:brunr" } }
 ```
 
 The copy is chosen by `props()`: the key opens a 1 by 1 popup copy that opens Brunr as a tab or as a dialog (`openOverlay` with `kind: "dialog"`, `width: 1`, `height: 1`, `frame: "none"`, `props: { dialog: true }`) and closes. Each dialog and tab is a new copy. Shared state is read through `brunr.saved.<name>` keys, so every copy sees the same settings, folds and Environment choices.

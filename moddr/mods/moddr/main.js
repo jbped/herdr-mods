@@ -391,7 +391,7 @@ export default class Moddr extends View {
       .text_color(color)
       .cursor_pointer()
       .hover((x) => x.text_color(t.foreground))
-      .tooltip(`${tip}. Click to open Moddr (ctrl-shift-g)`)
+      .tooltip(`${tip}. Click to open Moddr (ctrl-shift-u)`)
       .on_click(() => run("mod.open", { name: "moddr" }))
       .child(running
         ? div().text_color(t.accent).frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)

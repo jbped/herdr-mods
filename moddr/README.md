@@ -38,7 +38,7 @@ Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/jbped/
 Or by hand:
 
 1. Copy `mods/moddr/` to `~/.config/herdr-app/mods/`.
-2. Merge `keys.json` into `~/.config/herdr-app/keys.json`. It binds `ctrl-shift-g`.
+2. Merge `keys.json` into `~/.config/herdr-app/keys.json`. It binds `ctrl-shift-u`.
 3. For the badge, add a block to your own layout's status row (Herdr's shipped layouts are read-only, so clone one first): `{ "id": "moddr-badge", "type": "block", "size": { "px": 48 }, "content": { "mod": "moddr", "props": { "badge": true } } }`.
 4. Run `herdr-app check ~/.config/herdr-app/mods/moddr`.
 
@@ -48,7 +48,7 @@ Click the badge, press the key or pick "Moddr: Open" in the palette. The first t
 
 | Key | Action |
 |---|---|
-| `ctrl-shift-g` | open the list, again closes it |
+| `ctrl-shift-u` | open the list, again closes it |
 | `j` / `k` | down / up |
 | `ctrl-r` | look for new sources and check every tracked mod |
 | `o` | open the selected mod's source on GitHub |
