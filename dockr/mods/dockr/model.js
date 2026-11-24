@@ -704,7 +704,7 @@ export function looseBranches(branches, sources) {
 }
 
 /** The letters Dockr's own keys use, so no row is given one of them as its hint. */
-export const KEY_LETTERS = "sxrtcbpdoyhlgmqjk";
+export const KEY_LETTERS = "sxrtcbpaoyhlgmqjk";
 
 /**
  * The panel as one list for the keyboard: each group's header, then its rows unless it is folded.
@@ -751,7 +751,7 @@ export function keyAction(k, item, facts = {}) {
   if (k === "t") return facts.running ? row("terminal") : null;
   if (k === "c") return facts.service ? row("source") : null;
   if (k === "b") return facts.service ? row("rebuild") : null;
-  if (k === "d") return facts.created ? row("diagnose") : null;
+  if (k === "a") return facts.created ? row("diagnose") : null;
   if (k === "o") return facts.link ? row("browser") : null;
   if (k === "p") return facts.output ? row("output") : null;
   if (k === "y") return facts.created ? row("copy") : null;
@@ -775,7 +775,7 @@ export function keyHints(item, facts = {}) {
   if (item?.kind === "group") { add("enter", "enter", "fold"); }
   add("enter", "enter", item?.kind === "row" ? "logs" : null);
   // The row's buttons, left to right, then what only its menu has, in the menu's order.
-  add("d", null, "diagnose"); add("t", null, "terminal"); add("r", null, "restart"); add("x", null, "stop"); add("s", null, "start");
+  add("a", null, "diagnose"); add("t", null, "terminal"); add("r", null, "restart"); add("x", null, "stop"); add("s", null, "start");
   add("p", null, "build output"); add("o", null, "browser"); add("c", null, "checkout"); add("b", null, "rebuild"); add("y", null, "copy name");
   add("shift-s", "S", "start all"); add("shift-x", "X", "stop all"); add("shift-d", "D", "remove");
   add("m", null, "menu");

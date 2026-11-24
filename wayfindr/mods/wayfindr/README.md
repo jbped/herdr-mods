@@ -39,15 +39,15 @@ The keys follow CodeyPacker's mods (`run`, `jump`, `branch`) and Dockr, so they 
 | `q` | close this layer; at the top, hide Wayfindr |
 | `esc` | as `q`, and leaves a text box |
 | `?` | every key that works now |
-| `v` / `V`, `tab` | the other view: Board or Pull Requests |
+| `]` / `[`, `tab` | the other view: Board or Pull Requests |
 | `P` | the next Profile (the legend names it; absent with one Profile) |
 | `,` | Settings (`q` or `esc` returns to the view) |
 | `o` / `y` | open the selected card or Pull Request in the browser / copy its URL |
 
-- **Board:** `h` / `l` (and `left` / `right`) previous and next Column with cards, `j` / `k` the card in the Column, `H` / `L` (and `shift-left` / `shift-right`) move the card one Column, `s` Launch, `enter` opens the detail panel, which then follows the cursor.
+- **Board:** `h` / `l` (and `left` / `right`) previous and next Column with cards, `j` / `k` the card in the Column, `H` / `L` (and `shift-left` / `shift-right`) move the card one Column, `a` Launch, `enter` opens the detail panel, which then follows the cursor.
 - **Detail panel:** the Board's keys, plus `c` the comment box, `e` edit the title, `m` the Move to list (`j` / `k`, `enter` moves there, `q` closes it). With the Launch card open: `enter` launches, `q` closes the card.
-- **Pull Requests:** a cursor over every row (Mine, then Needs my review), a row's letter opens it, `s` Review. The list does not scroll to follow the cursor.
-- **Pull Request overlay and pane:** `j` / `k` next and previous file (`k` from the first file is the Overview), `g` Overview, `G` last file, `v` viewed, `c` Checks (the Overview), `p` Post review, `f` fullscreen (in the pane: Herdr's pane zoom, again to unzoom), `s` Review (overlay only), `ctrl-r` refetch, `q` closes the overlay (nothing in a pane: its header closes it).
+- **Pull Requests:** a cursor over every row (Mine, then Needs my review), a row's letter opens it, `a` Review. The list does not scroll to follow the cursor.
+- **Pull Request overlay and pane:** `j` / `k` next and previous file (`k` from the first file is the Overview), `g` Overview, `G` last file, `v` viewed, `c` Checks (the Overview), `p` Post review, `f` fullscreen (in the pane: Herdr's pane zoom, again to unzoom), `a` Review (overlay only), `ctrl-r` refetch, `q` closes the overlay (nothing in a pane: its header closes it).
 - **Post review:** `p` or `enter` asks to post when the review is ready, `q` back to the Overview. Then `y` posts, `n` or `q` cancels.
 - **Settings:** `q` or `esc` goes back to the last view. Its boxes take letters.
 - The legend and the `?` list come from `keys.js`, the same function that decides what a key does, so they never name a key that does nothing.

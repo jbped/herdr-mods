@@ -92,7 +92,7 @@ The keys follow CodeyPacker's mods (`run`, `jump`, `branch`), so they are the sa
 | `c` | change checkout |
 | `b` | rebuild image |
 | `p` | read the build or bring-up's output as it runs, while one is working or has failed |
-| `d` | investigate the container with an agent (Diagnose when it has failed) |
+| `a` | investigate the container with an agent (Diagnose when it has failed) |
 | `o` | open its first link or port in the browser |
 | `y` | copy the container name |
 | `S` / `X` | start all / stop all in the group |
@@ -105,7 +105,7 @@ The keys follow CodeyPacker's mods (`run`, `jump`, `branch`), so they are the sa
 | `m` | the `⋯` menu (`j`/`k`, `enter`) |
 | `q`, `esc` | close the dialog. `esc` closes it from anywhere, the search box and the key list included |
 
-- **Container window:** `h`/`l` switch tabs, `j`/`k` move a line, `g`/`G` top and end, `/` search, `n`/`N` next and previous match, `f` follow, `t` timestamps, `y` copy, `s`/`x`/`r` start, stop and restart, `T` terminal, `q` close.
+- **Container window:** `h`/`l` switch tabs, `j`/`k` move a line, `g`/`G` top and end, `/` search, `n`/`N` or `ctrl-n`/`ctrl-p` next and previous match, `a` investigate with an agent, `f` follow, `t` timestamps, `y` copy, `s`/`x`/`r` start, stop and restart, `T` terminal, `q` close.
 - **Checkout picker:** it has a filter box, so plain letters type. Arrows or `ctrl-j`/`ctrl-k` move, `enter` switches, `ctrl-b` rebuilds, `ctrl-s` toggles "Start if stopped".
 - "Dockr: Open" in the palette does what `ctrl-shift-d` does.
 - A container or log view opens on top of the dialog. `esc` closes it and returns to the list.

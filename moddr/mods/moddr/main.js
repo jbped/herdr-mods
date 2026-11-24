@@ -24,7 +24,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 // The legend: [key, what]. KEYS is the list "?" shows; the footer line is built in render.
 const KEYS = [
   ["j / k", "down / up"], ["g / G", "first / last"], ["ctrl-r", "refresh"], ["f", "find sources again"],
-  ["v", "group by state / source"], ["enter", "check this one"], ["u", "update"], ["d", "discuss drift with an agent"],
+  ["] / [", "group by source / state"], ["enter", "check this one"], ["u", "update"], ["a", "discuss drift with an agent"],
   ["s", "set source"], ["o", "open the source in the browser"], ["m", "mark installed"], ["z", "restore the last backup"], ["x", "stop tracking"],
   ["q", "close"], ["?", "hide this list"],
 ];
@@ -344,13 +344,13 @@ export default class Moddr extends View {
     else if (k === "G" || (shift && k === "g") || k === "end") this.move(Infinity);
     else if (k === "g" || k === "home") this.move(-Infinity);
     else if (!shift && k === "f") this.refresh(cx, true);
-    else if (!shift && k === "v") {
+    else if (!shift && (k === "]" || k === "[")) {
       this.sort = this.sort === "source" ? "state" : "source";
       try { localStorage.setItem(SORT, this.sort); } catch { /* remembered for this session only */ }
     }
     else if (k === "enter") { if (name && this.ctx.entry(name)?.source) this.checkOne(name, cx); }
     else if (!shift && k === "u") this.askUpdate(name);
-    else if (!shift && k === "d") this.discuss(cx, name);
+    else if (!shift && k === "a") this.discuss(cx, name);
     else if (!shift && k === "s") this.startEdit(name);
     else if (!shift && k === "o") this.openSource(name);
     else if (!shift && k === "m") this.markInstalled(name, cx);
@@ -497,7 +497,7 @@ export default class Moddr extends View {
       const self = name === "moddr";
       const acts = [];
       if (s === "updates" && !self) acts.push(["update", "Update", () => this.askUpdate(name), "u"]);
-      if (edits.length || s === "unknown") acts.push(["drift", "Discuss drift", (cx) => this.discuss(cx, name), "d"]);
+      if (edits.length || s === "unknown") acts.push(["drift", "Discuss drift", (cx) => this.discuss(cx, name), "a"]);
       if (s === "unknown") acts.push(["mark", "Mark installed", (cx) => this.markInstalled(name, cx), "m"]);
       if (s === "untracked") acts.push(["set", "Set source", () => this.startEdit(name), "s"]);
       if (s === "error" || s === "unchecked") acts.push(["check", "Check", (cx) => this.checkOne(name, cx), "enter"]);
@@ -593,7 +593,7 @@ export default class Moddr extends View {
 
     // ---- footer ----
     const hint = ([k, what]) => h_flex().flex_none().gap(5).child(div().text_color(t.accent).child(k)).child(div().text_color(t.dim).child(what));
-    const core = [["j/k", "move"], ["o", "open source"], ["v", this.sort === "source" ? "by state" : "by source"], ["?", "keys"]];
+    const core = [["j/k", "move"], ["o", "open source"], ["] / [", this.sort === "source" ? "by state" : "by source"], ["?", "keys"]];
     const keyList = h_flex().flex_none().flex_wrap().px(12).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
       .children(KEYS.map(hint));
     const footer = h_flex().flex_none().h(28).px(12).gap(12).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)

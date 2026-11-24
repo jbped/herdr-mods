@@ -14,11 +14,11 @@ The first time it opens, Vaultr asks for the vault: type the path and press `ent
 
 "vaults" at the bottom right, or the `vaultr.vault` command, shows the vaults form. It lists the saved vaults: click one to read it, or its ✕ to drop it from the list (the folder is not touched). The path field adds another vault and switches to it. The list is kept in shared state as `vaultr.vaults`.
 
-`v` switches to the next saved vault and `shift-v` to the one before, going round. The commands `vaultr.next` and `vaultr.prev` do the same for the copy that is showing, so a key in `keys.json` can switch without Vaultr having the keyboard, for example `"alt-v": "vaultr.next"`. Each vault opens on the note it last showed, with the folders it had open.
+`]` switches to the next saved vault and `[` to the one before, going round. The commands `vaultr.next` and `vaultr.prev` do the same for the copy that is showing, so a key in `keys.json` can switch without Vaultr having the keyboard, for example `"alt-v": "vaultr.next"`. Each vault opens on the note it last showed, with the folders it had open.
 
 The folder must be inside your home folder. Herdr only lets a mod read files there, and Vaultr says so when the folder is outside it.
 
-One copy can read a different vault through its props: `{ "vault": "<folder>", "note": "<path below the vault>" }`. `note` is optional. That copy stays on its vault, and `v` does nothing in it.
+One copy can read a different vault through its props: `{ "vault": "<folder>", "note": "<path below the vault>" }`. `note` is optional. That copy stays on its vault, and `]` / `[` do nothing in it.
 
 ## Where it opens
 
@@ -55,9 +55,9 @@ The keys work while Vaultr has the keyboard: click it, or move onto it with `pan
 | `ctrl-d` / `ctrl-u` | move half a page down / up the list |
 | `enter` | open the selected note, or open and close the selected folder |
 | `l` / `right`, `h` / `left` | open / close the selected folder |
-| `]` / `[` | scroll to the next / previous heading |
+| `}` / `{` | scroll to the next / previous heading |
 | `backspace` | back to the note before |
-| `v` / `shift-v` | switch to the next / previous saved vault |
+| `]` / `[` | switch to the next / previous saved vault |
 | `b` | show or hide the list |
 | `?` | show or hide the list of every key |
 | `o` | open the note in Obsidian |

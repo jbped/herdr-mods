@@ -169,12 +169,13 @@ export function render(self, t) {
         self.handle.focus();
       }
       else if (e.key === "escape" || k === "q") close();
+      else if (logsTab && (k === "ctrl-n" || k === "ctrl-p")) step(self, k === "ctrl-n" ? 1 : -1);
       else if (e.modifiers?.control || e.modifiers?.alt || e.modifiers?.platform) return;
       else if (info && (k === "h" || k === "l")) tab(k === "h" ? -1 : 1);
       else if (info && k === "s" && !up) act(self, "start");
       else if (info && k === "x" && up) act(self, "stop");
       else if (info && k === "r" && up) act(self, "restart");
-      else if (info && k === "d") act(self, "diagnose");
+      else if (info && k === "a") act(self, "diagnose");
       else if (info && k === "shift-t" && up) act(self, "terminal");
       else if (!logsTab) return;
       else if (k === "j" || e.key === "down") line(1);
@@ -249,6 +250,6 @@ export function render(self, t) {
       .when(!rows.length, (el) => el.child(div().p(12).text_color(t.dim).child(L.lines.length ? "Every service is hidden." : L.seen ? "This container has written nothing." : "Waiting for lines…")))))
     .child(div().w_full().flex_none().px(12).py(5).border_t(1).border_color(t.border).child(legend(t, L.typing
       ? [["enter", "next match"], ["esc", "back to the lines"]]
-      : [...(info ? [["h/l", "tabs"], up ? ["x", "stop"] : ["s", "start"], ...(up ? [["r", "restart"], ["T", "terminal"]] : []), ["d", "investigate"]] : []),
+      : [...(info ? [["h/l", "tabs"], up ? ["x", "stop"] : ["s", "start"], ...(up ? [["r", "restart"], ["T", "terminal"]] : []), ["a", "investigate"]] : []),
         ...(logsTab ? [["j/k", "line"], ["g/G", "top/end"], ["/", "search"], ["n/N", "match"], ["f", "follow"], ["t", "time"], ["y", "copy"]] : []), ["q", "close"]])));
 }

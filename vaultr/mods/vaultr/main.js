@@ -16,11 +16,11 @@ const VAULTS = "vaultr.vaults"; // shared: the vaults to switch between
 const NARROW = 620;           // below this width the list and the note take turns
 const ROW_H = 24;
 // The legend: [key, what]. CORE is the footer line, KEYS the list "?" shows.
-const CORE = [["j/k", "move"], ["enter", "open"], ["/", "search"], ["[ / ]", "heading"], ["v", "vault"], ["?", "keys"]];
+const CORE = [["j/k", "move"], ["enter", "open"], ["/", "search"], ["{ / }", "heading"], ["[ / ]", "vault"], ["?", "keys"]];
 const KEYS = [
   ["j / k", "down / up"], ["g / G", "first / last"], ["ctrl-d / ctrl-u", "half a page"], ["enter", "open"],
-  ["h / l", "close / open folder"], ["/", "search"], ["[ / ]", "previous / next heading"], ["backspace", "back"],
-  ["v / V", "next / previous vault"], ["b", "list"], ["o", "Obsidian"], ["ctrl-r", "reload"], ["q", "close"],
+  ["h / l", "close / open folder"], ["/", "search"], ["{ / }", "previous / next heading"], ["backspace", "back"],
+  ["[ / ]", "previous / next vault"], ["b", "list"], ["o", "Obsidian"], ["ctrl-r", "reload"], ["q", "close"],
   ["esc", "leave the search"], ["?", "hide this list"],
 ];
 
@@ -400,11 +400,11 @@ export default class Vaultr extends View {
       else if (k === "h" || k === "left") { if (row?.kind === "dir") this.toggle(row.path, false); }
       else if (k === "backspace") this.back(cx);
       else if (k === "/" && !e.modifiers?.shift) { this.listShown = true; this.search.focus(); }
-      else if (k === "]") this.stepHeading(1, cx);
-      else if (k === "[") this.stepHeading(-1, cx);
+      else if (k === "}" || (e.modifiers?.shift && k === "]")) this.stepHeading(1, cx);
+      else if (k === "{" || (e.modifiers?.shift && k === "[")) this.stepHeading(-1, cx);
       else if (k === "?" || (e.modifiers?.shift && k === "/")) this.help = !this.help;
       else if (k === "b") this.listShown = !this.listShown;
-      else if (k === "v") this.cycle(e.modifiers?.shift ? -1 : 1);
+      else if (k === "]" || k === "[") this.cycle(k === "]" ? 1 : -1);
       else if (k === "o") { if (this.note) openExternal(`obsidian://open?path=${encodeURIComponent(`${this.vault}/${this.note.path}`)}`); }
       else if (k === "escape" && this.query) this.search.set_value("");
       else if (k === "escape" && this.narrow() && this.listShown && this.note) this.listShown = false;

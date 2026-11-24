@@ -93,7 +93,7 @@ Panel keys, after `ctrl-shift-d`:
 | `s` / `x` / `r` | start / stop / restart |
 | `t` | terminal in the container |
 | `c` / `b` | change checkout / rebuild image, on a configured service |
-| `d` | diagnose, on a bad container |
+| `a` | diagnose with an agent |
 | `o` | open its first link or port |
 | `y` | copy the container name |
 | `S` / `X` | start all / stop all in the group |
@@ -110,7 +110,7 @@ Container window:
 
 - Logs start with the last 300 lines and follow new ones. The window keeps the last 5,000.
 - Search takes plain text or `/regex/`, both ignoring case. Scrolling up turns Follow off.
-- Keys: `h`/`l` tabs, `j`/`k` line, `g`/`G` top and end, `/` search, `n`/`N` or `F3` match, `f` follow, `t` timestamps, `y` copy the lines shown, `s`/`x`/`r` start, stop, restart, `T` terminal, `q` or `esc` close.
+- Keys: `h`/`l` tabs, `j`/`k` line, `g`/`G` top and end, `/` search, `n`/`N`, `ctrl-n`/`ctrl-p` or `F3` match, `a` investigate with an agent, `f` follow, `t` timestamps, `y` copy the lines shown, `s`/`x`/`r` start, stop, restart, `T` terminal, `q` or `esc` close.
 - Stats samples only while its tab shows and keeps the last 90 samples.
 - When the container stops, the dot says "Stopped" and the window waits for it to start again.
 

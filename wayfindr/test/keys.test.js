@@ -45,12 +45,12 @@ test("board: columns, moving a card, browser, copy, launch, views", () => {
   assert.equal(a("board", "o"), "browser");
   assert.equal(a("board", "y"), "copy");
   assert.equal(a("board", "o", { ...ALL_FACTS, url: false }), null);
-  assert.equal(a("board", "s"), "launch");
-  assert.equal(a("board", "s", { ...ALL_FACTS, canLaunch: false }), null);
+  assert.equal(a("board", "a"), "launch");
+  assert.equal(a("board", "a", { ...ALL_FACTS, canLaunch: false }), null);
   assert.equal(a("board", "tab"), "toggleView");
-  assert.equal(a("board", "v"), "toggleView");
-  assert.equal(a("board", "shift-v"), "toggleView");
-  assert.equal(a("ticket", "v"), "toggleView");
+  assert.equal(a("board", "]"), "toggleView");
+  assert.equal(a("board", "["), "toggleView");
+  assert.equal(a("ticket", "]"), "toggleView");
   assert.equal(a("board", "shift-p"), "profile");
   assert.equal(a("board", "shift-p", { ...ALL_FACTS, nextProfile: null }), null);
   assert.equal(a("board", "b"), null);
@@ -61,7 +61,7 @@ test("board: columns, moving a card, browser, copy, launch, views", () => {
 
 test("ticket: the Board's keys plus comment, edit and Move", () => {
   assert.equal(a("ticket", "h"), "colPrev");
-  assert.equal(a("ticket", "s"), "launch");
+  assert.equal(a("ticket", "a"), "launch");
   assert.equal(a("ticket", "c"), "comment");
   assert.equal(a("ticket", "e"), "edit");
   assert.equal(a("ticket", "m"), "move");
@@ -77,7 +77,7 @@ test("move: j/k move in the list, enter picks, q and esc close it", () => {
   assert.equal(a("move", "enter"), "pick");
   assert.equal(a("move", "q"), "close");
   assert.equal(a("move", "escape"), "close");
-  assert.equal(a("move", "s"), null);
+  assert.equal(a("move", "a"), null);
 });
 
 test("launch: enter starts, q and esc close the card", () => {
@@ -90,18 +90,18 @@ test("launch: enter starts, q and esc close the card", () => {
 test("prs: browser, copy, review, views and a letter per row", () => {
   assert.equal(a("prs", "o"), "browser");
   assert.equal(a("prs", "y"), "copy");
-  assert.equal(a("prs", "s"), "review");
-  assert.equal(a("prs", "s", { ...ALL_FACTS, canReview: false }), null);
+  assert.equal(a("prs", "a"), "review");
+  assert.equal(a("prs", "a", { ...ALL_FACTS, canReview: false }), null);
   assert.equal(a("prs", "tab"), "toggleView");
-  assert.equal(a("prs", "v"), "toggleView");
-  assert.equal(a("prs", "shift-v"), "toggleView");
+  assert.equal(a("prs", "]"), "toggleView");
+  assert.equal(a("prs", "["), "toggleView");
   assert.equal(a("prs", "shift-p"), "profile");
   assert.equal(a("prs", "b"), "letter");
   assert.equal(a("prs", "p"), "letter");
   assert.equal(a("prs", ","), "settings");
-  assert.equal(a("prs", "a"), "letter");
+  assert.equal(a("prs", "s"), "letter");
   assert.equal(a("prs", "z"), "letter");
-  assert.equal(a("prs", "a", { ...ALL_FACTS, hasRows: false }), null);
+  assert.equal(a("prs", "s", { ...ALL_FACTS, hasRows: false }), null);
   for (const c of RESERVED) assert.notEqual(a("prs", c), "letter", c);
 });
 
@@ -118,7 +118,7 @@ test("pr: files, viewed, checks, post, fullscreen, browser, copy, review, refetc
   assert.equal(a("pr", "f"), "full");
   assert.equal(a("pr", "o"), "browser");
   assert.equal(a("pr", "y"), "copy");
-  assert.equal(a("pr", "s"), "review");
+  assert.equal(a("pr", "a"), "review");
   assert.equal(a("pr", "ctrl-d"), "halfDown");
   assert.equal(a("pr", "ctrl-r"), "refresh");
   assert.equal(a("pr", "r"), null);
@@ -129,7 +129,7 @@ test("pr: files, viewed, checks, post, fullscreen, browser, copy, review, refetc
 test("pr in the pane copy: f zooms the pane, no Review, q does nothing", () => {
   const pane = { ...ALL_FACTS, pane: true };
   assert.equal(a("pr", "f", pane), "zoom");
-  assert.equal(a("pr", "s", pane), null);
+  assert.equal(a("pr", "a", pane), null);
   assert.equal(a("pr", "q", pane), null);
   assert.equal(a("pr", "j", pane), "next");
 });
@@ -181,11 +181,11 @@ for (const layer of LAYERS) {
 
 test("coreHints: the few per layer, then ? when it works", () => {
   const labels = (layer, facts = ALL_FACTS) => coreHints(layer, facts).map(([k]) => k);
-  assert.deepEqual(labels("board"), ["j/k", "h/l", "enter", "s", "P", "q", "?"]);
-  assert.deepEqual(labels("board", { ...ALL_FACTS, nextProfile: null }), ["j/k", "h/l", "enter", "s", "q", "?"]);
-  assert.deepEqual(labels("ticket"), ["j/k", "c", "m", "s", "q", "?"]);
-  assert.deepEqual(labels("prs"), ["j/k", "a letter", "enter", "s", "P", "q", "?"]);
-  assert.deepEqual(labels("pr"), ["j/k", "v", "p", "s", "q", "?"]);
+  assert.deepEqual(labels("board"), ["j/k", "h/l", "enter", "a", "P", "q", "?"]);
+  assert.deepEqual(labels("board", { ...ALL_FACTS, nextProfile: null }), ["j/k", "h/l", "enter", "a", "q", "?"]);
+  assert.deepEqual(labels("ticket"), ["j/k", "c", "m", "a", "q", "?"]);
+  assert.deepEqual(labels("prs"), ["j/k", "a letter", "enter", "a", "P", "q", "?"]);
+  assert.deepEqual(labels("pr"), ["j/k", "v", "p", "a", "q", "?"]);
   assert.deepEqual(labels("review"), ["p", "q", "?"]);
   assert.deepEqual(labels("confirm"), ["y", "n", "?"]);
   assert.deepEqual(labels("settings"), ["q"]);
@@ -195,7 +195,7 @@ test("coreHints: the few per layer, then ? when it works", () => {
 
 test("keyHints lists every key that works, and drops the rest", () => {
   const labels = keyHints("pr", { ...ALL_FACTS, pane: true }).map(([k]) => k);
-  assert.ok(labels.includes("f") && !labels.includes("s") && !labels.includes("q"));
+  assert.ok(labels.includes("f") && !labels.includes("a") && !labels.includes("q"));
   assert.ok(labels.includes("v") && labels.includes("o") && labels.includes("?"));
   assert.deepEqual(keyHints("help", ALL_FACTS).map(([k]) => k), ["?", "q"]);
 });
