@@ -36,7 +36,7 @@ import * as tree from "./tree.js";
 import { planRun, plannedRequests } from "./plan.js";
 import { parseProgress, progressOf } from "./progress.js";
 import { Response, methodBadge } from "./response.js";
-import { Pickers, PICKER_KEYS } from "./picker.js";
+import { Pickers, PICKER_KEYS, anchor } from "./picker.js";
 import { RequestColumn, stepPlace } from "./request.js";
 import * as drafts from "./drafts.js";
 import * as saveflow from "./saveflow.js";
@@ -168,6 +168,8 @@ export default class Brunr extends View {
     this.steppedBack = 0;
     /** True while the key list under the dialog shows every key, not only the main ones. `?` switches it. */
     this.allKeys = false;
+    /** @type {{ x: number, y: number, width: number, height: number } | null} the frame's place in the window, from the last pointer move */
+    this.box = null;
     /** The settings panel: a tab or a dialog, whether the dialog opens filling the window, and a switch per shortcut key. */
     this.shortcuts = new Shortcuts({
       mod: MOD, keys: SHORTCUTS, rebind: true, storage: sharedStorage(MOD),
@@ -822,7 +824,7 @@ export default class Brunr extends View {
       .on_mouse_down("left", () => actions.press(this, r))
       .on_mouse_move((e, cx) => actions.hover(this, r, e, cx))
       .on_mouse_up("left", (_e, cx) => { actions.release(this, r, cx); cx.notify(); })
-      .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.openMenu(r); cx.notify(); });
+      .on_mouse_down("right", (e, cx) => { cx.stop_propagation(); anchor(e.position); this.openMenu(r); cx.notify(); });
     if (r.kind === "global") {
       return el.child(svg(ICON("globe")).size(13).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(r.name))
@@ -866,6 +868,7 @@ export default class Brunr extends View {
       .when(warn, (e) => e.child(svg(ICON("warning")).size(11).flex_none().text_color(t.ansi3)))
       .child(div().min_w(0).truncate().text_color(name ? t.foreground : t.dim).child(name ?? placeholder));
     return chip(t, { id, label, on: false, click: (cx) => { cx.stop_propagation(); click(); cx.notify(); } }).h(22).px(8)
+      .on_mouse_down("left", (e) => anchor(e.bounds))
       .tooltip(warn ? "This Environment has secret variables. Select the row for details." : `Pick the Environment${this.tipKey("env")}`);
   }
 
@@ -992,6 +995,8 @@ export default class Brunr extends View {
         .child((three ? h_flex().items_stretch() : v_flex()).flex_1().min_w(0).min_h(0).gap(SIZE.frameGap).child(requestCol).child(responseCol));
     const panel = frame(t, { id: "brunr", title: "Brunr", handle: this.handle, onKey: (e, cx) => this.key(e, cx), fill: true, details: this.details(t),
       onResize: (width, cx) => { if (width !== this.width) { this.width = width; cx.notify(); } } })
+      // Where the frame is in the window: a picker opened by a press is placed against it.
+      .on_mouse_move((e) => { if (e.bounds) this.box = e.bounds; })
       // A release that no row took ends a drag with no drop.
       .on_mouse_up("left", (_e, cx) => { if (actions.cancelDrag(this)) cx.notify(); })
       .child(body)
@@ -1000,7 +1005,7 @@ export default class Brunr extends View {
       // Esc with something open steps back from it. Without this the app closes the whole dialog (see BOX_CONTEXT).
       .when(Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing || this.request.typing || editing || this.treeForm.open || Boolean(this.drag?.over), (el) => el.key_context(BOX_CONTEXT)
         .on_action(BACK_ACTION, (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { this.command("cancel", cx); cx.notify(); }))
-      .when(Boolean(picker), (el) => el.child(this.pickers.panel(t)))
+      .when(Boolean(picker), (el) => el.child(this.pickers.panel(t, this.box)))
       .when(this.treeForm.open, (el) => el.child(this.treeForm.panel(t, (cx) => { this.treeForm.close(); this.handle.focus(); cx.notify(); })))
       .when(Boolean(this.vars), (el) => el.child(this.varsPanel(t, /** @type {VarsForm} */ (this.vars))))
       .when(this.shortcuts.open, (el) => el.child(this.shortcuts.panel(t)));

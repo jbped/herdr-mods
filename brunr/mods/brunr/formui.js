@@ -13,6 +13,7 @@ import { settings } from "herdr";
 import { colors, focusBorder, SIZE } from "./kit/theme.js";
 import { readTab, writeTab, tabBadge, ASSERT_OPERATORS } from "./form.js";
 import * as fv from "./formview.js";
+import { anchor } from "./picker.js";
 
 export const mono = () => String(settings()?.font_family ?? settings()?.font ?? "JetBrains Mono");
 const stop = (_e, cx) => cx.stop_propagation();
@@ -223,7 +224,7 @@ export function iconButton(t, id, icon, enabled, click) {
 export function menuButton(t, id, label, enabled, click) {
   return h_flex().id(id).h(26).px(8).gap(6).flex_none().items_center().rounded(8).border_1().border_color(t.border).bg(t.raised).text_size(12)
     .text_color(enabled ? t.foreground : t.dim)
-    .when(enabled, (el) => el.cursor_pointer().hover((s) => s.border_color(t.accent)).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); click(cx); cx.notify(); }))
+    .when(enabled, (el) => el.cursor_pointer().hover((s) => s.border_color(t.accent)).on_mouse_down("left", (e, cx) => { anchor(e.bounds); cx.stop_propagation(); }).on_click((_e, cx) => { cx.stop_propagation(); click(cx); cx.notify(); }))
     .child(div().child(label)).child(svg("mods/brunr/icons/chevron-down.svg").size(10).text_color(t.dim));
 }
 
