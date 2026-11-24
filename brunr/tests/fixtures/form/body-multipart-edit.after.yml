@@ -1,0 +1,26 @@
+info:
+  name: Multipart Order
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/products"
+  body:
+    type: multipart-form
+    data:
+      - name: note
+        type: text
+        value: hello
+        contentType: text/plain
+        description: a note
+      - name: tag
+        type: text
+        value: red
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: true

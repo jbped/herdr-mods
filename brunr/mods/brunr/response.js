@@ -1,4 +1,4 @@
-// The Response side of the dialog: the last Run or an opened file.
+// The Response side of the dialog: the last Run.
 // A single Request: its Response, Headers, Timeline and Tests views. A folder or Collection
 // Run: a summary line, the list of its Requests with filters, and the selected one's views.
 // The Run itself is kept in store.js. Only the selected Response's body is in the code view.
@@ -23,16 +23,23 @@ export const PARTS = ["response", "headers", "timeline", "tests"];
 const INDENT = 14;
 /** The Response side is this wide or wider: a Run's list sits beside the views, else above them. */
 const WIDE = 640;
+/** The column is this wide or wider: Search and the filter controls share one line. */
+const TOOLBAR_ONE_LINE = 620;
 const METHOD_COLOR = { GET: "ansi2", POST: "ansi5", PUT: "ansi3", PATCH: "ansi6", DELETE: "ansi1" };
 const METHOD_SHORT = { DELETE: "DEL", OPTIONS: "OPT", GRAPHQL: "GQL", CONNECT: "CONN" };
 
 const mono = () => String(settings()?.font_family ?? settings()?.font ?? "JetBrains Mono");
 const lines = (/** @type {unknown} */ text) => String(text ?? "").replace(/\r\n/g, "\n").split("\n");
 
+/** A method's colour, as Bruno's sidebar colours it. @param {Theme} t @param {unknown} method */
+export function methodColor(t, method) {
+  return t[/** @type {Record<string, string>} */ (METHOD_COLOR)[String(method ?? "").toUpperCase()] ?? "muted"];
+}
+
 /** A method as Bruno's sidebar shows it: short text in the method's colour, in a fixed width. @param {Theme} t @param {unknown} method @param {number} [width] */
 export function methodBadge(t, method, width = 36) {
   const m = String(method ?? "").toUpperCase();
-  return div().w(width).flex_none().text_size(10.5).font_semibold().text_color(t[/** @type {Record<string, string>} */ (METHOD_COLOR)[m] ?? "muted"]).truncate()
+  return div().w(width).flex_none().text_size(10.5).font_semibold().text_color(methodColor(t, m)).truncate()
     .child(/** @type {Record<string, string>} */ (METHOD_SHORT)[m] ?? m);
 }
 
@@ -94,7 +101,6 @@ export class Response {
     if (v.n === this.seen) return;
     this.seen = v.n;
     this.v = v;
-    if (v.kind === "file") { this.setEditor({ language: v.file.language, value: v.file.text }); return; }
     if (v.id !== this.runId) { this.runId = v.id; this.folded = new Set(); }
     const list = v.result?.responses ?? [];
     if (v.state === "done") this.filter = { ...this.filter, method: keepMethod(this.filter.method, list) };
@@ -179,12 +185,6 @@ export class Response {
       .border_1().border_color(o.focused ? t.input : t.border).text_color(t.foreground).text_size(12.5);
     const v = this.v;
     if (!v) return root.child(center(t, "No Response yet. Select a Request and press enter to run it."));
-    if (v.kind === "file") {
-      return root.child(h_flex().h(40).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().text_size(SIZE.small).text_color(t.dim).child("Read only"))
-        .child(div().flex_1().min_w(0).truncate().text_ellipsis_start().font_family(mono()).text_size(11.5).child(v.file.path)))
-        .child(this.editor ? Editor.new(this.editor).flex_1().min_h(0) : center(t, "Empty file"));
-    }
     const info = v.info;
     if (v.state === "running") {
       const waiting = v_flex().flex_1().items_center().justify_center().gap(10).text_color(t.muted)
@@ -217,7 +217,7 @@ export class Response {
   /**
    * The row above the Run list: the text filter, then the result, status, method and sort
    * controls, each cycling on click. While a Run is in progress it is drawn dim and does nothing.
-   * @param {Theme} t @param {boolean} on @param {{ escBox: (box: any) => any }} o
+   * @param {Theme} t @param {boolean} on @param {{ width: number, escBox: (box: any) => any }} o
    */
   toolbar(t, on, o) {
     /** @param {string} key @param {string} name @param {readonly (string | null)[]} values */
@@ -230,9 +230,14 @@ export class Response {
     const field = on
       ? o.escBox(textInput(t, this.filterInput, this.typing).h(26).w_full())
       : div().w_full().h(26).px(10).flex().items_center().rounded(8).border_1().border_color(t.border).text_size(11.5).text_color(t.dim).child("Search");
+    const controls = [control("result", "Result", RESULTS), control("status", "Status", STATUSES), control("method", "Method", methods), control("sort", "Sort", SORTS)];
+    // In a narrow column Search takes a line of its own and the controls wrap under it, so nothing is cut off.
+    if (o.width < TOOLBAR_ONE_LINE) {
+      return v_flex().id("brunr-filters").flex_none().px(8).py(7).gap(6).border_b(1).border_color(t.border)
+        .child(field).child(h_flex().flex_wrap().gap(6).items_center().children(controls));
+    }
     return h_flex().id("brunr-filters").h(40).flex_none().px(8).gap(6).items_center().border_b(1).border_color(t.border)
-      .child(div().flex_1().min_w(0).child(field))
-      .child(control("result", "Result", RESULTS)).child(control("status", "Status", STATUSES)).child(control("method", "Method", methods)).child(control("sort", "Sort", SORTS));
+      .child(div().flex_1().min_w(0).child(field)).children(controls);
   }
 
   /** The list area when the filters leave no Request. Clear filters keeps the sort. @param {Theme} t */

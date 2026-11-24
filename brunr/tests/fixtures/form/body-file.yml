@@ -1,0 +1,21 @@
+info:
+  name: Raw File
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/products"
+  body:
+    type: file
+    data:
+      - filePath: a.bin
+        contentType: application/octet-stream
+        selected: true
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: true

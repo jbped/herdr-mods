@@ -1,9 +1,10 @@
 // @ts-nocheck
 // What Brunr keeps. Two parts:
-// - Saved: fold state and the chosen Environments, in the mod's localStorage, keyed by Machine
-//   plus Collection root. Nothing from a Response is ever saved.
-// - The Run: the last Run or opened file, in memory only. Module code outlives the dialog, so
-//   closing and opening the dialog shows the last Response again.
+// - Saved: fold state, the chosen Environments and the Request form's tab, in the storage the
+//   dialog passes (open-as.js's sharedStorage), keyed by Machine plus Collection root. Nothing from
+//   a Response or a Request's text is ever saved.
+// - The Run: the last Run, in memory only. Module code outlives the dialog, so closing and opening
+//   the dialog shows the last Response again.
 // Pure: no Herdr, no Node APIs.
 
 const parse = (text, fallback) => { try { return JSON.parse(text ?? "null") ?? fallback; } catch { return fallback; } };
@@ -15,6 +16,8 @@ export class Saved {
     this.open = parse(storage?.getItem("open"), {});
     this.envs = parse(storage?.getItem("envs"), {});
     this.globals = parse(storage?.getItem("globals"), {});
+    const tab = storage?.getItem("formTab");
+    this.tab = typeof tab === "string" ? tab : null;
   }
 
   write(name, value) { try { this.storage?.setItem(name, JSON.stringify(value)); } catch {} }
@@ -26,6 +29,8 @@ export class Saved {
   /** The chosen Environment of a Collection: a name, null for "No Environment", undefined when never chosen. */
   env(collectionKey) { return collectionKey in this.envs ? this.envs[collectionKey] : undefined; }
   setEnv(collectionKey, name) { this.envs[collectionKey] = name ?? null; this.write("envs", this.envs); }
+  /** Forgets the choice: the Collection's default Environment applies again. */
+  clearEnv(collectionKey) { delete this.envs[collectionKey]; this.write("envs", this.envs); }
 
   /** The chosen Global environment of a workspace file, or null. */
   globalEnv(workspacePath) { return this.globals[workspacePath] ?? null; }
@@ -33,6 +38,10 @@ export class Saved {
     if (name) this.globals[workspacePath] = name; else delete this.globals[workspacePath];
     this.write("globals", this.globals);
   }
+
+  /** The Request form's tab last shown, a tab name only, or null. */
+  formTab() { return this.tab; }
+  setFormTab(name) { this.tab = String(name); try { this.storage?.setItem("formTab", this.tab); } catch {} }
 }
 
 /** The Environment a Run uses: the chosen one when it still exists, else the Collection's default. */
@@ -47,7 +56,7 @@ export function chosenEnv(saved, collectionKey, collection) {
 
 // The Run, in memory
 
-let view = null;              // what the Response side shows: a Run or a file
+let view = null;              // what the Response side shows: the last Run
 let busy = null;              // the Run in progress: { key, ck, label, progress }
 let waiters = [];
 
@@ -94,11 +103,5 @@ export function setProgress(progress) {
 export function finishRun(result) {
   if (view?.kind === "run" && view.state === "running") view = { ...view, state: "done", result, progress: null, n: Date.now() };
   busy = null;
-  changed();
-}
-
-/** Shows a Collection file on the Response side: `{ path, text, language }`. */
-export function showFile(file) {
-  view = { kind: "file", file, n: Date.now() };
   changed();
 }

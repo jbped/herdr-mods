@@ -81,7 +81,7 @@ _Avoid_: main, main branch
 ### Brunr
 
 **Brunr**:
-The mod that lists Bruno Collections in a side panel, runs their Requests, and shows each Response in a pane. It reads and runs. It never edits a Collection.
+The mod that lists Bruno Collections in a side panel, runs their Requests, shows each Response in a pane, and edits their Requests, folders and Environments.
 
 **Collection**:
 One Bruno collection: a folder of Requests with its own Environments, on one Machine. Its Runs execute on that Machine. It is not tied to a Repo or a space, and a copy on another Machine is a different Collection.
@@ -98,6 +98,10 @@ _Avoid_: env, profile, config
 **Global environment**:
 A named set of variables shared by every Collection of one Bruno workspace, chosen once for that workspace and applied on top of each Collection's Environment.
 _Avoid_: workspace environment, shared env
+
+**Draft**:
+The unsaved edits to one Request. A Draft is not part of a Run until it is saved.
+_Avoid_: dirty state, pending changes, buffer
 
 **Run**:
 One execution of a Request, a folder of Requests, or a whole Collection against one Environment, on the Collection's Machine.

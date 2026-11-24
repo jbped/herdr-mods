@@ -47,7 +47,7 @@ export function plannedRequests(collection, target) {
   if (kind === "collection") return cliOrder(collection?.children);
   const path = relPath(target.path);
   const node = findNode(collection, path);
-  if (kind === "request") return [node?.kind === "request" ? node : { kind: "request", name: path.slice(path.lastIndexOf("/") + 1), path }];
+  if (kind === "request") return node?.broken ? [] : [node?.kind === "request" ? node : { kind: "request", name: path.slice(path.lastIndexOf("/") + 1), path }];
   return node?.kind === "folder" ? cliOrder(node.children) : [];
 }
 
@@ -57,7 +57,7 @@ const validSeq = (s) => Number.isInteger(s) && s > 0;
 function cliOrder(nodes) {
   const folders = placeBySeq((nodes ?? []).filter((n) => n.kind === "folder"));
   const upper = (n) => fileName(n).toUpperCase();
-  const requests = (nodes ?? []).filter((n) => n.kind === "request")
+  const requests = (nodes ?? []).filter((n) => n.kind === "request" && !n.broken)
     .sort((a, b) => (upper(a) < upper(b) ? -1 : upper(a) > upper(b) ? 1 : 0))
     .sort((a, b) => (a.seq ?? 1) - (b.seq ?? 1));
   return [...folders.flatMap((f) => cliOrder(f.children)), ...requests];
