@@ -78,17 +78,21 @@ function readParams(L) {
 export const buildQueryString = (rows) => rows.filter((p) => p.name.trim()).map((p) => `${p.name}=${p.value}`).join("&");
 
 /**
- * The Query rows: the file's rows when their enabled ones are what the URL sends, else what Bruno's
- * requestUrlChanged makes of the URL: its query params, enabled, then the disabled rows. So the
- * table shows what the URL sends, and an edit keeps every param the URL had.
+ * The Query rows: the file's rows as they are, as Bruno's Params tab shows them, then the URL's
+ * query params that no enabled row names, enabled. So a row the URL lacks still shows, and an edit
+ * keeps every param the URL had.
  */
 function queryRows(L, rows) {
   const url = readHead(L.text, "yaml").url;
   if (url === null) return rows;
-  const sent = parseQueryParams(splitOnFirst(url, "?")[1]).map((p) => ({ name: p.name, value: p.value ?? "", enabled: true }));
-  const live = rows.filter((r) => r.enabled && r.name.trim());
-  if (live.length === sent.length && live.every((r, i) => r.name === sent[i].name && r.value === sent[i].value)) return rows;
-  return [...sent, ...rows.filter((r) => !r.enabled)];
+  const left = rows.filter((r) => r.enabled).map((r) => r.name);
+  const extra = [];
+  for (const p of parseQueryParams(splitOnFirst(url, "?")[1])) {
+    const at = left.indexOf(p.name);
+    if (at >= 0) left.splice(at, 1);
+    else extra.push({ name: p.name, value: p.value ?? "", enabled: true });
+  }
+  return extra.length ? [...rows, ...extra] : rows;
 }
 
 export const params = {

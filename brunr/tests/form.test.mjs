@@ -305,21 +305,34 @@ test("params: a URL query with no rows shows in the Query table, and an edit kee
     + "  params:\n    - name: a\n      value: \"1\"\n      type: query\n    - name: b\n      value: \"2\"\n      type: query\n");
 });
 
-test("params: rows that differ from the URL read as Bruno's URL reconciliation: the URL's params, then the disabled rows", () => {
+test("params: the file's rows show as they are, as in Bruno, then the URL's params that no enabled row names", () => {
   const head = "info:\n  name: M\n  type: http\nhttp:\n  url: x?a=1&b=2\n  params:\n";
   const row = (name, value, extra = "") => `    - name: ${name}\n      value: "${value}"\n      type: query\n${extra}`;
   const partial = head + row("a", "1", "      description: kept\n") + row("c", "3", "      disabled: true\n");
   assert.deepEqual(readTab(partial, "params").data.query, [
-    { name: "a", value: "1", enabled: true }, { name: "b", value: "2", enabled: true }, { name: "c", value: "3", enabled: false },
+    { name: "a", value: "1", enabled: true }, { name: "c", value: "3", enabled: false }, { name: "b", value: "2", enabled: true },
   ], "b is in the URL but not in the rows");
-  const edited = writeTab(partial, "params", { query: [{ name: "a", value: "1", enabled: true }, { name: "b", value: "5", enabled: true }, { name: "c", value: "3", enabled: false }], path: [] });
+  const edited = writeTab(partial, "params", { query: [{ name: "a", value: "1", enabled: true }, { name: "c", value: "3", enabled: false }, { name: "b", value: "5", enabled: true }], path: [] });
   assert.ok(edited.includes("  url: x?a=1&b=5\n"), edited);
   assert.ok(edited.includes(row("a", "1", "      description: kept\n")), "a matched row keeps its other keys");
   assert.ok(edited.includes(row("c", "3", "      disabled: true\n")));
   const extraRow = head + row("a", "1") + row("z", "9") + "    - name: b\n      value: \"2\"\n      type: query\n";
-  assert.deepEqual(readTab(extraRow, "params").data.query.map((r) => r.name), ["a", "b"], "an enabled row the URL does not send is not shown as sent");
+  assert.deepEqual(readTab(extraRow, "params").data.query.map((r) => r.name), ["a", "z", "b"], "an enabled row the URL lacks still shows");
+  const changed = head + row("a", "7") + row("b", "2");
+  assert.deepEqual(readTab(changed, "params").data.query.map((r) => `${r.name}=${r.value}`), ["a=7", "b=2"], "a row whose value differs from the URL is not doubled");
   const consistent = head.replace("x?a=1&b=2", "x?a=1") + row("off", "0", "      disabled: true\n") + row("a", "1");
-  assert.deepEqual(readTab(consistent, "params").data.query.map((r) => r.name), ["off", "a"], "rows that agree with the URL are read as they are");
+  assert.deepEqual(readTab(consistent, "params").data.query.map((r) => r.name), ["off", "a"]);
+});
+
+test("params: rows with no query in the URL all show, and the first edit puts them in the URL and keeps them in the file", () => {
+  const row = (name) => `    - name: ${name}\n      value: "{{${name}}}"\n      type: query\n`;
+  const text = "info:\n  name: R\n  type: http\nhttp:\n  method: GET\n  url: \"{{host}}/Report/1\"\n  params:\n" + row("agency") + row("lang");
+  const data = readTab(text, "params").data;
+  assert.deepEqual(data.query, [{ name: "agency", value: "{{agency}}", enabled: true }, { name: "lang", value: "{{lang}}", enabled: true }]);
+  assert.equal(tabBadge(text, "params"), 2);
+  const out = writeTab(text, "params", { ...data, query: [...data.query, { name: "n", value: "1", enabled: true }] });
+  assert.ok(out.includes("  url: \"{{host}}/Report/1?agency={{agency}}&lang={{lang}}&n=1\"\n"), out);
+  assert.ok(out.includes(row("agency") + row("lang")), out);
 });
 
 test("params: a path row whose :name left the URL stays at a Params edit, as Bruno's setQueryParams keeps it", () => {
