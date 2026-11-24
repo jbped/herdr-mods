@@ -16,7 +16,7 @@ Moddr lists the folders in `~/.config/herdr-app/mods/` that Herdr did not ship, 
 
 ## States
 
-Mods are listed in sections: Updates, Needs a look (edited here, unknown version, error, not checked), Up to date, Not tracked. Each row shows the name and, outside Up to date and Not tracked, its status:
+Mods are listed in sections: Updates, Needs a look (edited here, unknown version, error, not checked), Up to date, Not tracked. Each row shows the name and, outside Up to date and Not tracked, its status. `o` groups them by source repo instead, A to Z, then "No source", and every row shows its status:
 
 | Status | Meaning |
 |---|---|
@@ -40,6 +40,7 @@ The open row shows the new commits, the files you changed, and at most two butto
 | `ctrl-d` / `ctrl-u` | move 6 |
 | `r` | refresh: look for sources not looked for this week, then check every tracked mod |
 | `f` | refresh, looking again for every untracked mod's source |
+| `o` | group by state (the default) or by source repo, remembered for next time |
 | `enter` | check the selected mod |
 | `s` | set or change the selected mod's source |
 | `m` | save the newest upstream version as installed (unknown version only) |

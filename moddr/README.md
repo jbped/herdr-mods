@@ -51,6 +51,7 @@ Click the badge, press the key or pick "Moddr: Open" in the palette. The first t
 | `ctrl-shift-g` | open the list, again closes it |
 | `j` / `k` | down / up |
 | `r` | look for new sources and check every tracked mod |
+| `o` | group the list by state or by source repo |
 | `u` | update the selected mod, after a confirmation |
 | `d` | discuss its drift with an agent in a new space |
 | `z` | restore the last backup |

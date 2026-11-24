@@ -20,11 +20,14 @@ const SHOWN_COMMITS = 8;
 const BADGE_POLL = 10 * 60e3; // how often the badge asks whether a refresh is due
 const BADGE_FIRST = 30e3; // the badge's first look, after Herdr has settled
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// The legend: [key, what]. KEYS is the list "?" shows; the footer line is built in render.
 const KEYS = [
   ["j / k", "down / up"], ["g / G", "first / last"], ["r", "refresh"], ["f", "find sources again"],
-  ["enter", "check this one"], ["u", "update"], ["d", "discuss drift with an agent"], ["s", "set source"],
-  ["m", "mark installed"], ["z", "restore the last backup"], ["x", "stop tracking"], ["q", "close"],
+  ["o", "group by state / source"], ["enter", "check this one"], ["u", "update"], ["d", "discuss drift with an agent"],
+  ["s", "set source"], ["m", "mark installed"], ["z", "restore the last backup"], ["x", "stop tracking"],
+  ["q", "close"], ["?", "hide this list"],
 ];
+const SORT = "moddr.sort"; // localStorage: "state" or "source"
 const SECTIONS = [
   { key: "updates", title: "Updates" },
   { key: "attention", title: "Needs a look" },
@@ -39,6 +42,30 @@ function section(entry) {
   if (s === "current") return "current";
   if (s === "untracked") return "untracked";
   return "attention";
+}
+
+/** The groups the list shows, in order, each { key, title, names }. By state: the SECTIONS. By
+ *  source: one per repo, by name, then the mods with no source. */
+function groups(names, entry, by) {
+  if (by === "source") {
+    const repos = new Map();
+    const none = [];
+    for (const n of names) {
+      const src = entry(n)?.source;
+      if (!src) { none.push(n); continue; }
+      const k = `${src.owner}/${src.repo}`;
+      if (!repos.has(k)) repos.set(k, []);
+      repos.get(k).push(n);
+    }
+    const out = [...repos.keys()].sort((a, b) => a.localeCompare(b)).map((k) => ({ key: k, title: k, names: repos.get(k) }));
+    if (none.length) out.push({ key: "none", title: "No source", names: none });
+    return out;
+  }
+  return SECTIONS.map((g) => ({ ...g, names: names.filter((n) => section(entry(n)) === g.key) })).filter((g) => g.names.length);
+}
+
+function loadSort() {
+  try { return localStorage.getItem(SORT) === "source" ? "source" : "state"; } catch { return "state"; }
 }
 
 /** "now", "5m", "3h", "2d", then "Nov 16". */
@@ -72,6 +99,7 @@ export default class Moddr extends View {
     if (this.view === "badge") return this.initBadge(cx);
     this.sel = null; // the selected mod's name: rows move between sections as their state changes
     this.help = false;
+    this.sort = loadSort(); // "state" or "source": how the list is grouped
     this.editing = null; // the mod whose source is being typed
     this.editError = null;
     this.resolving = false;
@@ -138,9 +166,7 @@ export default class Moddr extends View {
 
   /** The mods in the order the list shows them: by section, then by name. */
   ordered() {
-    const out = [];
-    for (const g of SECTIONS) out.push(...this.ctx.names.filter((n) => section(this.ctx.entry(n)) === g.key));
-    return out;
+    return groups(this.ctx.names, (n) => this.ctx.entry(n), this.sort).flatMap((g) => g.names);
   }
 
   selected() {
@@ -310,6 +336,10 @@ export default class Moddr extends View {
     else if (k === "g" || k === "home") this.move(-Infinity);
     else if (!shift && k === "r") this.refresh(cx);
     else if (!shift && k === "f") this.refresh(cx, true);
+    else if (!shift && k === "o") {
+      this.sort = this.sort === "source" ? "state" : "source";
+      try { localStorage.setItem(SORT, this.sort); } catch { /* remembered for this session only */ }
+    }
     else if (k === "enter") { if (name && this.ctx.entry(name)?.source) this.checkOne(name, cx); }
     else if (!shift && k === "u") this.askUpdate(name);
     else if (!shift && k === "d") this.discuss(cx, name);
@@ -465,7 +495,8 @@ export default class Moddr extends View {
       const ver = !e?.installed ? ""
         : c?.latest && c.latest.sha !== e.installed ? `${short(e.installed)} → ${short(c.latest.sha)}`
         : `${short(e.installed)}${c?.latest?.date ? ` · ${ago(c.latest.date)} old` : ""}`;
-      const meta = e?.source ? `${e.source.owner}/${e.source.repo}${ver ? `  ${ver}` : ""}` : "";
+      const repo = e?.source && this.sort !== "source" ? `${e.source.owner}/${e.source.repo}` : "";
+      const meta = e?.source ? [repo, ver].filter(Boolean).join("  ") : "";
       if (!acts.length && !meta) return box;
       box.child(h_flex().pt(2).gap(6).items_center()
         .children(acts.slice(0, 2).map(([id, label, on, k], i) => button(`moddr-${id}-${name}`, label, on, { key: k, primary: i === 0, enabled: free })))
@@ -479,7 +510,7 @@ export default class Moddr extends View {
       const [label, color] = status(s, e);
       const open = name === sel;
       // Up to date and not tracked rows need no word: their section says it.
-      const quiet = s === "current" || s === "untracked";
+      const quiet = this.sort === "state" && (s === "current" || s === "untracked");
       return v_flex()
         .id(`moddr-row-${name}`)
         .flex_none()
@@ -499,9 +530,8 @@ export default class Moddr extends View {
     // ---- sections ----
     const children = [];
     const index = {};
-    for (const g of SECTIONS) {
-      const names = ctx.names.filter((n) => section(ctx.entry(n)) === g.key);
-      if (!names.length) continue;
+    for (const g of groups(ctx.names, (n) => ctx.entry(n), this.sort)) {
+      const names = g.names;
       children.push(h_flex().flex_none().px(16).pt(children.length ? 14 : 10).pb(4).gap(6).items_center()
         .child(div().text_size(11).font_semibold().text_color(t.muted).child(g.title))
         .child(div().text_size(11).text_color(t.dim).child(String(names.length))));
@@ -545,14 +575,13 @@ export default class Moddr extends View {
       .child(div().flex_1().text_size(11.5).text_color(t.muted).child(msg));
 
     // ---- footer ----
-    const key = (k, what) => h_flex().gap(5).child(div().font_family(mono).text_color(t.muted).child(k)).child(div().text_color(t.dim).child(what));
-    const footer = this.help
-      ? h_flex().flex_none().flex_wrap().px(16).py(8).gap_x(16).gap_y(4).border_t(1).border_color(t.border).text_size(11)
-          .children(KEYS.map(([k, what]) => key(k, what)))
-      : h_flex().flex_none().h(30).px(16).gap(14).items_center().border_t(1).border_color(t.border).text_size(11)
-          .child(key("j k", "move")).child(key("?", "all keys"))
-          .child(div().flex_1())
-          .child(div().text_color(t.dim).child(`${every ? `every ${every}h` : "manual"} · ${ctx.auth()}`));
+    const hint = ([k, what]) => h_flex().flex_none().gap(5).child(div().text_color(t.accent).child(k)).child(div().text_color(t.dim).child(what));
+    const core = [["j/k", "move"], ["r", "refresh"], ["o", this.sort === "source" ? "by state" : "by source"], ["?", "keys"]];
+    const keyList = h_flex().flex_none().flex_wrap().px(12).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
+      .children(KEYS.map(hint));
+    const footer = h_flex().flex_none().h(28).px(12).gap(12).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
+      .child(h_flex().flex_1().min_w(0).gap(14).items_center().overflow_hidden().children(this.help ? [] : core.map(hint)))
+      .child(div().flex_none().child(`${every ? `every ${every}h` : "manual"} · ${ctx.auth()}`));
 
     return v_flex()
       .id("moddr")
@@ -568,6 +597,7 @@ export default class Moddr extends View {
       .child(ctx.names.length
         ? v_flex().id("moddr-rows").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).children(children)
         : v_flex().flex_1().items_center().justify_center().text_size(12).text_color(t.dim).child("No mods of your own in the mods folder."))
+      .when(this.help, (el) => el.child(keyList))
       .child(footer);
   }
 }
