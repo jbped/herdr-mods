@@ -6,7 +6,7 @@ A dialog over the Herdr window, or a tab of its own, with three columns: your Br
 
 ## What you see
 
-The preview is from an earlier build, before the dialog: it shows a Response pane on the left and a Brunr side panel on the right. The dialog described here keeps the tree's rows, the Response side's look and the colours shown there, and adds the Request column between them. It has no side panel.
+The preview shows the dialog with a made-up Shop Collection: the tree on the left with Create Order selected, the Request column on its Body tab with a JSON body, and the Response column with a 201 Created Response.
 
 The dialog is a centred box 96% of the window wide, up to 1800px, and 92% of the window high, or the whole window in full screen or as a tab. A press beside the box closes it. Its frame has 22px padding, a 16px radius, a 1px `border`, a `popover` fill, 14px between sections and 13px text. Top to bottom:
 
