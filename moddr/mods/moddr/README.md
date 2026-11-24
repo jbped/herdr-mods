@@ -46,6 +46,7 @@ The open row shows the new commits, the files you changed, and at most two butto
 | `s` | set or change the selected mod's source |
 | `m` | save the newest upstream version as installed (unknown version only) |
 | `u` | update the selected mod (updates, edited here or unknown version). `y` or `enter` confirms, any other key cancels |
+| `U` | update every mod in Updates that has no local changes, Moddr itself excepted. One question names the mods it updates and the ones it leaves. Also "Update all" in the Updates heading, with two or more |
 | `a` | open a drift space for the selected mod |
 | `z` | restore the selected mod's newest backup. `y` or `enter` confirms |
 | `x` | stop tracking the selected mod. Moddr stops looking for its source until you set one |

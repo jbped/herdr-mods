@@ -54,6 +54,7 @@ Click the badge, press the key or pick "Moddr: Open" in the palette. The first t
 | `o` | open the selected mod's source on GitHub |
 | `]` / `[` | group the list by source repo or by state |
 | `u` | update the selected mod, after a confirmation |
+| `U` | update every mod with updates, after one confirmation. Mods changed here are left out |
 | `a` | discuss its drift with an agent in a new space |
 | `z` | restore the last backup |
 | `s` | set or change the source |

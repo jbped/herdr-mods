@@ -24,7 +24,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 // The legend: [key, what]. KEYS is the list "?" shows; the footer line is built in render.
 const KEYS = [
   ["j / k", "down / up"], ["g / G", "first / last"], ["ctrl-r", "refresh"], ["f", "find sources again"],
-  ["] / [", "group by source / state"], ["enter", "check this one"], ["u", "update"], ["a", "discuss drift with an agent"],
+  ["] / [", "group by source / state"], ["enter", "check this one"], ["u", "update"], ["U", "update every mod with updates"], ["a", "discuss drift with an agent"],
   ["s", "set source"], ["o", "open the source in the browser"], ["m", "mark installed"], ["z", "restore the last backup"], ["x", "stop tracking"],
   ["q", "close"], ["?", "hide this list"],
 ];
@@ -104,8 +104,9 @@ export default class Moddr extends View {
     this.editing = null; // the mod whose source is being typed
     this.editError = null;
     this.resolving = false;
-    this.confirm = null; // { name, kind: "update" | "restore" } waiting for y
+    this.confirm = null; // { name, kind: "update" | "restore" } or { kind: "all", names, skipped } waiting for y
     this.op = null; // { name, kind, step, error } while files change or a drift space is prepared
+    this.batch = null; // U: { names, at, failed: [[name, error]], done } while and after it runs
     this.saved = {}; // name -> its backups, newest first
     this.scroll = ScrollHandle.new();
     this.handle = cx.focus_handle();
@@ -191,8 +192,49 @@ export default class Moddr extends View {
   askUpdate(name) {
     const e = this.ctx.entry(name);
     const s = state(e, this.ctx.busy.has(name));
-    if (!e?.source || this.op || !["updates", "edited", "unknown"].includes(s)) return;
+    if (!e?.source || this.op || this.batch?.done === false || !["updates", "edited", "unknown"].includes(s)) return;
     this.confirm = { name, kind: "update" };
+  }
+
+  /** The mods U updates: updates waiting, no local edits, not Moddr itself. And the ones it leaves. */
+  updatable() {
+    const all = this.ctx.tracked().filter((n) => n !== "moddr" && state(this.ctx.entry(n), this.ctx.busy.has(n)) === "updates");
+    const edited = (n) => (this.ctx.entry(n)?.check?.edited?.length ?? 0) > 0;
+    return { names: all.filter((n) => !edited(n)), skipped: all.filter(edited) };
+  }
+
+  /** U: asks once, naming every mod it will update and every one it leaves. */
+  askUpdateAll() {
+    if (this.op || this.batch?.done === false) return;
+    const { names, skipped } = this.updatable();
+    if (!names.length) return;
+    this.batch = null;
+    this.confirm = { name: null, kind: "all", names, skipped };
+  }
+
+  /** Updates each mod in turn, a backup first, then checks it again. A failure does not stop the rest. */
+  updateAll(cx, names) {
+    this.confirm = null;
+    this.batch = { names, at: 0, failed: [], done: false };
+    cx.spawn(async (cx) => {
+      const wait = (ms) => new Promise((done) => cx.timer.after(ms, () => done()));
+      for (const [i, name] of names.entries()) {
+        const e = this.ctx.entry(name);
+        this.batch.at = i;
+        this.op = { name, kind: "update", step: "Starting", error: null };
+        cx.notify();
+        try {
+          await update(name, e, { wait, onStep: (step) => { this.op.step = step; cx.notify(); } });
+        } catch (err) {
+          this.batch.failed.push([name, String(err?.message ?? err)]);
+        }
+        this.op = null;
+        this.saved[name] = await backups(name);
+        if (e?.source) this.checkOne(name, cx);
+      }
+      this.batch.done = true;
+      cx.notify();
+    });
   }
 
   askRestore(name) {
@@ -324,7 +366,8 @@ export default class Moddr extends View {
     }
     if (this.confirm) {
       const { name, kind } = this.confirm;
-      if (k === "y" || k === "enter") this.change(cx, name, kind);
+      if ((k === "y" || k === "enter") && kind === "all") this.updateAll(cx, this.confirm.names);
+      else if (k === "y" || k === "enter") this.change(cx, name, kind);
       else this.confirm = null;
       cx.stop_propagation();
       cx.notify();
@@ -350,6 +393,7 @@ export default class Moddr extends View {
     }
     else if (k === "enter") { if (name && this.ctx.entry(name)?.source) this.checkOne(name, cx); }
     else if (!shift && k === "u") this.askUpdate(name);
+    else if (k === "U" || (shift && k === "u")) this.askUpdateAll();
     else if (!shift && k === "a") this.discuss(cx, name);
     else if (!shift && k === "s") this.startEdit(name);
     else if (!shift && k === "o") this.openSource(name);
@@ -404,7 +448,7 @@ export default class Moddr extends View {
     const mono = String(settings()?.font ?? "") || "JetBrains Mono";
     const elsewhere = !ctx.running && busyElsewhere(false);
     const busy = ctx.running || elsewhere;
-    const free = !this.op && !busy;
+    const free = !this.op && !busy && !(this.batch && !this.batch.done);
     const sel = this.selected();
     const tracked = ctx.tracked();
     const updates = tracked.filter((n) => state(ctx.entry(n)) === "updates").length;
@@ -549,9 +593,14 @@ export default class Moddr extends View {
     const index = {};
     for (const g of groups(ctx.names, (n) => ctx.entry(n), this.sort)) {
       const names = g.names;
+      const all = g.key === "updates" && this.sort === "state" && this.updatable().names.length >= 2;
       children.push(h_flex().flex_none().px(16).pt(children.length ? 14 : 10).pb(4).gap(6).items_center()
         .child(div().text_size(11).font_semibold().text_color(t.muted).child(g.title))
-        .child(div().text_size(11).text_color(t.dim).child(String(names.length))));
+        .child(div().text_size(11).text_color(t.dim).child(String(names.length)))
+        .when(all, (el) => el.child(div().flex_1()).child(h_flex().id("moddr-update-all").flex_none().gap(5).items_center().text_size(11)
+          .text_color(free ? t.muted : t.dim)
+          .when(free, (x) => x.cursor_pointer().hover((y) => y.text_color(t.foreground)).on_click((_e, cx) => { this.askUpdateAll(); cx.notify(); }))
+          .child("Update all").child(keyHint("U")))));
       // The first row of a section scrolls to its heading, so the heading stays in view.
       names.forEach((n, i) => { index[n] = i === 0 ? children.length - 1 : children.length; children.push(row(n)); });
     }
@@ -591,6 +640,31 @@ export default class Moddr extends View {
       .child(div().flex_none().mt(5).size(6).rounded(3).bg(color))
       .child(div().flex_1().text_size(11.5).text_color(t.muted).child(msg));
 
+    // ---- update all: the question, then progress, then what happened ----
+    const list = (ns) => ns.length > 3 ? `${ns.slice(0, 3).join(", ")} and ${ns.length - 3} more` : ns.join(", ");
+    const ask = this.confirm?.kind === "all" ? this.confirm : null;
+    const b = this.batch;
+    const allBox = ask
+      ? v_flex().flex_none().mx(12).mt(10).p(10).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
+        .child(h_flex().gap(8).items_center()
+          .child(div().flex_1().min_w(0).text_size(12).text_color(t.foreground).child(`Update ${ask.names.length} mods: ${list(ask.names)}? A backup of each is kept.`))
+          .child(button("moddr-all-yes", "Update all", (cx) => this.updateAll(cx, ask.names), { key: "y", primary: true }))
+          .child(button("moddr-all-no", "Cancel", () => { this.confirm = null; }, { key: "n" })))
+        .when(ask.skipped.length > 0, (el) => el.child(text(`Leaves ${list(ask.skipped)}: changed here. a on a mod talks its changes through with an agent.`, 11.5, t.working)))
+      : b && !b.done
+        ? h_flex().flex_none().mx(12).mt(10).px(10).py(7).gap(8).items_center().rounded(6).bg(t.raised).text_size(12).text_color(t.accent)
+          .child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90))
+          .child(`Updating ${b.at + 1} of ${b.names.length} · ${b.names[b.at]}${this.op?.step ? ` · ${this.op.step}` : ""}`)
+        : b?.done
+          ? h_flex().flex_none().mx(12).mt(10).px(10).py(7).gap(8).items_center().rounded(6).bg(t.raised).text_size(11.5)
+            .child(div().flex_none().size(6).rounded(3).bg(b.failed.length ? t.blocked : t.done))
+            .child(div().flex_1().min_w(0).text_color(t.muted).child(b.failed.length
+              ? `Updated ${b.names.length - b.failed.length} of ${b.names.length}. ${b.failed.map(([n, err]) => `${n}: ${err}`).join(" · ")}`
+              : `Updated ${b.names.length} mods. A backup of each is kept.`))
+            .child(div().id("moddr-all-done").flex_none().text_color(t.dim).cursor_pointer().hover((x) => x.text_color(t.foreground))
+              .on_click((_e, cx) => { this.batch = null; cx.notify(); }).child("✕"))
+          : null;
+
     // ---- footer ----
     const hint = ([k, what]) => h_flex().flex_none().gap(5).child(div().text_color(t.accent).child(k)).child(div().text_color(t.dim).child(what));
     const core = [["j/k", "move"], ["o", "open source"], ["] / [", this.sort === "source" ? "by state" : "by source"], ["?", "keys"]];
@@ -611,6 +685,7 @@ export default class Moddr extends View {
       .when(Boolean(ctx.error), (el) => el.child(banner(ctx.error, t.blocked)))
       .when(Boolean(runError), (el) => el.child(banner(runError, t.working)))
       .when(Boolean(editor), (el) => el.child(editor))
+      .when(Boolean(allBox), (el) => el.child(allBox))
       .child(ctx.names.length
         ? v_flex().id("moddr-rows").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).children(children)
         : v_flex().flex_1().items_center().justify_center().text_size(12).text_color(t.dim).child("No mods of your own in the mods folder."))
