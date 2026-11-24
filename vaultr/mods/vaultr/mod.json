@@ -8,7 +8,9 @@
     { "title": "Vaultr: Open in a tab", "command": "tab.new", "args": { "name": "Vault", "mod": "vaultr" }, "about": "Read your Obsidian vault in a tab of this space" },
     { "title": "Vaultr: Open beside this pane", "command": "pane.split", "args": { "direction": "right", "mod": "vaultr" }, "about": "Read your Obsidian vault beside the focused pane" },
     { "title": "Vaultr: Open in the side panel", "command": "tabs-plus.vaultr", "about": "Read your Obsidian vault in the layout's side panel. Needs a vaultr block in the panel and a tab bar that handles this command (see the README)" },
-    { "title": "Vaultr: Change vault", "command": "vaultr.vault", "about": "Choose another vault folder in the open Vaultr" },
+    { "title": "Vaultr: Next vault", "command": "vaultr.next", "about": "Switch the open Vaultr to the next saved vault (v inside Vaultr, shift-v for the one before)" },
+    { "title": "Vaultr: Previous vault", "command": "vaultr.prev", "about": "Switch the open Vaultr to the saved vault before this one" },
+    { "title": "Vaultr: Vaults", "command": "vaultr.vault", "about": "Add, pick or remove a vault in the open Vaultr" },
     { "title": "Vaultr: Reload", "command": "vaultr.reload", "about": "Read the vault's folders and links again" }
   ]
 }

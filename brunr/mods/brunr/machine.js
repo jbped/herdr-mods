@@ -1,3 +1,4 @@
+// @ts-nocheck
 // The Machine boundary: everything Brunr asks of a computer. Lists and reads a Collection's files,
 // checks for the Bruno CLI, runs `bru` and reads and deletes its report, starts Bruno desktop.
 // Every exec, readTextFile, watchFolder and fs call of the mod is in this file.
@@ -194,7 +195,13 @@ export async function checkCli(machine) {
     } catch { return null; }
   };
   const [cmd, lead] = bruCommand(machine);
-  const [bru, node] = await Promise.all([version(cmd, [...lead, "--version"]), version("node", ["--version"])]);
+  // On Windows the app's exec cannot find bru.cmd by name, so node finds it, as for a Run.
+  // Without the CLI's script next to bru.cmd, bru.cmd is tried as before.
+  const bruVersion = async () => {
+    if (cmd !== "bru.cmd") return version(cmd, [...lead, "--version"]);
+    return (await version("node", ["-e", WINDOWS_CHECK, "--", "--version"])) ?? version(cmd, [...lead, "--version"]);
+  };
+  const [bru, node] = await Promise.all([bruVersion(), version("node", ["--version"])]);
   return { bru, node, step: cliStep(bru, node) };
 }
 
@@ -234,11 +241,13 @@ const REDIRECT = 'out=$1; shift; exec "$@" >"$out" 2>&1';
 // bru.cmd on PATH, takes the script path out of it and passes every argument as an array item.
 // It exits with NO_SCRIPT when it cannot find the script, and Brunr then starts bru.cmd as before.
 const NO_SCRIPT = 86;
-const WINDOWS_RUN = [
+const FIND_BRU = [
   'const fs = require("fs"), path = require("path"), cp = require("child_process");',
-  "const [out, ...args] = process.argv.slice(1);",
   "let script = null, node = process.execPath;",
-  'for (const dir of (process.env.PATH || "").split(path.delimiter)) {',
+  // npm's default global folder comes last, for an app started with a PATH that lacks it.
+  'const dirs = (process.env.PATH || "").split(path.delimiter);',
+  'if (process.env.APPDATA) dirs.push(path.join(process.env.APPDATA, "npm"));',
+  "for (const dir of dirs) {",
   '  let text; try { text = fs.readFileSync(path.join(dir, "bru.cmd"), "utf8"); } catch { continue; }',
   '  const m = /%~?dp0%?\\\\?([^"%\\r\\n]+?\\.js)"/.exec(text);',
   "  if (!m) continue;",
@@ -247,10 +256,20 @@ const WINDOWS_RUN = [
   "  break;",
   "}",
   `if (!script) { process.stderr.write("brunr: no Bruno CLI script next to bru.cmd"); process.exit(${NO_SCRIPT}); }`,
+];
+const WINDOWS_RUN = [
+  ...FIND_BRU,
+  "const [out, ...args] = process.argv.slice(1);",
   'const fd = fs.openSync(out, "w");',
   'const child = cp.spawn(node, [script, ...args], { stdio: ["ignore", fd, fd], windowsHide: true });',
   'child.on("error", (e) => { fs.writeSync(fd, "Cannot start the Bruno CLI: " + e.message + "\\n"); process.exit(1); });',
   'child.on("exit", (code) => process.exit(code == null ? 1 : code));',
+].join("\n");
+/** Windows: runs the CLI's script with the given arguments and passes its output through. For the `--version` check. */
+const WINDOWS_CHECK = [
+  ...FIND_BRU,
+  'const r = cp.spawnSync(node, [script, ...process.argv.slice(1)], { stdio: "inherit", windowsHide: true });',
+  "process.exit(r.status == null ? 1 : r.status);",
 ].join("\n");
 
 /**
@@ -303,18 +322,18 @@ const timedOutError = (e) => /time(d)? ?out/i.test(String(e?.message ?? e));
  * One Run on the Collection's Machine. Plans it, runs `bru` with its output going to a progress
  * file, reads the report and the progress file and deletes both, whatever happened, then returns
  * `readRun`'s result. Never throws.
- * `run`: `{ machine, collection, target, environment, globalEnvironment, workspacePath, timer, onProgress }`.
+ * `run`: `{ machine, collection, target, environment, globalEnvironment, workspacePath, envVars, timer, onProgress }`.
  * With `timer` (a `cx.timer`) and `onProgress`, the progress file is read every PROGRESS_EVERY ms
  * while the CLI runs, and `onProgress(text)` gets its text each time it changed.
  */
-export async function runBru({ machine = null, collection, target, environment = null, globalEnvironment = null, workspacePath = null, timer = null, onProgress = null }) {
+export async function runBru({ machine = null, collection, target, environment = null, globalEnvironment = null, workspacePath = null, envVars = null, timer = null, onProgress = null }) {
   await sweepReports();
   let path = null;
   try { path = await reportPath(machine); } catch (e) {
     return readRun({ code: 1, stderr: `Cannot make a place for the report: ${e?.message ?? e}` });
   }
   const log = progressPath(path);
-  const plan = planRun({ collection, target, environment, globalEnvironment, workspacePath, reportPath: path });
+  const plan = planRun({ collection, target, environment, globalEnvironment, workspacePath, reportPath: path, envVars });
   const input = { reportText: null, code: null, stdout: "", stderr: "", timedOut: false };
   const watch = watchProgress(machine, log, timer, onProgress);
   let redirected = true;

@@ -1,12 +1,9 @@
 {
-  "place": "right",
-  "size": 320,
+  "place": "none",
   "title": "Brunr",
-  "focusable": true,
-  "overlay": { "kind": "popup", "at": "top", "offset": 0, "width": 1, "height": 1, "frame": "none" },
+  "overlay": { "kind": "popup", "width": 1, "height": 1, "frame": "none" },
   "palette": [
-    { "title": "Brunr: Toggle", "command": "layout.toggle", "args": { "id": "brunr" }, "about": "Show or hide the Brunr panel" },
-    { "title": "Brunr: Keys", "command": "mod.open", "args": { "name": "brunr" }, "about": "Show Brunr and give it the keyboard, or hide it when it is shown (ctrl-shift-u). Up/Down move, Enter runs or folds, r runs a folder, e Environment, o open file, Esc leaves" },
+    { "title": "Brunr: Open", "command": "mod.open", "args": { "name": "brunr" }, "about": "Your Bruno Collections in a full-window dialog or a tab, as its settings say: run a Request and read its Response. Again closes the dialog, or goes back from the tab" },
     { "title": "Brunr: Reload", "command": "brunr.reload", "about": "Read brunr.json, the Bruno workspace, every Collection and the Bruno CLI check again" }
   ]
 }

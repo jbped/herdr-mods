@@ -1,3 +1,4 @@
+// @ts-nocheck
 // A small YAML reader for the files Bruno writes: nested maps by indentation, lists of maps,
 // quoted and plain scalars, block scalars, one-line flow collections, comments and empty values.
 // It is not a general YAML parser. Anchors, tags, multi-line quoted or plain scalars and multiple

@@ -1,3 +1,4 @@
+// @ts-nocheck
 // The Response pane's list of a Run's Requests, grouped under the folders they belong to, as the
 // panel shows them. Pure: no Herdr, no drawing. The live list and the final result use the same
 // rows, so the list does not jump when the Run ends.

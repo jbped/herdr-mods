@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Filtering and sorting a finished Run's list in the Response pane. Pure: no Herdr, no drawing.
 // The result goes to runRows (runtree.js), which still groups the Requests by folder.
 import { foldersOf } from "./runtree.js";

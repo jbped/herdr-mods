@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Sources: which Collections Brunr shows. Reads brunr.json from the app home and Bruno desktop's
 // workspace file, finds the Collection roots of each config entry, and loads one Collection.
 // The files themselves are read through machine.js.

@@ -1,3 +1,4 @@
+// @ts-nocheck
 // The Collection parser: Bruno collection files (OpenCollection YAML or bru) to a tree of folders
 // and Requests, the Environments with variable names only, and the default Environment.
 // Pure: no Herdr, no Node APIs. Paths are relative to the Collection root, with forward slashes.

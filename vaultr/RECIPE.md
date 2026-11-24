@@ -18,8 +18,9 @@ Two columns on `background`, 13px text.
   - A notice strip on `surface` when there is one: an error in `blocked`, a note such as `No note named "X".` in `muted`.
   - The note, scrolling, 16px side padding, 10px between parts: the properties box (`surface`, 1px `border`, radius 6, 12px `muted`, one line per frontmatter line), then the text, with each image as its own block at most 720px wide with radius 4. A missing image is one `blocked` line: "Missing image: name".
   - Under a 1px `border` line: "BACKLINKS (n)" in 11px `dim`, then one `accent` line per linking note. While the vault is still being read it says "BACKLINKS (reading the vault…)".
-  - Footer, 24px high, 11px `dim`: the key hints at the left, "N notes · change vault" at the right.
-- **Folder form**, in place of both columns when no vault is set or after "change vault": centered, "Choose your Obsidian vault" (or "Change vault") in 16px semibold, one `muted` line, a path field with a "Use" button, "Browse…" below (and "Cancel" when changing), and an error line in `blocked`.
+  - Footer, 28px high, 11px: the legend at the left, "<vault folder name> · N notes · vaults" in `dim` at the right. The legend is key and meaning pairs, the key in `accent` and the meaning in `dim`, 14px apart: `j/k` move, `enter` open, `/` search, `[ / ]` heading, `v` vault, `?` keys.
+  - After `?`, a block above the footer on `raised` lists every key the same way, wrapping, and the footer's legend is empty. `?` again, or a heading jump, hides it.
+- **Vaults form**, in place of both columns when no vault is set or after "vaults": centered, "Choose your Obsidian vault" (or "Vaults") in 16px semibold, one `muted` line, one 30px row per saved vault (folder name in semibold, path in 12px `muted`, a ✕ at the right, the current one on `selected`), a path field with a "Use" button ("Add" when a vault is saved), "Browse…" below (and "Cancel" when a vault is set), and an error line in `blocked`.
 
 Narrower than 620px there is one column: the list or the note. The list then has a 32px row above the search box, "← Back to <note name>" in `muted` with a 1px `border` line below, which shows the note again.
 
@@ -31,21 +32,22 @@ Narrower than 620px there is one column: the list or the note. The list then has
 - Clicking a breadcrumb folder shows the list with that folder open and the keyboard on it.
 - Clicking a link: a note opens in place, at the heading when the link names one. A missing note shows the notice. A file that is not a note, and a web link, open in the system's default app.
 - Typing in the search box filters by every word, on the path, with notes whose name matches first, 200 at most.
-- Keys, while the mod has the keyboard: `/` search, `j`/`k` or arrows move, `enter` open, `l`/`h` or right/left open/close a folder, `]`/`[` next/previous heading, `backspace` back, `b` list, `o` Obsidian, `r` reload, `escape` leave or clear the search.
+- Keys, while the mod has the keyboard: `/` search, `j`/`k` or arrows move, `enter` open, `l`/`h` or right/left open/close a folder, `]`/`[` next/previous heading, `backspace` back, `v`/`shift-v` next/previous vault, `b` list, `o` Obsidian, `r` reload, `escape` leave or clear the search.
 - When anything under the vault changes, the folders are read again, the open note is redrawn, and backlinks are rebuilt. Changes only inside `.obsidian/` are ignored.
-- "change vault", the `vaultr.vault` command, and the first run show the folder form. `enter` or "Use" takes the typed path, "Browse…" opens the system's folder picker.
+- "vaults", the `vaultr.vault` command, and the first run show the vaults form. `enter` or the button takes the typed path, adds it to the saved vaults and switches to it. "Browse…" opens the system's folder picker. Clicking a saved vault switches to it. Its ✕ drops it from the list, and when it was the current one the first vault left becomes current.
+- `v`, and the `vaultr.next` command, switch to the saved vault after the current one, going round. `shift-v` and `vaultr.prev` go the other way. With one vault saved they show "One vault is saved. Add another with "vaults" at the bottom right." A switch restarts the copy on the other vault, on the note that vault last showed.
 
 ## Built from
 
-- `mods/vaultr/mod.json`: `place` "none", `focusable` true, `overlay` `{ "kind": "dialog", "width": 1100, "height": 0.85 }`, and six `palette` entries (open as dialog, tab, pane, side panel; change vault; reload). The side panel entry sends `tabs-plus.vaultr` and needs the setup in the mod's README.
+- `mods/vaultr/mod.json`: `place` "none", `focusable` true, `overlay` `{ "kind": "dialog", "width": 1100, "height": 0.85 }`, and eight `palette` entries (open as dialog, tab, pane, side panel; next vault; previous vault; vaults; reload). The side panel entry sends `tabs-plus.vaultr` and needs the setup in the mod's README.
 - `mods/vaultr/main.js`: one `View`. Props: `vault` and `note`, both optional, and `overlay` from Herdr.
 - `mods/vaultr/md.js`, no Herdr imports: splits frontmatter, and turns the body into segments, `{type: "md", text, heading?}` or `{type: "image", target}`. A heading line starts a new segment. Wikilinks and relative markdown links become `[label](vaultr://open/<encoded target>)`. Callout first lines become bold. Fenced code and code spans are left alone.
-- `mods/vaultr/vault.js`, no Herdr imports: `makeIndex(files)`, `resolve(index, name, from)`, `rows(index, open, query)`, `vaultKey(path)`.
+- `mods/vaultr/vault.js`, no Herdr imports: `makeIndex(files)`, `resolve(index, name, from)`, `rows(index, open, query)`, `vaultKey(path)`, `vaultList(saved, current)`, `nextVault(list, current, by)`.
 - `mods/vaultr/platform.js`: `openExternal(url)` and `copyFile(fromDir, toDir, name)`.
 - `keys.json` in the share: `{ "global": { "ctrl-shift-y": "mod.open:vaultr" } }`.
 - Herdr functions: `props`, `theme`, `appHome`, `watchFolder`, `checking`, `nextCommand`, `shared`, `setShared`, `pickFolder`, `closeOverlay`, `exec`, `window`.
 - Other built-ins: `readdir`, `readFile` and `exists` from `fs/promises`; `TextView.markdown` with `on_link_click`, `InputState`, `Input` and `ScrollHandle` from `gpui-base`; `image` from `gpui-kit`; `localStorage`; `cx.spawn`, `cx.timer.after`, `cx.focus_handle`.
-- Shared state: `vaultr.vault`, the vault folder with `/` separators. `localStorage`: `note:<vault>` and `open:<vault>`.
+- Shared state: `vaultr.vault`, the current vault folder with `/` separators, and `vaultr.vaults`, the array of saved vault folders. A vault set before the list existed counts as saved. `localStorage`: `note:<vault>` and `open:<vault>`.
 - Programs: `robocopy` on Windows, `sh` with `mkdir` and `cp` elsewhere, to copy an image. `rundll32 url.dll,FileProtocolHandler`, `open` or `xdg-open` to open a URL. Network: none.
 - Files read: every file name under the vault, and every `.md` file. Files written: image copies under `<appHome>/data/vaultr/<vaultKey>/`, at the image's path below the vault.
 - Each markdown segment is its own `TextView.markdown(id, text).selectable(true)`, with the note's version in the id. Segments and images are direct children of the scroll area, so `ScrollHandle.scroll_to_item` can reach a heading.
@@ -78,5 +80,6 @@ Narrower than 620px there is one column: the list or the note. The list then has
 - Images shows five pictures (PNG, JPEG, GIF, SVG, a markdown image), "Missing image: nowhere.png", and the picture whose file name has a space.
 - Saving a change to an open note redraws it within a few seconds, and a new note appears in the list.
 - `/`, typing `dec`, `enter` opens Decisions.
+- With a second vault added in the vaults form, `v` switches to the other vault and back, each on the note it last showed, and the footer names the vault.
 - `mod.open {"name": "vaultr"}` shows the dialog on the last note read, and running it again closes it.
 - In a pane narrower than 620px the note shows alone, and `b` shows the list.

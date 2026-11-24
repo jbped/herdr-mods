@@ -1,22 +1,32 @@
 // Vaultr: reads an Obsidian vault inside Herdr. The folder tree and a name search on the left,
 // the note on the right. Wikilinks open in place, embedded images draw, backlinks are listed, and
 // the note follows the file as Obsidian or an agent writes it. It never writes to the vault.
-// The vault folder is shared state ("vaultr.vault"), or props { vault, note? } for one copy.
+// The vault folder is shared state ("vaultr.vault"), one of the saved vaults ("vaultr.vaults"),
+// or props { vault, note? } for one copy.
 import { View, div, image } from "gpui-kit";
 import { v_flex, h_flex, TextView, InputState, Input, ScrollHandle } from "gpui-base";
 import { props, theme, appHome, watchFolder, checking, nextCommand, shared, setShared, pickFolder, closeOverlay } from "herdr";
 import * as fs from "fs/promises";
 import { splitFrontmatter, transform, parseLink, linkTargets, splitTarget, headingKey, isImage } from "./md.js";
-import { slash, stem, isNote, order, ancestors, makeIndex, resolve, rows, vaultKey } from "./vault.js";
+import { slash, base, stem, isNote, order, ancestors, makeIndex, resolve, rows, vaultKey, vaultList, nextVault } from "./vault.js";
 import { openExternal, copyFile, fileUrl } from "./platform.js";
 
-const VAULT = "vaultr.vault"; // shared: every copy reads the same vault
+const VAULT = "vaultr.vault";   // shared: every copy reads the same vault
+const VAULTS = "vaultr.vaults"; // shared: the vaults to switch between
 const NARROW = 620;           // below this width the list and the note take turns
 const ROW_H = 24;
-const KEYS = "/ search   j k move   enter open   [ ] headings   backspace back   b list   o Obsidian   r reload";
+// The legend: [key, what]. CORE is the footer line, KEYS the list "?" shows.
+const CORE = [["j/k", "move"], ["enter", "open"], ["/", "search"], ["[ / ]", "heading"], ["v", "vault"], ["?", "keys"]];
+const KEYS = [
+  ["j / k", "down / up"], ["enter", "open"], ["h / l", "close / open folder"], ["/", "search"],
+  ["[ / ]", "previous / next heading"], ["backspace", "back"], ["v / V", "next / previous vault"],
+  ["b", "list"], ["o", "Obsidian"], ["r", "reload"], ["esc", "leave the search"], ["?", "hide this list"],
+];
 
 const clean = (p) => (p ? slash(String(p).trim()).replace(/\/+$/, "") : null);
-const configured = () => clean(props()?.vault ?? shared(VAULT));
+const fixed = () => clean(props()?.vault); // this copy's own vault, which no switch changes
+const configured = () => fixed() ?? clean(shared(VAULT));
+const vaults = () => vaultList(shared(VAULTS), clean(shared(VAULT)));
 
 function load(key, fallback) {
   try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); } catch { return fallback; }
@@ -35,11 +45,12 @@ export default class Vaultr extends View {
     this.search.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.search.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     this.search.on("submit", (_e, cx) => { const row = this.rowAt() ?? this.rows.find((r) => r.kind === "note"); this.handle.focus(); if (row) this.activate(row, cx); });
-    this.pathInput = InputState.new({ placeholder: "Path to your vault folder" });
+    this.pathInput = InputState.new({ placeholder: "Path to a vault folder" });
     this.pathInput.on("submit", (_e, cx) => this.choose(this.pathInput.value(), cx));
     this.size = null;
     this.listShown = true;
     this.choosing = false;      // the folder form, over a vault that is already set
+    this.help = false;          // every key is listed, after "?"
     this.gen = 0;               // a new vault or a reload ends the tasks of the one before
     this.reset(null);
     if (checking()) return;
@@ -49,6 +60,8 @@ export default class Vaultr extends View {
         if (c === "focus") this.handle.focus();
         else if (c === "reload") this.start(this.vault, cx);
         else if (c === "vault") this.choosing = true;
+        else if (c === "next") this.cycle(1);
+        else if (c === "prev") this.cycle(-1);
         cx.notify();
       }
     });
@@ -209,6 +222,7 @@ export default class Vaultr extends View {
   // which is pulled up over it (see body()). Bringing its bottom into view puts its top, and the
   // heading, at the top of the view, in one step.
   reveal(at, cx) {
+    this.help = false; // the key list's height is not known, and the anchor needs the view's
     this.headAt = at;
     this.anchor = at;
     // The anchor shifts the children after it by one, and is itself at the segment's old index.
@@ -258,11 +272,36 @@ export default class Vaultr extends View {
       if (!found) { this.error = why; cx.notify(); return; }
       this.choosing = false;
       this.handle.focus();
+      if (fixed()) { this.start(vault, cx); cx.notify(); return; }
+      setShared(VAULTS, vaultList(vaults(), vault));
       // Every copy sees the change and starts over in render().
       setShared(VAULT, vault);
-      if (clean(props()?.vault)) this.start(vault, cx);
       cx.notify();
     });
+  }
+
+  // The next saved vault, or the one before. Each vault comes back on the note it last showed.
+  cycle(by) {
+    if (fixed()) { this.notice = "This copy reads one vault, set in its props."; return; }
+    const list = vaults();
+    if (list.length < 2) { this.notice = 'One vault is saved. Add another with "vaults" at the bottom right.'; return; }
+    this.choosing = false;
+    setShared(VAULT, nextVault(list, this.vault, by));
+  }
+
+  pick(vault, cx) {
+    this.choosing = false; this.error = null;
+    this.handle.focus();
+    setShared(VAULT, vault);
+    cx.notify();
+  }
+
+  // Drops a vault from the list. Its folder is not touched.
+  forget(vault, cx) {
+    const list = vaults().filter((v) => v !== vault);
+    if (vault === clean(shared(VAULT))) setShared(VAULT, list[0] ?? "");
+    setShared(VAULTS, list);
+    cx.notify();
   }
 
   narrow() { return this.size != null && this.size.width < NARROW; }
@@ -341,10 +380,12 @@ export default class Vaultr extends View {
       else if (k === "l" || k === "right") { if (row?.kind === "dir") this.toggle(row.path, true); }
       else if (k === "h" || k === "left") { if (row?.kind === "dir") this.toggle(row.path, false); }
       else if (k === "backspace") this.back(cx);
-      else if (k === "/") { this.listShown = true; this.search.focus(); }
+      else if (k === "/" && !e.modifiers?.shift) { this.listShown = true; this.search.focus(); }
       else if (k === "]") this.stepHeading(1, cx);
       else if (k === "[") this.stepHeading(-1, cx);
+      else if (k === "?" || (e.modifiers?.shift && k === "/")) this.help = !this.help;
       else if (k === "b") this.listShown = !this.listShown;
+      else if (k === "v") this.cycle(e.modifiers?.shift ? -1 : 1);
       else if (k === "r") this.start(this.vault, cx);
       else if (k === "o") { if (this.note) openExternal(`obsidian://open?path=${encodeURIComponent(`${this.vault}/${this.note.path}`)}`); }
       else if (k === "escape" && this.query) this.search.set_value("");
@@ -354,17 +395,27 @@ export default class Vaultr extends View {
     cx.stop_propagation(); cx.notify();
   }
 
-  // The folder form: first run, or the footer's "change".
+  // The vaults form: first run, or the footer's "vaults". The saved vaults, and a field to add one.
   setup(t) {
+    const saved = fixed() ? [] : vaults();
     const button = (id, label, on) => div().id(id).px(10).h(28).flex_none().rounded(6).border(1).border_color(t.border).bg(t.surface)
       .hover((s) => s.bg(t.hover)).on_click(on).child(h_flex().h_full().items_center().child(label));
     return v_flex().flex_1().min_h(0).items_center().justify_center().gap(12).p(24)
-      .child(div().text_size(16).font_semibold().child(this.vault ? "Change vault" : "Choose your Obsidian vault"))
-      .child(div().text_color(t.muted).child("Vaultr reads the notes in this folder. It never writes to them."))
+      .child(div().text_size(16).font_semibold().child(this.vault ? "Vaults" : "Choose your Obsidian vault"))
+      .child(div().text_color(t.muted).child(saved.length > 1 ? "Click a vault to read it, or press v in a note for the next one. Vaultr never writes to them." : "Vaultr reads the notes in this folder. It never writes to them."))
+      .when(saved.length > 0, (el) => el.child(v_flex().w_full().max_w(520).gap(2).children(saved.map((v, i) => h_flex().h(30).flex_none().gap(4).items_center().rounded(6)
+        .when(v === this.vault, (row) => row.bg(t.selected))
+        .child(h_flex().id(`vaultr-vault-${i}`).flex_1().min_w(0).h_full().px(8).gap(8).items_center().rounded(6)
+          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(v, cx))
+          .child(div().flex_none().max_w(200).truncate().font_semibold().child(base(v)))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(v)))
+        .child(div().id(`vaultr-forget-${i}`).flex_none().px(8).h_full().rounded(6).text_color(t.dim)
+          .hover((s) => s.bg(t.hover).text_color(t.blocked)).on_click((_e, cx) => this.forget(v, cx))
+          .child(h_flex().h_full().items_center().child("✕")))))))
       .child(h_flex().w_full().max_w(520).gap(8).items_center()
         .child(h_flex().flex_1().min_w(0).h(30).px(8).items_center().rounded(6).border(1).border_color(t.input).bg(t.background)
           .child(Input.new(this.pathInput).flex_1().text_size(12.5).text_color(t.foreground)))
-        .child(button("vaultr-use", "Use", (_e, cx) => this.choose(this.pathInput.value(), cx))))
+        .child(button("vaultr-use", saved.length ? "Add" : "Use", (_e, cx) => this.choose(this.pathInput.value(), cx))))
       .child(h_flex().gap(8)
         .child(button("vaultr-pick", "Browse…", (_e, cx) => cx.spawn(async (cx) => {
           const dir = await pickFolder({ prompt: "Use this vault" });
@@ -410,7 +461,7 @@ export default class Vaultr extends View {
         .children(n.front.split(/\r?\n/).map((l) => div().child(l))));
     }
     // The view's height: the copy's, less the bar, the footer, the notice strip and a margin.
-    const viewH = Math.max(80, (this.size?.height ?? 600) - 32 - 24 - (this.error ?? this.notice ? 32 : 0) - 12);
+    const viewH = Math.max(80, (this.size?.height ?? 600) - 32 - 28 - (this.error ?? this.notice ? 32 : 0) - 12);
     n.segs.forEach((seg, i) => {
       if (i === this.anchor) out.push(div().flex_none().h(viewH));
       if (seg.type === "md") {
@@ -438,6 +489,7 @@ export default class Vaultr extends View {
   reader(t) {
     const n = this.note;
     const strip = this.error ?? this.notice;
+    const hint = ([k, what]) => h_flex().flex_none().gap(5).child(div().text_color(t.accent).child(k)).child(div().text_color(t.dim).child(what));
     const tool = (id, label, on, active = true) => div().id(id).px(6).h(22).flex_none().rounded(4).text_color(active ? t.muted : t.dim)
       .hover((s) => s.bg(t.hover)).on_click(on).child(h_flex().h_full().items_center().child(label));
     return v_flex().h_full()
@@ -451,11 +503,13 @@ export default class Vaultr extends View {
       .child(v_flex().id(`vaultr-note-${this.nav}`).flex_1().min_h(0).px(16).py(12).gap(10).overflow_y_scrollbar().track_scroll(this.noteScroll)
         .on_mouse_down("left", () => this.handle.focus())
         .children(n ? this.body(t) : [div().text_color(t.dim).child(this.loading ? "Reading the vault…" : "")]))
-      .child(h_flex().flex_none().h(24).px(12).gap(12).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
-        .child(div().flex_1().min_w(0).truncate().child(KEYS))
+      .when(this.help, (el) => el.child(h_flex().flex_none().flex_wrap().px(12).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
+        .children(KEYS.map(hint))))
+      .child(h_flex().flex_none().h(28).px(12).gap(12).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
+        .child(h_flex().flex_1().min_w(0).gap(14).items_center().overflow_hidden().children(this.help ? [] : CORE.map(hint)))
         .child(div().id("vaultr-change").flex_none().hover((s) => s.text_color(t.foreground))
-          .on_click((_e, cx) => { this.choosing = true; this.error = null; this.pathInput.set_value(this.vault ?? ""); cx.notify(); })
-          .child(`${this.index.notes.length} notes · change vault`)));
+          .on_click((_e, cx) => { this.choosing = true; this.error = null; this.pathInput.set_value(""); cx.notify(); })
+          .child(`${base(this.vault)} · ${this.index.notes.length} notes · vaults`)));
   }
 
   render(cx) {

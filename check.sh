@@ -13,7 +13,9 @@ cd "$repo"
 max_lines=75
 max_summary=160
 fails=0
-rows=""
+entries=""
+open_fence='```text'
+close_fence='```'
 
 fail() { echo "FAIL  $1: $2" >&2; fails=$((fails + 1)); }
 note() { echo "todo  $1: $2"; }
@@ -53,14 +55,25 @@ for dir in */; do
   done
 
   if [ -f "$share/preview.png" ]; then
-    shot="[<img src=\"$share/preview.png\" width=\"360\" alt=\"$title\">]($share/)"
+    shot="[<img src=\"$share/preview.png\" width=\"720\" alt=\"$title\">]($share/)"
   else
     fail "$share" "no preview.png"
     shot=""
   fi
   [ -f "$share/RECIPE.md" ] || note "$share" "no RECIPE.md, so not ready for herdr.dev/mods"
 
-  rows="$rows| $shot | **[$title]($share/)**<br>$summary |
+  install="Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/jbped/herdr-mods/tree/main/$share"
+  entries="$entries### [$title]($share/)
+
+$shot
+
+$summary
+
+$open_fence
+$install
+$close_fence
+
+---
 "
 done
 
@@ -69,14 +82,14 @@ start='<!-- shares:start -->'
 end='<!-- shares:end -->'
 if grep -qF "$start" README.md && grep -qF "$end" README.md; then
   tmp=$(mktemp)
-  printf '%s' "$rows" > "$tmp.rows"
-  awk -v start="$start" -v end="$end" -v rows="$tmp.rows" '
-    $0 == start { print; print "| | |"; print "|---|---|"; while ((getline line < rows) > 0) print line; skip = 1; next }
+  printf '%s' "$entries" > "$tmp.entries"
+  awk -v start="$start" -v end="$end" -v entries="$tmp.entries" '
+    $0 == start { print; print ""; print "## Mods"; print ""; while ((getline line < entries) > 0) print line; skip = 1; next }
     $0 == end { skip = 0 }
     !skip { print }
   ' README.md > "$tmp"
   if ! cmp -s "$tmp" README.md; then cat "$tmp" > README.md; echo "wrote README.md"; fi
-  rm -f "$tmp" "$tmp.rows"
+  rm -f "$tmp" "$tmp.entries"
 else
   fail "README.md" "the '$start' and '$end' lines are missing"
 fi

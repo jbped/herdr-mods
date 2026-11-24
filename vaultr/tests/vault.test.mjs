@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeIndex, resolve, rows, ancestors, vaultKey } from "../mods/vaultr/vault.js";
+import { makeIndex, resolve, rows, ancestors, vaultKey, vaultList, nextVault } from "../mods/vaultr/vault.js";
 
 const index = makeIndex([
   "Home.md", "docs/readme.md", "Projects/Atlas/Atlas Overview.md", "Projects/Atlas/Decisions.md",
@@ -44,4 +44,20 @@ test("ancestors and the cache key", () => {
   assert.deepEqual(ancestors("c.md"), []);
   assert.equal(vaultKey("C:/vault"), vaultKey("C:/vault"));
   assert.notEqual(vaultKey("C:/vault"), vaultKey("C:/vault2"));
+});
+
+test("the vault list keeps its order, drops repeats and adds the current vault", () => {
+  assert.deepEqual(vaultList(["C:/a/one", "C:\\a\\two/", "C:/a/one"], "C:/a/three"), ["C:/a/one", "C:/a/two", "C:/a/three"]);
+  assert.deepEqual(vaultList(undefined, "C:/a/one"), ["C:/a/one"]);
+  assert.deepEqual(vaultList(["C:/a/one", 4, ""], null), ["C:/a/one"]);
+  assert.deepEqual(vaultList("C:/a/one", null), []);
+});
+
+test("the next vault goes round in both directions", () => {
+  const list = ["a", "b", "c"];
+  assert.equal(nextVault(list, "a"), "b");
+  assert.equal(nextVault(list, "c"), "a");
+  assert.equal(nextVault(list, "a", -1), "c");
+  assert.equal(nextVault(list, "gone"), "a");
+  assert.equal(nextVault([], "a"), null);
 });

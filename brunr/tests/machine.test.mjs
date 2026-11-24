@@ -39,6 +39,9 @@ function fakeBin({ bru = true, node = true } = {}) {
   return bin;
 }
 
+/** For tests that run a fake program. Those are shell scripts, and Windows cannot start one, so they are skipped there. */
+const fakes = { skip: process.platform === "win32" && "the fake programs are shell scripts, which Windows cannot start" };
+
 const reportsLeft = (home) => { try { return readdirSync(join(home, "data/brunr")); } catch { return []; } };
 
 /** The exec that started bru through sh: `{ opts, out, args }`, args being bru's own. */
@@ -91,12 +94,12 @@ test("readCollection gives nothing for a folder that is not a Collection, and th
   await assert.rejects(machine.readCollection("box", "/nonexistent/c"));
 });
 
-test("checkCli finds bru and node", async () => {
+test("checkCli finds bru and node", fakes, async () => {
   reset({ path: fakeBin() });
   assert.deepEqual(await machine.checkCli(null), { bru: "4.3.0", node: "v22.0.0", step: null });
 });
 
-test("checkCli with bru missing names the CLI install step", async () => {
+test("checkCli with bru missing names the CLI install step", fakes, async () => {
   reset({ path: fakeBin({ bru: false }) });
   const c = await machine.checkCli(null);
   assert.equal(c.bru, null);
@@ -113,7 +116,7 @@ test("checkCli with Node missing names Node first", async () => {
 
 const runArgs = { machine: null, target: { kind: "request", path: "Get Health.yml" }, environment: "local" };
 
-test("a Run reads the report and deletes it on success", async () => {
+test("a Run reads the report and deletes it on success", fakes, async () => {
   reset({ path: fakeBin() });
   process.env.FAKE_MODE = "ok";
   process.env.FAKE_REPORT = `${fx}/reports/pass-request.json`;
@@ -129,7 +132,7 @@ test("a Run reads the report and deletes it on success", async () => {
   assert.deepEqual(reportsLeft(state.appHome), []);
 });
 
-test("a Run deletes its report when the CLI fails", async () => {
+test("a Run deletes its report when the CLI fails", fakes, async () => {
   reset({ path: fakeBin() });
   process.env.FAKE_MODE = "fail";
   process.env.FAKE_REPORT = `${fx}/reports/fail-assertion.json`;
@@ -139,7 +142,7 @@ test("a Run deletes its report when the CLI fails", async () => {
   assert.deepEqual(reportsLeft(state.appHome), []);
 });
 
-test("a Run with no report shows the CLI's message", async () => {
+test("a Run with no report shows the CLI's message", fakes, async () => {
   reset({ path: fakeBin() });
   process.env.FAKE_MODE = "noreport";
   const r = await machine.runBru({ ...runArgs, collection: collection() });
@@ -147,7 +150,7 @@ test("a Run with no report shows the CLI's message", async () => {
   assert.deepEqual(reportsLeft(state.appHome), []);
 });
 
-test("a Run that times out says so and deletes its report", async () => {
+test("a Run that times out says so and deletes its report", fakes, async () => {
   reset({ path: fakeBin(), maxTimeout: 700 });
   process.env.FAKE_MODE = "slow";
   process.env.FAKE_REPORT = `${fx}/reports/pass-request.json`;
@@ -163,7 +166,7 @@ test("a Run whose exec throws deletes its report and names the cause", async () 
   assert.deepEqual(reportsLeft(state.appHome), []);
 });
 
-test("a Run on another Machine uses /tmp and deletes the report there", async () => {
+test("a Run on another Machine uses /tmp and deletes the report there", fakes, async () => {
   reset({ path: fakeBin() });
   process.env.FAKE_MODE = "ok";
   process.env.FAKE_REPORT = `${fx}/reports/pass-request.json`;
@@ -193,7 +196,7 @@ test("clearLocalReports removes reports left by an earlier session", async () =>
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const filesLeft = (home) => reportsLeft(home).filter((n) => /^run-/.test(n));
 
-test("a Run reads its progress file while the CLI runs and stops when it ends", async () => {
+test("a Run reads its progress file while the CLI runs and stops when it ends", fakes, async () => {
   reset({ path: fakeBin() });
   process.env.FAKE_MODE = "steps";
   process.env.FAKE_REPORT = `${fx}/reports/folder.json`;
@@ -215,7 +218,7 @@ test("a Run reads its progress file while the CLI runs and stops when it ends", 
   assert.deepEqual(filesLeft(state.appHome), [], "no report or progress file is left");
 });
 
-test("the progress timer stops on a timeout and on a thrown exec, and no file is left", async () => {
+test("the progress timer stops on a timeout and on a thrown exec, and no file is left", fakes, async () => {
   reset({ path: fakeBin(), maxTimeout: 1200 });
   process.env.FAKE_MODE = "slow";
   process.env.FAKE_REPORT = `${fx}/reports/pass-request.json`;
@@ -243,7 +246,7 @@ test("a missing bru names it, through sh", async () => {
 
 const ODD = { path: `odd/we$ird "quo'te" & (x) %PATH% ;x.yml`, env: `my env & "q" %USERNAME% (1)` };
 
-test("every argument reaches bru as it is, never through a shell string", async () => {
+test("every argument reaches bru as it is, never through a shell string", fakes, async () => {
   reset({ path: fakeBin() });
   Object.assign(process.env, { FAKE_MODE: "args", FAKE_REPORT: `${fx}/reports/pass-request.json`, FAKE_ARGS: join(scratch(), "args.txt") });
   await machine.runBru({ ...runArgs, collection: collection(), target: { kind: "request", path: ODD.path }, environment: ODD.env });
@@ -273,7 +276,7 @@ function windowsBin({ script = true } = {}) {
   return bin;
 }
 
-test("on Windows node starts the CLI's script with no shell, with progress and the exit code", async () => {
+test("on Windows node starts the CLI's script with no shell, with progress and the exit code", fakes, async () => {
   reset({ platform: "windows", path: windowsBin() });
   Object.assign(process.env, { FAKE_REPORT: `${fx}/reports/fail-assertion.json`, FAKE_ARGS: join(scratch(), "args.json"), FAKE_CODE: "1" });
   const seen = [];
@@ -290,7 +293,7 @@ test("on Windows node starts the CLI's script with no shell, with progress and t
   assert.deepEqual(filesLeft(state.appHome), []);
 });
 
-test("on Windows without the CLI's script beside bru.cmd, bru.cmd is started as before", async () => {
+test("on Windows without the CLI's script beside bru.cmd, bru.cmd is started as before", fakes, async () => {
   reset({ platform: "windows", path: windowsBin({ script: false }) });
   process.env.FAKE_REPORT = `${fx}/reports/pass-request.json`;
   const r = await machine.runBru({ ...runArgs, collection: collection(), timer: testTimer(), onProgress: () => {} });

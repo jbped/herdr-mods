@@ -81,3 +81,22 @@ export function vaultKey(path) {
   for (let i = 0; i < path.length; i++) h = ((h * 33) ^ path.charCodeAt(i)) >>> 0;
   return h.toString(36);
 }
+
+// The saved vaults in their saved order, with the current one added when the list lacks it (a
+// vault chosen before there was a list).
+export function vaultList(saved, current) {
+  const out = [];
+  for (const p of [...(Array.isArray(saved) ? saved : []), current]) {
+    if (typeof p !== "string") continue;
+    const v = slash(p.trim()).replace(/\/+$/, "");
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
+// The vault `by` places after the current one, going round. Null when there is none.
+export function nextVault(list, current, by = 1) {
+  if (!list.length) return null;
+  const at = list.indexOf(current);
+  return at < 0 ? list[0] : list[(((at + by) % list.length) + list.length) % list.length];
+}

@@ -8,13 +8,17 @@ A read-only reader for an Obsidian vault, as a Herdr mod. A folder tree and a na
 2. Merge `keys.json` into `~/.config/herdr-app/keys.json`. It binds `ctrl-shift-y` to `mod.open:vaultr`, which opens the dialog and closes it again.
 3. Run `herdr-app check ~/.config/herdr-app/mods/vaultr`.
 
-## The vault folder
+## The vault folders
 
-The first time it opens, Vaultr asks for the vault: type the path and press `enter`, or click Browse. The folder is kept in Herdr's shared state as `vaultr.vault`, so the dialog, tabs and panes all read the same vault. "change vault" at the bottom right, or the `vaultr.vault` command, asks again.
+The first time it opens, Vaultr asks for the vault: type the path and press `enter`, or click Browse. The folder is kept in Herdr's shared state as `vaultr.vault`, so the dialog, tabs and panes all read the same vault.
+
+"vaults" at the bottom right, or the `vaultr.vault` command, shows the vaults form. It lists the saved vaults: click one to read it, or its ✕ to drop it from the list (the folder is not touched). The path field adds another vault and switches to it. The list is kept in shared state as `vaultr.vaults`.
+
+`v` switches to the next saved vault and `shift-v` to the one before, going round. The commands `vaultr.next` and `vaultr.prev` do the same for the copy that is showing, so a key in `keys.json` can switch without Vaultr having the keyboard, for example `"alt-v": "vaultr.next"`. Each vault opens on the note it last showed, with the folders it had open.
 
 The folder must be inside your home folder. Herdr only lets a mod read files there, and Vaultr says so when the folder is outside it.
 
-One copy can read a different vault through its props: `{ "vault": "<folder>", "note": "<path below the vault>" }`. `note` is optional.
+One copy can read a different vault through its props: `{ "vault": "<folder>", "note": "<path below the vault>" }`. `note` is optional. That copy stays on its vault, and `v` does nothing in it.
 
 ## Where it opens
 
@@ -31,7 +35,7 @@ All three are in the palette as "Vaultr: Open", "Vaultr: Open in a tab" and "Vau
 1. Add a block to the panel's stack: `{ "id": "vaultr", "type": "block", "content": { "mod": "vaultr" } }`.
 2. Show it with two commands: `layout.select {"stack": "<the stack's id>", "child": "vaultr"}`, then `layout.show {"id": "<the panel's id>"}`.
 
-A palette entry or a key runs one command, so the pair has to come from a mod. "Vaultr: Open in the side panel" sends `tabs-plus.vaultr`, which a tab bar mod named `tabs-plus` must handle by running those two commands. `vault.svg` in this folder is an icon for its button. The palette also has "Vaultr: Change vault" (`vaultr.vault`) and "Vaultr: Reload" (`vaultr.reload`), which act on the copy that is showing.
+A palette entry or a key runs one command, so the pair has to come from a mod. "Vaultr: Open in the side panel" sends `tabs-plus.vaultr`, which a tab bar mod named `tabs-plus` must handle by running those two commands. `vault.svg` in this folder is an icon for its button. The palette also has "Vaultr: Next vault" (`vaultr.next`), "Vaultr: Previous vault" (`vaultr.prev`), "Vaultr: Vaults" (`vaultr.vault`) and "Vaultr: Reload" (`vaultr.reload`), which act on the copy that is showing.
 
 Narrower than 620px, the list and the note take turns: opening a note hides the list, and `b` or the ☰ button brings it back. To return to the note without choosing another, click "← Back to <note>" above the search box, or press `b` or `escape`.
 
@@ -51,7 +55,9 @@ The keys work while Vaultr has the keyboard: click it, or move onto it with `pan
 | `l` / `right`, `h` / `left` | open / close the selected folder |
 | `]` / `[` | scroll to the next / previous heading |
 | `backspace` | back to the note before |
+| `v` / `shift-v` | switch to the next / previous saved vault |
 | `b` | show or hide the list |
+| `?` | show or hide the list of every key |
 | `o` | open the note in Obsidian |
 | `r` | read the vault again |
 | `escape` | leave the search box, or clear the search |

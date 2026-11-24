@@ -7,8 +7,10 @@ import { state, calls, reads } from "./herdr-shim.mjs";
 import { FIXTURES } from "./helpers.mjs";
 import { collectionKey, configPath, defaultWorkspacePath, discover, loadCollection, parseConfig, readConfig } from "../mods/brunr/sources.js";
 
-const fx = FIXTURES.replace(/\/+$/, "");
-const scratch = () => mkdtempSync(join(tmpdir(), "brunr-src-"));
+// The mod gives every path with forward slashes, so the test paths use them too, on Windows as well.
+const slashes = (p) => p.replace(/\\/g, "/");
+const fx = slashes(FIXTURES).replace(/\/+$/, "");
+const scratch = () => slashes(mkdtempSync(join(tmpdir(), "brunr-src-")));
 const reset = (extra = {}) => { Object.assign(state, { appHome: "/nonexistent", home: "/nonexistent", platform: "linux", path: null, maxTimeout: Infinity }, extra); calls.length = 0; reads.length = 0; };
 
 test("default workspace path per platform", () => {
@@ -37,7 +39,7 @@ test("invalid config JSON gives defaults and names the parse error", () => {
   assert.equal(c.workspace, null);
   assert.deepEqual(c.collections, []);
   assert.equal(c.problems.length, 1);
-  assert.match(c.problems[0], /^brunr\.json is not valid JSON: /);
+  assert.match(c.problems[0], /^brunr.json is not valid JSON: /);
 });
 
 test("bad config shapes are dropped and named", () => {

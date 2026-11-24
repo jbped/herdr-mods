@@ -118,3 +118,8 @@ test("plannedRequests for one Request is that Request, and a missing target stil
   assert.deepEqual(plannedRequests(collection, { kind: "folder", path: "gone" }), []);
   assert.equal(plannedRequests(collection, { kind: "collection" }).length, plan({ target: { kind: "collection" } }).count);
 });
+
+test("envVars become one --env-var each, before the report flag", () => {
+  const r = plan({ target: { kind: "request", path: "Get Health.bru" }, environment: "local", envVars: { baseUrl: "http://h:1", q: "a=b c" } });
+  assert.deepEqual(r.args, ["run", "Get Health.bru", "--env", "local", "--env-var", "baseUrl=http://h:1", "--env-var", "q=a=b c", "--reporter-json", REPORT]);
+});

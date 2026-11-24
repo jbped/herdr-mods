@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readTree } from "./helpers.mjs";
 import { parseCollection } from "../mods/brunr/parser.js";
-import { buildRows, confirmText, findBlock, keyAction, runMark, secretWarning } from "../mods/brunr/tree.js";
+import { buildRows, confirmText, findBlock, keyAction, runMark, secretWarning, urlVariables } from "../mods/brunr/tree.js";
 
 const shop = parseCollection({ root: "/c/shop", files: readTree("yaml") });
 const entry = (machine, root, extra = {}) => ({ key: `${machine ?? ""}|${root}`, machine, root, name: "shop", workspace: null, ...extra });
@@ -96,4 +96,10 @@ test("runMark: the running folder shows a spinner and its count, the running Req
   assert.deepEqual(runMark(list, { ...run, progress: { ...run.progress, running: null } }), { spinner: false, count: null });
   assert.deepEqual(runMark(folder, null), { spinner: false, count: null });
   assert.deepEqual(runMark(list, { key: list.key, ck: "c", progress: null }), { spinner: true, count: null }, "a single Request Run");
+});
+
+test("urlVariables lists each {{variable}} once, in order, without process.env ones", () => {
+  assert.deepEqual(urlVariables("{{baseUrl}}/users/{{ id }}?k={{process.env.KEY}}&b={{baseUrl}}"), ["baseUrl", "id"]);
+  assert.deepEqual(urlVariables("https://x.test/a"), []);
+  assert.deepEqual(urlVariables(null), []);
 });
