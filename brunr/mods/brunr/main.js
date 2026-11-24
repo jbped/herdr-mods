@@ -164,6 +164,8 @@ export default class Brunr extends View {
     this.width = DIALOG.width;
     /** @type {number} when esc last stepped back from something, as Date.now() */
     this.steppedBack = 0;
+    /** True while the key list under the dialog shows every key, not only the main ones. `?` switches it. */
+    this.allKeys = false;
     /** The settings panel: a tab or a dialog, whether the dialog opens filling the window, and a switch per shortcut key. */
     this.shortcuts = new Shortcuts({
       mod: MOD, keys: SHORTCUTS, rebind: true, storage: sharedStorage(MOD),
@@ -407,7 +409,8 @@ export default class Brunr extends View {
     // On the Request column, enter puts the keyboard in its URL field. The tree does not move under it.
     else if (this.focus === "request" && c === "enter") this.request.focusFirst();
     else if (this.focus === "request" && TREE_KEY[c] && ["up", "down", "left", "right", "home", "end"].includes(c)) { /* nothing to move here */ }
-    else if (c === "keys") this.shortcuts.setOption("hints", !this.shortcuts.showHints);
+    // With key hints hidden in the settings, ? brings them back. Otherwise it shows every key, or the main ones again.
+    else if (c === "keys") { if (this.shortcuts.showHints) this.allKeys = !this.allKeys; else { this.shortcuts.setOption("hints", true); this.allKeys = true; } }
     else if (c === "full") this.toggleFull();
     // In a tab: close it and go back to the tab you came from. A dialog closes with esc.
     else if (c === "close-tab") { if (props()?.overlay === undefined && !this.editors.askClose(() => closeTab(MOD))) closeTab(MOD); }
@@ -955,12 +958,19 @@ export default class Brunr extends View {
     this.buildRows();
     const treeW = this.full ? TREE_W_FULL : TREE_W;
     /** @type {import("./kit/legend.js").Hint[]} */
-    const hints = [["?", "hide keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["h/l", "fold"], ["enter", this.focus === "request" ? "edit" : "run"],
+    const all = [["?", "fewer keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["h/l", "fold"], ["enter", this.focus === "request" ? "edit" : "run"],
       ["ctrl-h", "left"], ["ctrl-l", "right"], ["1-4", "view"], ["/", "search"],
       // A key that is turned off is not listed.
       ...this.shortcuts.keys.filter((k) => !this.shortcuts.isOff(k.id) && this.shortcuts.keyFor(k.id)).map((k) => /** @type {[string, string]} */ (
         [this.shortcuts.keyFor(k.id), k.id === "full" ? (this.full ? "leave full screen" : "full screen") : k.what])),
       [",", "settings"], ["esc", "close"]];
+    // The main keys. ? shows the whole list.
+    const show = (/** @type {string} */ id) => !this.shortcuts.isOff(id) && this.shortcuts.keyFor(id);
+    /** @type {import("./kit/legend.js").Hint[]} */
+    const few = [["?", "all keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["enter", this.focus === "request" ? "edit" : "run"],
+      ...(show("env") ? [/** @type {[string, string]} */ ([this.shortcuts.keyFor("env"), "environment"])] : []), ["/", "search"],
+      ...(show("save") ? [/** @type {[string, string]} */ ([this.shortcuts.keyFor("save"), "save"])] : []), ["esc", "close"]];
+    const hints = this.allKeys ? all : few;
     const picker = this.pickers.open;
     const editing = this.editors.open;
     // Three columns when the frame is wide enough, else the Request above the Response.

@@ -56,7 +56,7 @@ Or by hand:
 | `ctrl-h` / `ctrl-l` | keyboard left / right: tree, Request, Response |
 | `ctrl-s` | save |
 | `n` | New Request |
-| `?` | show or hide every key |
+| `?` | show every key, or only the main ones |
 | `esc` | step back, or close |
 
 Collections on other Machines need `brunr.json`. The config file, every key, the Request form, tree actions, the editors, settings, secrets, Runs, limits and how it works: [`mods/brunr/README.md`](mods/brunr/README.md).

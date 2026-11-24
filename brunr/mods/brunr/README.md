@@ -457,7 +457,7 @@ In the dialog the keyboard is on the tree, the Request column or the Response si
 | `f` | fill the window, or leave full screen (dialog only) |
 | `ctrl-s` | save the shown Request's Draft, or the open editor's file |
 | `ctrl-r` | read everything again |
-| `?` | show or hide the key list |
+| `?` | show every key under the dialog, or only the main ones |
 | `,` | open the settings |
 | `ctrl-x` | close the tab (tab only) |
 | `esc` | step back: close a picker, a form, an editor's question, an editor, the settings or the Search box, leave a field, else close the dialog |
@@ -482,7 +482,7 @@ The gear or `,` opens them:
 
 - Open as a tab instead of a dialog. Switching it moves Brunr at once.
 - Open the dialog in full screen.
-- Show key hints. Off hides the key list under the dialog. `?` shows it again.
+- Show key hints. Off hides the key list under the dialog. `?` shows it again. The list shows the main keys (`?`, `j`/`k`, `enter`, `e`, `/`, `ctrl-s`, `esc`), and `?` switches between them and every key.
 - A switch per shortcut key, and the key it is on.
 
 ## State
