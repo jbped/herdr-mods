@@ -67,12 +67,14 @@ const ICON = (/** @type {string} */ name) => `mods/${MOD}/icons/${name}.svg`;
  * The dialog's size when it does not fill the window. Its overlay always covers the window
  * (mod.json), and the dialog is drawn inside it at this size, so full screen is only a bigger box.
  */
-const DIALOG = { width: 1120, height: /** @type {const} */ ("85%") };
-/** The tree column's width, in the dialog and in full screen. */
-const TREE_W = 340;
-const TREE_W_FULL = 400;
+const DIALOG = { width: /** @type {const} */ ("96%"), maxWidth: 1800, height: /** @type {const} */ ("92%") };
+/** The frame's width assumed until it is measured. */
+const FIRST_WIDTH = 1200;
+/** The tree column's width: this share of the frame, within these limits, so the Request and the Response get the rest. */
+const TREE = { share: 0.22, min: 240, max: 380 };
+const treeWidth = (/** @type {number} */ width) => Math.round(Math.min(TREE.max, Math.max(TREE.min, width * TREE.share)));
 /** The frame is this wide or wider: the Request and the Response sit side by side, else the Request is above. */
-const THREE_COLUMNS = 1100;
+const THREE_COLUMNS = 1150;
 /** The Request column's key context: the save key is bound in it, so it works in a field or an editor. */
 const REQUEST_CONTEXT = "BrunrRequest";
 const saveAction = (/** @type {string} */ key) => `brunr-save-${key.replace(/[^a-z0-9]/gi, "_")}`;
@@ -161,7 +163,7 @@ export default class Brunr extends View {
     /** @type {{ text: string, bad: boolean } | null} the line under the panes */
     this.note = null;
     /** @type {number} the frame's width in pixels, once it has been laid out */
-    this.width = DIALOG.width;
+    this.width = FIRST_WIDTH;
     /** @type {number} when esc last stepped back from something, as Date.now() */
     this.steppedBack = 0;
     /** True while the key list under the dialog shows every key, not only the main ones. `?` switches it. */
@@ -910,7 +912,7 @@ export default class Brunr extends View {
       if (at >= 0) this.scroll.scroll_to_item(at);
       this.reveal = false;
     }
-    return v_flex().w(this.full ? TREE_W_FULL : TREE_W).flex_none().min_h(0).gap(SIZE.frameGap)
+    return v_flex().w(treeWidth(this.width)).flex_none().min_h(0).gap(SIZE.frameGap)
       .children(this.notices(t))
       .child(v_flex().id("brunr-tree").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(2)
         .children(rows.map((r, i) => this.treeRow(t, r, i)))
@@ -956,7 +958,7 @@ export default class Brunr extends View {
     if (this.launcher) return div();
     const t = colors();
     this.buildRows();
-    const treeW = this.full ? TREE_W_FULL : TREE_W;
+    const treeW = treeWidth(this.width);
     /** @type {import("./kit/legend.js").Hint[]} */
     const all = [["?", "fewer keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["h/l", "fold"], ["enter", this.focus === "request" ? "edit" : "run"],
       ["ctrl-h", "left"], ["ctrl-l", "right"], ["1-4", "view"], ["/", "search"],
@@ -1008,7 +1010,7 @@ export default class Brunr extends View {
     return div().id("brunr-around").size_full().flex().items_center().justify_center()
       .on_click((_e, cx) => { if (this.editors.askClose(() => this.dismiss())) cx.notify(); else this.dismiss(); })
       .on_mouse_up("left", (_e, cx) => { if (actions.cancelDrag(this)) cx.notify(); })
-      .child(div().id("brunr-box").w(DIALOG.width).max_w("100%").h(DIALOG.height).flex_none()
+      .child(div().id("brunr-box").w(DIALOG.width).max_w(DIALOG.maxWidth).h(DIALOG.height).flex_none()
         .on_click((_e, cx) => cx.stop_propagation())
         .child(panel));
   }
