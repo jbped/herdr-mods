@@ -245,10 +245,10 @@ A click on a row (or a root's header) selects it and gives the tree the keyboard
 
 | Key | While the tree has the keyboard |
 |---|---|
-| `up` / `down` | the row above or below, across roots (headers included), scrolled into view |
-| `right` | opens a closed folder or root, else moves to its first entry |
-| `left` | closes an open folder or root, else moves to the folder (or root) above |
-| `home` / `end` | the first or last row |
+| `up` / `down`, `k` / `j` | the row above or below, across roots (headers included), scrolled into view |
+| `right`, `l` | opens a closed folder or root, else moves to its first entry |
+| `left`, `h` | closes an open folder or root, else moves to the folder (or root) above |
+| `home` / `end`, `g` / `shift-g` | the first or last row |
 | `enter` | opens a file with the cursor in it (the editor takes the keyboard), or opens or closes a folder |
 | `space` | opens a file, keeping the keyboard in the tree |
 | `f2` / `delete` | rename / delete the selected row |

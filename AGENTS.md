@@ -16,6 +16,8 @@ Single-context: root `CONTEXT.md` plus `docs/adr/`. See `docs/agents/domain.md`.
 
 Each top-level folder with `mods/` is one share. Before adding a share, or changing a mod's features, keys, config, install steps or look, read `docs/agents/shares.md`. `./check.sh` prints `ok` before every commit that touches a share.
 
+Before adding or changing a mod's keys, read `docs/agents/keys.md`. Every mod uses the same key for the same idea.
+
 ## Worktrees
 
 Do all work in a git worktree under `.worktrees/` at the repo root, one per task or branch. Never edit, commit or switch branches in the main checkout. It stays on `main`, and other sessions share it.

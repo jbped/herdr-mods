@@ -16,11 +16,12 @@ const VAULTS = "vaultr.vaults"; // shared: the vaults to switch between
 const NARROW = 620;           // below this width the list and the note take turns
 const ROW_H = 24;
 // The legend: [key, what]. CORE is the footer line, KEYS the list "?" shows.
-const CORE = [["j/k", "move"], ["enter", "open"], ["/", "search"], ["[ / ]", "heading"], ["v", "vault"], ["?", "keys"]];
+const CORE = [["j/k", "move"], ["enter", "open"], ["/", "search"], ["{ / }", "heading"], ["[ / ]", "vault"], ["?", "keys"]];
 const KEYS = [
-  ["j / k", "down / up"], ["enter", "open"], ["h / l", "close / open folder"], ["/", "search"],
-  ["[ / ]", "previous / next heading"], ["backspace", "back"], ["v / V", "next / previous vault"],
-  ["b", "list"], ["o", "Obsidian"], ["r", "reload"], ["esc", "leave the search"], ["?", "hide this list"],
+  ["j / k", "down / up"], ["g / G", "first / last"], ["ctrl-d / ctrl-u", "half a page"], ["enter", "open"],
+  ["h / l", "close / open folder"], ["/", "search"], ["{ / }", "previous / next heading"], ["backspace", "back"],
+  ["[ / ]", "previous / next vault"], ["b", "list"], ["o", "Obsidian"], ["ctrl-r", "reload"], ["q", "close"],
+  ["esc", "leave the search"], ["?", "hide this list"],
 ];
 
 const clean = (p) => (p ? slash(String(p).trim()).replace(/\/+$/, "") : null);
@@ -307,6 +308,12 @@ export default class Vaultr extends View {
   narrow() { return this.size != null && this.size.width < NARROW; }
   rowAt() { return this.rows.find((r) => r.key === this.sel) ?? null; }
 
+  // Half the list's rows: the copy's height less the search box and, when narrow, the way back.
+  halfPage() {
+    const h = (this.size?.height ?? 600) - 42 - (this.narrow() && this.note ? 32 : 0);
+    return Math.max(1, Math.floor(h / ROW_H / 2));
+  }
+
   move(by, cx) {
     if (!this.rows.length) return;
     const at = this.rows.findIndex((r) => r.key === this.sel);
@@ -364,7 +371,16 @@ export default class Vaultr extends View {
 
   key(e, cx) {
     const k = e.key;
-    if (e.modifiers?.control || e.modifiers?.alt || e.modifiers?.platform) return;
+    if (e.modifiers?.alt || e.modifiers?.platform) return;
+    if (e.modifiers?.control) {
+      // ctrl-r reads the vault again, also from the search box. ctrl-d / ctrl-u move half a list.
+      if (!this.vault || this.choosing) return;
+      if (k === "r") this.start(this.vault, cx);
+      else if ((k === "d" || k === "u") && !this.typing) this.move((k === "d" ? 1 : -1) * this.halfPage(), cx);
+      else return;
+      cx.stop_propagation(); cx.notify();
+      return;
+    }
     if (this.typing) {
       if (k === "escape") this.handle.focus();
       else if (k === "down") this.move(1, cx);
@@ -376,17 +392,19 @@ export default class Vaultr extends View {
       const row = this.rowAt();
       if (k === "j" || k === "down") this.move(1, cx);
       else if (k === "k" || k === "up") this.move(-1, cx);
+      else if ((k === "g" && !e.modifiers?.shift) || k === "home") this.move(-Infinity, cx);
+      else if (k === "G" || (k === "g" && e.modifiers?.shift) || k === "end") this.move(Infinity, cx);
+      else if (k === "q" && props()?.overlay) closeOverlay(props().overlay);
       else if (k === "enter") { if (row) this.activate(row, cx); }
       else if (k === "l" || k === "right") { if (row?.kind === "dir") this.toggle(row.path, true); }
       else if (k === "h" || k === "left") { if (row?.kind === "dir") this.toggle(row.path, false); }
       else if (k === "backspace") this.back(cx);
       else if (k === "/" && !e.modifiers?.shift) { this.listShown = true; this.search.focus(); }
-      else if (k === "]") this.stepHeading(1, cx);
-      else if (k === "[") this.stepHeading(-1, cx);
+      else if (k === "}" || (e.modifiers?.shift && k === "]")) this.stepHeading(1, cx);
+      else if (k === "{" || (e.modifiers?.shift && k === "[")) this.stepHeading(-1, cx);
       else if (k === "?" || (e.modifiers?.shift && k === "/")) this.help = !this.help;
       else if (k === "b") this.listShown = !this.listShown;
-      else if (k === "v") this.cycle(e.modifiers?.shift ? -1 : 1);
-      else if (k === "r") this.start(this.vault, cx);
+      else if (k === "]" || k === "[") this.cycle(k === "]" ? 1 : -1);
       else if (k === "o") { if (this.note) openExternal(`obsidian://open?path=${encodeURIComponent(`${this.vault}/${this.note.path}`)}`); }
       else if (k === "escape" && this.query) this.search.set_value("");
       else if (k === "escape" && this.narrow() && this.listShown && this.note) this.listShown = false;
@@ -504,7 +522,7 @@ export default class Vaultr extends View {
         .on_mouse_down("left", () => this.handle.focus())
         .children(n ? this.body(t) : [div().text_color(t.dim).child(this.loading ? "Reading the vault…" : "")]))
       .when(this.help, (el) => el.child(h_flex().flex_none().flex_wrap().px(12).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
-        .children(KEYS.map(hint))))
+        .children(KEYS.filter(([k]) => k !== "q" || props()?.overlay).map(hint))))
       .child(h_flex().flex_none().h(28).px(12).gap(12).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
         .child(h_flex().flex_1().min_w(0).gap(14).items_center().overflow_hidden().children(this.help ? [] : CORE.map(hint)))
         .child(div().id("vaultr-change").flex_none().hover((s) => s.text_color(t.foreground))

@@ -93,7 +93,8 @@ const ESC_GAP_MS = 300;
 /** The command each key stands for. @type {Record<string, string>} */
 const KEYS = {
   up: "up", k: "up", down: "down", j: "down", left: "left", h: "left", right: "right", l: "right", home: "home", end: "end", enter: "enter",
-  r: "run", p: "vars", e: "env", o: "file", y: "url", b: "app", f: "full", "shift-f": "pane", "ctrl-r": "reload",
+  g: "home", "shift-g": "end", "ctrl-d": "half-down", "ctrl-u": "half-up", q: "quit",
+  r: "run", p: "vars", e: "env", t: "file", y: "url", o: "app", f: "full", "shift-f": "pane", "ctrl-r": "reload",
   "1": "part-1", "2": "part-2", "3": "part-3", "4": "part-4", "/": "search",
   "ctrl-h": "focus-left", "ctrl-l": "focus-right", escape: "cancel", "?": "keys", "shift-/": "keys", ",": "settings",
   "ctrl-x": "close-tab",
@@ -105,14 +106,14 @@ const KEYS = {
  */
 const SHORTCUTS = [
   { id: "run", key: "r", what: "run" }, { id: "vars", key: "p", what: "run with values" }, { id: "env", key: "e", what: "environment" },
-  { id: "file", key: "o", what: "open file" }, { id: "url", key: "y", what: "copy URL" },
-  { id: "app", key: "b", what: "open Bruno" }, { id: "full", key: "f", what: "full screen" },
+  { id: "file", key: "t", what: "open file" }, { id: "url", key: "y", what: "copy URL" },
+  { id: "app", key: "o", what: "open Bruno" }, { id: "full", key: "f", what: "full screen" },
   { id: "pane", key: "shift-f", what: "pane or dialog" },
   { id: "reload", key: "ctrl-r", what: "reload" }, { id: "save", key: "ctrl-s", what: "save" },
   ...actions.SHORTCUTS,
 ];
 /** What tree.keyAction calls each command that acts on the selected row. @type {Record<string, string>} */
-const TREE_KEY = { up: "up", down: "down", left: "left", right: "right", home: "home", end: "end", enter: "enter", run: "r", env: "e", file: "o", app: "b" };
+const TREE_KEY = { up: "up", down: "down", left: "left", right: "right", home: "home", end: "end", "half-down": "half-down", "half-up": "half-up", enter: "enter", run: "r", env: "e", file: "t", app: "o" };
 /**
  * Esc with something open. The app closes the top dialog on esc before the mod's key handler
  * hears of it, so the dialog sits in this key context while a picker, the settings or the Search
@@ -120,6 +121,10 @@ const TREE_KEY = { up: "up", down: "down", left: "left", right: "right", home: "
  */
 const BOX_CONTEXT = "BrunrStepBack";
 const BACK_ACTION = "brunr-back";
+/** Herdr's f2 renames a tab before the mod's key handler hears of it, so the dialog binds f2 in its own key context too. */
+const KEYS_CONTEXT = "BrunrKeys";
+const F2_ACTION = "brunr-f2";
+const F2 = { key: "f2", keystroke: "f2", modifiers: {} };
 
 const machineKey = (/** @type {string | null | undefined} */ m) => m ?? "";
 
@@ -139,7 +144,8 @@ export default class Brunr extends View {
     }
     const p = props() ?? {};
     this.handle = cx.focus_handle();
-    cx.bind_keys([{ keystroke: "escape", action: BACK_ACTION, context: BOX_CONTEXT }]);
+    cx.bind_keys([{ keystroke: "escape", action: BACK_ACTION, context: BOX_CONTEXT },
+      { keystroke: "f2", action: F2_ACTION, context: BOX_CONTEXT }, { keystroke: "f2", action: F2_ACTION, context: KEYS_CONTEXT }]);
     // Shared by every copy: each dialog and each tab is a new copy with its own localStorage.
     this.saved = new store.Saved(sharedStorage(MOD));
     /** @type {any} sources.discover's result */
@@ -175,6 +181,8 @@ export default class Brunr extends View {
     this.steppedBack = 0;
     /** True while the key list under the dialog shows every key, not only the main ones. `?` switches it. */
     this.allKeys = false;
+    /** The tree's height in pixels, for ctrl-d and ctrl-u. */
+    this.treeH = 0;
     /** @type {{ x: number, y: number, width: number, height: number } | null} the frame's place in the window, from the last pointer move */
     this.box = null;
     /** The settings panel: a tab or a dialog, whether the dialog opens filling the window, and a switch per shortcut key. */
@@ -423,11 +431,13 @@ export default class Brunr extends View {
     else if (c === "save") this.request.save(cx);
     // On the Request column, enter puts the keyboard in its URL field. The tree does not move under it.
     else if (this.focus === "request" && c === "enter") this.request.focusFirst();
-    else if (this.focus === "request" && TREE_KEY[c] && ["up", "down", "left", "right", "home", "end"].includes(c)) { /* nothing to move here */ }
+    else if (this.focus === "request" && TREE_KEY[c] && ["up", "down", "left", "right", "home", "end", "half-down", "half-up"].includes(c)) { /* nothing to move here */ }
     // With key hints hidden in the settings, ? brings them back. Otherwise it shows every key, or the main ones again.
     else if (c === "keys") { if (this.shortcuts.showHints) this.allKeys = !this.allKeys; else { this.shortcuts.setOption("hints", true); this.allKeys = true; } }
     else if (c === "full") this.toggleFull();
     else if (c === "pane") this.movePane();
+    // q closes the dialog, as esc does once nothing is open to step back from.
+    else if (c === "quit") this.dismiss();
     // In a tab or a pane: close it and go back to where you came from. A dialog closes with esc.
     else if (c === "close-tab") {
       const shut = () => (props()?.pane ? closePane(MOD) : closeTab(MOD));
@@ -442,7 +452,8 @@ export default class Brunr extends View {
     else if (actions.command(this, cx, c)) { /* a tree edit action */ }
     else if (TREE_KEY[c]) {
       const at = Math.max(0, this.rows.findIndex((r) => r.key === this.sel));
-      const a = tree.keyAction(TREE_KEY[c], this.rows, at);
+      // ctrl-d and ctrl-u move half the rows the tree has room for.
+      const a = tree.keyAction(TREE_KEY[c], this.rows, at, Math.max(1, Math.floor(this.treeH / (SIZE.compactRow + 2) / 2)));
       if (a) this.act(cx, a);
     }
     cx.notify();
@@ -955,12 +966,14 @@ export default class Brunr extends View {
       return v_flex().w_full().h(NARROW_TREE_H).flex_none().gap(SIZE.frameGap)
         .children(this.notices(t))
         .child(v_flex().id("brunr-tree").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(2)
+          .on_size_change((size) => { this.treeH = size.height; })
           .children(rows.map((r, i) => this.treeRow(t, r, i)))
           .when(!rows.length, (el) => el.child(this.emptyNote(t))));
     }
     return v_flex().w(treeWidth(this.width)).flex_none().min_h(0).gap(SIZE.frameGap)
       .children(this.notices(t))
       .child(v_flex().id("brunr-tree").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(2)
+        .on_size_change((size) => { this.treeH = size.height; })
         .children(rows.map((r, i) => this.treeRow(t, r, i)))
         .when(!rows.length, (el) => el.child(this.emptyNote(t))))
       .child(this.selection(t));
@@ -1008,20 +1021,19 @@ export default class Brunr extends View {
     /** @type {import("./kit/legend.js").Hint[]} */
     // A dialog closes with esc. A tab or a pane closes with its own key.
     /** @type {[string, string]} */
-    const closeHint = props()?.overlay !== undefined ? ["esc", "close"] : ["ctrl-x", "close"];
-    const all = [["?", "fewer keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["h/l", "fold"], ["enter", this.focus === "request" ? "edit" : "run"],
+    const closeHint = props()?.overlay !== undefined ? ["q", "close"] : ["ctrl-x", "close"];
+    const all = [["?", "fewer keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["g/G", "first/last"], ["ctrl-d/u", "half page"], ["h/l", "fold"], ["enter", this.focus === "request" ? "edit" : "run"],
       ["ctrl-h", "left"], ["ctrl-l", "right"], ["1-4", "view"], ["/", "search"],
       // A key that is turned off is not listed.
       ...this.shortcuts.keys.filter((k) => !this.shortcuts.isOff(k.id) && this.shortcuts.keyFor(k.id)).map((k) => /** @type {[string, string]} */ (
         [this.shortcuts.keyFor(k.id), k.id === "full" ? (this.full ? "leave full screen" : "full screen") : k.what])),
-      [",", "settings"], closeHint];
+      [",", "settings"], ...(props()?.overlay !== undefined ? [/** @type {[string, string]} */ (["q", "close"])] : []), closeHint];
     // The main keys. ? shows the whole list.
     const show = (/** @type {string} */ id) => !this.shortcuts.isOff(id) && this.shortcuts.keyFor(id);
     /** @type {import("./kit/legend.js").Hint[]} */
     const few = [["?", "all keys"], ["j/k", this.focus === "response" ? "requests" : "move"], ["enter", this.focus === "request" ? "edit" : "run"],
       ...(show("env") ? [/** @type {[string, string]} */ ([this.shortcuts.keyFor("env"), "environment"])] : []), ["/", "search"],
       ...(show("save") ? [/** @type {[string, string]} */ ([this.shortcuts.keyFor("save"), "save"])] : []), closeHint];
-    const hints = this.allKeys ? all : few;
     const picker = this.pickers.open;
     const editing = this.editors.open;
     // Three columns when the frame is wide enough, else the Request above the Response.
@@ -1040,6 +1052,7 @@ export default class Brunr extends View {
       : div().flex().when(narrow, (el) => el.flex_col()).when(!narrow, (el) => el.flex_row()).flex_1().min_h(0).gap(SIZE.frameGap)
         .child(this.treePane(t, narrow))
         .child((three ? h_flex().items_stretch() : v_flex()).flex_1().min_w(0).min_h(0).gap(SIZE.frameGap).child(requestCol).child(responseCol));
+    const stepBack = Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing || this.request.typing || editing || this.treeForm.open || Boolean(this.drag?.over);
     const panel = frame(t, { id: "brunr", title: "Brunr", handle: this.handle, onKey: (e, cx) => this.key(e, cx), fill: true, details: this.details(t),
       onResize: (width, cx) => { if (width !== this.width) { this.width = width; cx.notify(); } } })
       // Where the frame is in the window: a picker opened by a press is placed against it.
@@ -1048,10 +1061,14 @@ export default class Brunr extends View {
       .on_mouse_up("left", (_e, cx) => { if (actions.cancelDrag(this)) cx.notify(); })
       .child(body)
       .when(Boolean(this.note), (el) => el.child(div().flex_none().text_size(SIZE.small).text_color(this.note?.bad ? t.blocked : t.dim).child(this.note?.text ?? "")))
-      .when(this.shortcuts.showHints, (el) => el.child(divider(t)).child(legend(t, editing ? [[saveKey, "save"], ["esc", "back"]] : hints)))
+      .when(this.shortcuts.showHints && (editing || !this.allKeys), (el) => el.child(divider(t)).child(legend(t, editing ? [[saveKey, "save"], ["esc", "back"]] : few)))
+      // ? swaps the line for every key, on the raised color under a top border.
+      .when(this.shortcuts.showHints && !editing && this.allKeys, (el) => el.child(div().flex_none().px(12).py(8).bg(t.raised).border_t(1).border_color(t.border).child(legend(t, all))))
       // Esc with something open steps back from it. Without this the app closes the whole dialog (see BOX_CONTEXT).
-      .when(Boolean(picker) || Boolean(this.vars) || this.shortcuts.open || this.response.typing || this.request.typing || editing || this.treeForm.open || Boolean(this.drag?.over), (el) => el.key_context(BOX_CONTEXT)
+      .when(stepBack, (el) => el.key_context(BOX_CONTEXT)
         .on_action(BACK_ACTION, (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { this.command("cancel", cx); cx.notify(); }))
+      .when(!stepBack, (el) => el.key_context(KEYS_CONTEXT))
+      .on_action(F2_ACTION, (/** @type {unknown} */ _e, /** @type {Context} */ cx) => { this.key(/** @type {any} */ (F2), cx); cx.notify(); })
       .when(Boolean(picker), (el) => el.child(this.pickers.panel(t, this.box)))
       .when(this.treeForm.open, (el) => el.child(this.treeForm.panel(t, (cx) => { this.treeForm.close(); this.handle.focus(); cx.notify(); })))
       .when(Boolean(this.vars), (el) => el.child(this.varsPanel(t, /** @type {VarsForm} */ (this.vars))))

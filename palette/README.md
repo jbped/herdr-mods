@@ -42,10 +42,10 @@ Or by hand:
 | `ctrl-shift-p` | open |
 | `j` / `k`, `up` / `down` | move |
 | `ctrl-j` / `ctrl-k`, `ctrl-down` / `ctrl-up` | move a page |
-| `s` / `tab` | go to the search box / back to the list |
+| `/` / `tab` | go to the search box / back to the list |
 | `shift-j` / `shift-k`, `shift-down` / `shift-up` | next / previous group |
 | `enter` | run |
 | `ctrl-b` | set the selected entry's key |
-| `escape` | close, or go back from the argument prompt |
+| `q` / `escape` | close (`q` on the list), or go back from the argument prompt |
 
 The entry format, for your own entries and a mod's, and the rules for setting keys: [`mods/palette/README.md`](mods/palette/README.md).

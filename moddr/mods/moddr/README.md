@@ -16,7 +16,7 @@ Moddr lists the folders in `~/.config/herdr-app/mods/` that Herdr did not ship, 
 
 ## States
 
-Mods are listed in sections: Updates, Needs a look (edited here, unknown version, error, not checked), Up to date, Not tracked. Each row shows the name and, outside Up to date and Not tracked, its status. `o` groups them by source repo instead, A to Z, then "No source", and every row shows its status:
+Mods are listed in sections: Updates, Needs a look (edited here, unknown version, error, not checked), Up to date, Not tracked. Each row shows the name and, outside Up to date and Not tracked, its status. `]` groups them by source repo instead (`[` goes back), A to Z, then "No source", and every row shows its status:
 
 | Status | Meaning |
 |---|---|
@@ -38,14 +38,15 @@ The open row shows the new commits, the files you changed, and at most two butto
 | `j` / `down`, `k` / `up` | move |
 | `g` / `home`, `G` / `end` | first / last |
 | `ctrl-d` / `ctrl-u` | move 6 |
-| `r` | refresh: look for sources not looked for this week, then check every tracked mod |
+| `ctrl-r` | refresh: look for sources not looked for this week, then check every tracked mod |
 | `f` | refresh, looking again for every untracked mod's source |
-| `o` | group by state (the default) or by source repo, remembered for next time |
+| `]` / `[` | group by source repo or by state (the default), remembered for next time |
+| `o` | open the selected mod's source folder on GitHub in the browser (or the folder Moddr offered). Clicking the repo at the right of the open row does the same |
 | `enter` | check the selected mod |
 | `s` | set or change the selected mod's source |
 | `m` | save the newest upstream version as installed (unknown version only) |
 | `u` | update the selected mod (updates, edited here or unknown version). `y` or `enter` confirms, any other key cancels |
-| `d` | open a drift space for the selected mod |
+| `a` | open a drift space for the selected mod |
 | `z` | restore the selected mod's newest backup. `y` or `enter` confirms |
 | `x` | stop tracking the selected mod. Moddr stops looking for its source until you set one |
 | `?` | every key |
@@ -55,7 +56,7 @@ The open row shows the new commits, the files you changed, and at most two butto
 
 - The badge looks 30 seconds after Herdr starts and then every 10 minutes. It refreshes when the last refresh is older than `every_hours`.
 - The list refreshes when it opens and one is due.
-- `r` and `f` refresh at once.
+- `ctrl-r` and `f` refresh at once.
 - One copy refreshes at a time. Another copy that wants to meanwhile skips, and the list shows "checking in the background…" and loads the results when it ends.
 - After a refresh GitHub cut short, the next one is due after an hour.
 
@@ -111,13 +112,13 @@ An update does not change your `keys.json` or layout. When a mod's install steps
 
 ## Discussing drift
 
-`d`, or Discuss drift, on a tracked mod that is not up to date:
+`a`, or Discuss drift, on a tracked mod that is not up to date:
 
 1. Finds an agent: the first installed one in Herdr's agent list (most used first), on the focused space's machine when that machine can see this computer's files (WSL on Windows), else on this computer.
 2. Prepares `data/moddr/drift/<name>/`: `local/` (a copy of your files), `upstream/` (the source's newest files), `drift.diff` (`git diff --no-index local upstream`) and `BRIEF.md` (the source, versions, commits, edited files, the live folder, a fresh backup, and the safe way to write into a live mod).
 3. Opens a space named "<name> drift" there, with the agent asked to read `BRIEF.md`, explain the drift and recommend what to do, and not to change the live folder until you say so.
 
-The list closes when the space opens. Each `d` starts the folder afresh.
+The list closes when the space opens. Each `a` starts the folder afresh.
 
 ## Signing in
 
@@ -156,7 +157,7 @@ The list's footer ends with which one is in use. On Windows, gh must be installe
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `every_hours` | `6` | hours between automatic refreshes, at least 1. `0` refreshes only when you press `r` or `f` |
+| `every_hours` | `6` | hours between automatic refreshes, at least 1. `0` refreshes only when you press `ctrl-r` or `f` |
 | `search` | `true` | look for sources in GitHub's `herdr-mod` repos. `false` uses only the README links, tracked repos and `repos` |
 | `repos` | `[]` | repos to look in first, trusted, as `owner/repo` or a GitHub URL |
 | `token` | none | a GitHub token. It wins over gh's. A fine-grained token with no permissions is enough for public repos. It is kept here as plain text: prefer gh, which keeps its token in the system's keyring |

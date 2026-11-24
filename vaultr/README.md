@@ -49,9 +49,9 @@ Press `ctrl-shift-y`. The first time, type or browse to your vault folder. "vaul
 | `/` | search notes by name |
 | `j` / `k`, `down` / `up` | move in the list |
 | `enter` | open the note, or open and close the folder |
-| `]` / `[` | next / previous heading |
+| `}` / `{` | next / previous heading |
 | `backspace` | back to the note before |
-| `v` | switch to the next vault |
+| `]` / `[` | switch to the next / previous vault |
 | `o` | open the note in Obsidian |
 
 Every key, the tab and pane commands, what is not drawn and the limits: [`mods/vaultr/README.md`](mods/vaultr/README.md).

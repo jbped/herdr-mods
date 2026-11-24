@@ -22,13 +22,13 @@ import { keyAction } from "./tree.js";
 /**
  * The keys of the edit actions, in the dialog's shortcuts registry, so the settings can turn each
  * off or move it. Clone, Environments… and Edit .env… are menu entries and commands without a key.
- * Herdr's own keys reach Herdr first: f2 renames a tab, and alt-up and alt-down step through
- * agents. So Rename is on shift-r and Move up and Move down on ctrl-up and ctrl-down.
+ * Herdr's own keys reach Herdr first: alt-up and alt-down step through agents. So Move up and
+ * Move down are on ctrl-up and ctrl-down.
  * @type {import("./kit/shortcuts.js").Shortcut[]}
  */
 export const SHORTCUTS = [
   { id: "new-request", key: "n", what: "new Request" }, { id: "new-folder", key: "shift-n", what: "new folder" },
-  { id: "rename", key: "shift-r", what: "rename" }, { id: "move-to", key: "m", what: "move to" },
+  { id: "rename", key: "f2", what: "rename" }, { id: "move-to", key: "m", what: "move to" },
   { id: "move-up", key: "ctrl-up", what: "move up" }, { id: "move-down", key: "ctrl-down", what: "move down" },
   { id: "delete", key: "delete", what: "delete" },
 ];

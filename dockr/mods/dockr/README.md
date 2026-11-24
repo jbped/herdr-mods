@@ -58,7 +58,7 @@ The dialog is a list of containers, grouped the way Docker Desktop groups them: 
 
 **The toolbar**
 - **Search** filters by name, image, branch or published port. `Running` hides everything that is not running.
-- The refresh icon reads Docker, the worktrees and `dockr.json` again.
+- The refresh icon, or `ctrl-r`, reads Docker, the worktrees and `dockr.json` again.
 
 **A group**
 - The header says `Running (4/6)`, the Machine, and the group's CPU and memory in all.
@@ -92,19 +92,21 @@ The keys follow CodeyPacker's mods (`run`, `jump`, `branch`), so they are the sa
 | `c` | change checkout |
 | `b` | rebuild image |
 | `p` | read the build or bring-up's output as it runs, while one is working or has failed |
-| `d` | investigate the container with an agent (Diagnose when it has failed) |
+| `a` | investigate the container with an agent (Diagnose when it has failed) |
 | `o` | open its first link or port in the browser |
 | `y` | copy the container name |
-| `u` / `X` | start all / stop all in the group |
+| `S` / `X` | start all / stop all in the group |
 | `D` | remove the group's containers (asks first) |
 | `h` / `l` | fold / unfold the group |
-| `g` / `G` | first / last |
+| `g` / `G`, `home` / `end` | first / last |
+| `ctrl-d` / `ctrl-u` | half a page down / up |
+| `ctrl-r` | read Docker, the worktrees and `dockr.json` again |
 | `/` | search (`enter` returns to the list) |
 | `m` | the `⋯` menu (`j`/`k`, `enter`) |
 | `q`, `esc` | close the dialog. `esc` closes it from anywhere, the search box and the key list included |
 
-- **Container window:** `h`/`l` switch tabs, `j`/`k` move a line, `g`/`G` top and end, `/` search, `n`/`N` next and previous match, `f` follow, `t` timestamps, `y` copy, `s`/`x`/`r` start, stop and restart, `T` terminal, `q` close.
-- **Checkout picker:** it has a filter box, so plain letters type. Arrows or `ctrl-j`/`ctrl-k` move, `enter` switches, `ctrl-r` rebuilds, `ctrl-s` toggles "Start if stopped".
+- **Container window:** `h`/`l` switch tabs, `j`/`k` move a line, `g`/`G` top and end, `/` search, `n`/`N` or `ctrl-n`/`ctrl-p` next and previous match, `a` investigate with an agent, `f` follow, `t` timestamps, `y` copy, `s`/`x`/`r` start, stop and restart, `T` terminal, `q` close.
+- **Checkout picker:** it has a filter box, so plain letters type. Arrows or `ctrl-j`/`ctrl-k` move, `enter` switches, `ctrl-b` rebuilds, `ctrl-s` toggles "Start if stopped".
 - "Dockr: Open" in the palette does what `ctrl-shift-d` does.
 - A container or log view opens on top of the dialog. `esc` closes it and returns to the list.
 

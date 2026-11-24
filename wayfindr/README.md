@@ -54,7 +54,7 @@ Open it with `ctrl-shift-j` or the Wayfindr button in the tab bar. It covers the
 | `shift-left` / `shift-right` | move the card one Column |
 | `esc` | close this layer, then hide Wayfindr |
 | `j` / `k`, `h` / `l` | move in a Column, previous / next Column |
-| `s` | Launch from a Ticket, Review from a Pull Request |
+| `a` | Launch from a Ticket, Review from a Pull Request |
 | `?` | every key that works now |
 
 Every key, the `wayfindr.json` format, sign-in, templates and worktree placement: [`mods/wayfindr/README.md`](mods/wayfindr/README.md).

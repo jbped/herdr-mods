@@ -2587,7 +2587,7 @@ export default class Review extends View {
   /**
    * P9: keys while the tree has the keyboard, as in VS Code's Explorer. Up/Down move the selected row,
    * Right opens a folder or moves into it, Left closes it or moves to the folder above, Home/End
-   * jump, Enter opens a file (the editor takes the keyboard) or opens and closes a folder, Space
+   * jump (j / k, h / l and g / G as well), Enter opens a file (the editor takes the keyboard) or opens and closes a folder, Space
    * opens a file keeping the keyboard here, F2 renames, Delete asks to delete, Escape gives the
    * keyboard back to the editor. Pane shortcuts that don't change the file work (allowedIn "tree");
    * nothing else reaches the file. True: handled.
@@ -2600,7 +2600,8 @@ export default class Review extends View {
     if (k === "escape") { if (this.treeDel) this.treeDel = null; else this.treeFocus = false; this.paint(cx); return true; }
     const id = this.kIdx.tree.get(k) ?? this.kIdx.pane.get(k);
     if (id) { this.act(id, cx); return true; }
-    if (["up", "down", "left", "right", "home", "end"].includes(k)) { this.treeMove(k, cx); return true; }
+    const vim = { j: "down", k: "up", h: "left", l: "right", g: "home", "shift-g": "end" }[k];
+    if (vim || ["up", "down", "left", "right", "home", "end"].includes(k)) { this.treeMove(vim ?? k, cx); return true; }
     if (k === "enter" || k === "space") { this.treeActivate(k === "enter", cx); return true; }
     return true; // typing, Backspace, editing keys: nothing reaches the file while the tree has the keyboard
   }

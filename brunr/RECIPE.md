@@ -17,7 +17,7 @@ The dialog is a centred box 96% of the window wide, up to 1800px, and 92% of the
   - **Response side**, the same box. "No Response yet. Select a Request and press enter to run it." in `dim`. A Run shows a 42px top line (the name in semibold at most 220px, a 44px badge, the URL in the terminal font at 11.5px `muted`, a 20px status chip on `raised` in `done`, `ansi3` or `blocked`, the time and size in `muted`), the view tabs and the view. A folder or Collection Run adds a 34px summary line ("8 Requests", "6 passed" in `done`, "2 failed" in `blocked`, "0 skipped" in `ansi3`, the time at the right), a 40px toolbar (a 26px "Search" field and the Result, Status, Method and Sort controls) and the Run list of 28px rows grouped under folder rows with `<passed>/<total>` in 10.5px. The list is 240px wide at the left when the Response side is 640px wide or more, else above the views.
   - Under 760px wide (a pane beside a terminal) the tree is a 190px high strip across the top without the selection box, and the other two sit under it. When the dialog is 1150px wide or more, the Request column and the Response side share the room right of the tree. Narrower, the Request column sits above the Response side and is 46px high while empty.
 - **Note line**, when there is one: 11px text in `dim`, or `blocked` for a failure.
-- **Legend**, after a 1px divider: each key in `accent` semibold and its meaning in `dim`, 11px, 12px apart, wrapping.
+- **Legend**, after a 1px divider: each key in `accent` semibold and its meaning in `dim`, 11px, 12px apart, wrapping. `?` swaps it for every key on `raised` with a 1px `border` on top, 12px by 8px padding.
 
 Over the dialog, 60px from the top and 22px from the left, on `popover` with a 12px radius, a 1px `border` and a large shadow:
 
@@ -32,7 +32,7 @@ Brunr shows Run results, not agent statuses. It does not touch agents.
 
 - `ctrl-shift-u` opens Brunr as a dialog or a tab, as the settings say, and pressed again closes the dialog or goes back from the tab.
 - Click selects a row and shows a Request in the Request column without sending it. Double-click runs a Request or folds a folder. The arrow folds. The chip opens the Environment picker. Right-click opens the row's menu. Selecting a folder keeps the last Request shown.
-- Keys on the tree: `j`/`k` and the arrows move, `h`/`l` fold, `enter` runs or folds, `r` runs, `p` runs with other values, `e` picks the Environment, `o` shows the File tab, `y` copies the URL, `b` opens Bruno desktop, `n` New Request, `shift-n` New folder, `shift-r` Rename, `m` Move to…, `ctrl-up`/`ctrl-down` Move up and down, `delete` Delete, `1`-`4` the views, `/` search, `f` full screen, `ctrl-s` save, `ctrl-r` reload, `?` the key list, `,` the settings, `esc` steps back then closes. `ctrl-h` and `ctrl-l` move the keyboard between the tree, the Request column and the Response side.
+- Keys on the tree: `j`/`k` and the arrows move, `g`/`G` and `home`/`end` go to the first and last row, `ctrl-d`/`ctrl-u` move half the tree's height, `h`/`l` fold, `enter` runs or folds, `r` runs, `p` runs with other values, `e` picks the Environment, `t` shows the File tab, `y` copies the URL, `o` opens Bruno desktop, `n` New Request, `shift-n` New folder, `f2` Rename, `m` Move to…, `ctrl-up`/`ctrl-down` Move up and down, `delete` Delete, `1`-`4` the views, `/` search, `f` full screen, `ctrl-s` save, `ctrl-r` reload, `?` the key list, `,` the settings, `esc` steps back then closes, and `q` closes the dialog. `ctrl-h` and `ctrl-l` move the keyboard between the tree, the Request column and the Response side.
 - Typing in the Request column edits a Draft. The tree row gets its dot and the column "Unsaved". `ctrl-s` or Save writes it, asking first in a picker when the text has warnings or the file changed on disk. A Run of a Request with a Draft saves it first.
 - A Request Run starts at once. A folder or Collection Run asks `Run 4 Requests in "Products" against local?` first, and asks about Drafts in it. During the Run the tree row and the Response side show "4 of 16" and the running Request.
 - A tree action runs its file operation, reloads the tree and selects the result. A rename or move carries Drafts along and the Request column follows. A delete goes to the system trash after a confirmation, and a permanent delete needs a second one when the trash fails.
@@ -75,7 +75,7 @@ Facts of Herdr that a fresh build gets wrong:
 - A Herdr window (`kind: "window"`) sits under a dialog, so an editor opened as a window from the dialog is hidden. Draw it inside the dialog.
 - The app closes the top dialog on `esc` before the mod's key handler hears it. Put the dialog in a key context with `esc` bound to the mod's own action while a picker, form, editor, field or drag is open. The same `esc` can arrive twice, so ignore a second one within 300ms.
 - An Input or an Editor keeps `ctrl-h`, `ctrl-l` and its own keys. Bind the save key in a key context around the fields with `cx.bind_keys`, so `ctrl-s` reaches the dialog from any field.
-- Herdr's global keys reach Herdr first: `f2` renames a tab and `alt-up` and `alt-down` step through agents. Keys for a dialog must avoid them.
+- Herdr's global keys reach Herdr first: `f2` renames a tab and `alt-up` and `alt-down` step through agents. Bind `f2` with `cx.bind_keys` in a key context on the dialog, and its action reaches the mod. Avoid `alt-up` and `alt-down`.
 - A `cx` kept from an earlier turn is no longer valid. A callback that runs later, such as a question's button, must use the `cx` of its own turn.
 - A drag that ends on another row fires no click on either row. A release outside the rows must end the drag, so the frame and the area around the dialog also listen for the button going up.
 - `exec` cannot start `bru.cmd` by name on Windows. Start the CLI's script with `node`. `fs` reads are refused outside the home folder, and `readTextFile` reads anywhere.
@@ -104,7 +104,7 @@ Limits and assumptions:
 4. Double-clicking a Request shows a status, time, size and a pretty-printed JSON body. Headers, Timeline and Tests switch.
 5. Running a folder asks `Run 4 Requests in "Products" against local?` first, then shows the summary line and the list with ✓ and ✗ marks.
 6. `n` on a folder opens New Request. A name with `?` gives a file name with `-`, and Create writes the file numbered last and shows it in the Request column.
-7. `shift-r` on a Request with a Draft renames its file, and the Draft and the Request column follow it.
+7. `f2` on a Request with a Draft renames its file, and the Draft and the Request column follow it.
 8. `m` lists the Collection's folders and the other Collections of the same format. Choosing one moves the file, and `bru run` still runs it there.
 9. Dragging a Request onto a folder's middle moves it in. Dragging it onto a Collection of the other format moves nothing and says why.
 10. `delete` asks, then puts the file in the system trash, and the Request column empties when it showed it.

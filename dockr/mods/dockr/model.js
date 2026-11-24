@@ -704,7 +704,7 @@ export function looseBranches(branches, sources) {
 }
 
 /** The letters Dockr's own keys use, so no row is given one of them as its hint. */
-export const KEY_LETTERS = "sxrutcbpdoyhlgmqjk";
+export const KEY_LETTERS = "sxrtcbpaoyhlgmqjk";
 
 /**
  * The panel as one list for the keyboard: each group's header, then its rows unless it is folded.
@@ -723,18 +723,18 @@ export function panelItems(groups, folded, shown, filtering) {
 
 /**
  * What a key does to the selected item, as CodeyPacker's `run` mod maps them: { on: "row" | "group" | "panel", action }.
- * Null when the key does nothing there. `k` is the keystroke ("s", "shift-x", "enter", "/").
+ * Null when the key does nothing there. `k` is the keystroke ("s", "shift-s", "enter", "/").
  * `facts`: { running, created, service, bad, link } for a row, and { anyDown, anyUp } for its group.
  */
 export function keyAction(k, item, facts = {}) {
   if (k === "q") return { on: "panel", action: "leave" };
   if (k === "?" || k === "shift-/") return { on: "panel", action: "help" };
   if (k === "/") return { on: "panel", action: "search" };
-  if (k === "g") return { on: "panel", action: "first" };
-  if (k === "shift-g") return { on: "panel", action: "last" };
+  if (k === "g" || k === "home") return { on: "panel", action: "first" };
+  if (k === "shift-g" || k === "end") return { on: "panel", action: "last" };
   if (!item) return null;
   const group = (action) => ({ on: "group", action });
-  if (k === "u") return item.group.name && facts.anyDown !== false ? group("up") : null;
+  if (k === "shift-s") return item.group.name && facts.anyDown !== false ? group("up") : null;
   if (k === "shift-x") return item.group.name && facts.anyUp !== false ? group("stop") : null;
   if (k === "shift-d") return item.group.managed ? group("down") : null;
   if (k === "h") return group("fold");
@@ -751,7 +751,7 @@ export function keyAction(k, item, facts = {}) {
   if (k === "t") return facts.running ? row("terminal") : null;
   if (k === "c") return facts.service ? row("source") : null;
   if (k === "b") return facts.service ? row("rebuild") : null;
-  if (k === "d") return facts.created ? row("diagnose") : null;
+  if (k === "a") return facts.created ? row("diagnose") : null;
   if (k === "o") return facts.link ? row("browser") : null;
   if (k === "p") return facts.output ? row("output") : null;
   if (k === "y") return facts.created ? row("copy") : null;
@@ -764,7 +764,7 @@ export function keyAction(k, item, facts = {}) {
  * For a container that leaves out browser, copy name, its group's keys, search and leave, which "?" lists.
  */
 export function coreHints(item, facts = {}) {
-  const rest = new Set(item?.kind === "row" ? ["o", "y", "u", "X", "D", "/", "q"] : ["/", "q"]);
+  const rest = new Set(item?.kind === "row" ? ["o", "y", "S", "X", "D", "/", "q"] : ["/", "q"]);
   return [...keyHints(item, facts).filter(([k]) => !rest.has(k)), ["?", "all keys"]];
 }
 
@@ -775,9 +775,9 @@ export function keyHints(item, facts = {}) {
   if (item?.kind === "group") { add("enter", "enter", "fold"); }
   add("enter", "enter", item?.kind === "row" ? "logs" : null);
   // The row's buttons, left to right, then what only its menu has, in the menu's order.
-  add("d", null, "diagnose"); add("t", null, "terminal"); add("r", null, "restart"); add("x", null, "stop"); add("s", null, "start");
+  add("a", null, "diagnose"); add("t", null, "terminal"); add("r", null, "restart"); add("x", null, "stop"); add("s", null, "start");
   add("p", null, "build output"); add("o", null, "browser"); add("c", null, "checkout"); add("b", null, "rebuild"); add("y", null, "copy name");
-  add("u", null, "start all"); add("shift-x", "X", "stop all"); add("shift-d", "D", "remove");
+  add("shift-s", "S", "start all"); add("shift-x", "X", "stop all"); add("shift-d", "D", "remove");
   add("m", null, "menu");
   all.push(["/", "search"], ["q", "leave"]);
   return all.filter(([, what]) => what);

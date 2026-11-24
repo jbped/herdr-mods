@@ -14,6 +14,7 @@ import { checking, closeOverlay, props, run, settings, shared, theme } from "her
 import { SEARCH, parseSource, resolve, sourceUrl, state } from "./track.js";
 import { Ctx, RUNNING, SUMMARY, busyElsewhere, io, settings as settings_ } from "./engine.js";
 import { backups, openDrift, restore, update } from "./update.js";
+import { openUrl } from "./store.js";
 
 const HALF_PAGE = 6;
 const SHOWN_COMMITS = 8;
@@ -22,9 +23,9 @@ const BADGE_FIRST = 30e3; // the badge's first look, after Herdr has settled
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // The legend: [key, what]. KEYS is the list "?" shows; the footer line is built in render.
 const KEYS = [
-  ["j / k", "down / up"], ["g / G", "first / last"], ["r", "refresh"], ["f", "find sources again"],
-  ["o", "group by state / source"], ["enter", "check this one"], ["u", "update"], ["d", "discuss drift with an agent"],
-  ["s", "set source"], ["m", "mark installed"], ["z", "restore the last backup"], ["x", "stop tracking"],
+  ["j / k", "down / up"], ["g / G", "first / last"], ["ctrl-r", "refresh"], ["f", "find sources again"],
+  ["] / [", "group by source / state"], ["enter", "check this one"], ["u", "update"], ["a", "discuss drift with an agent"],
+  ["s", "set source"], ["o", "open the source in the browser"], ["m", "mark installed"], ["z", "restore the last backup"], ["x", "stop tracking"],
   ["q", "close"], ["?", "hide this list"],
 ];
 const SORT = "moddr.sort"; // localStorage: "state" or "source"
@@ -238,6 +239,13 @@ export default class Moddr extends View {
     });
   }
 
+  /** o: the source's GitHub folder in the browser, or the folder Moddr offered. */
+  openSource(name) {
+    const e = this.ctx.entry(name);
+    const src = e?.source ?? e?.candidate;
+    if (src) openUrl(sourceUrl(src));
+  }
+
   startEdit(name) {
     if (!name) return;
     this.editing = name;
@@ -328,22 +336,23 @@ export default class Moddr extends View {
     if (k === "escape" || (plain && !shift && k === "q")) this.close();
     else if (ev.keystroke === "ctrl-d") this.move(HALF_PAGE);
     else if (ev.keystroke === "ctrl-u") this.move(-HALF_PAGE);
+    else if (ev.keystroke === "ctrl-r") this.refresh(cx);
     else if (!plain) return;
     else if (k === "?" || (shift && k === "/")) this.help = !this.help;
     else if (k === "down" || (!shift && k === "j")) this.move(1);
     else if (k === "up" || (!shift && k === "k")) this.move(-1);
     else if (k === "G" || (shift && k === "g") || k === "end") this.move(Infinity);
     else if (k === "g" || k === "home") this.move(-Infinity);
-    else if (!shift && k === "r") this.refresh(cx);
     else if (!shift && k === "f") this.refresh(cx, true);
-    else if (!shift && k === "o") {
+    else if (!shift && (k === "]" || k === "[")) {
       this.sort = this.sort === "source" ? "state" : "source";
       try { localStorage.setItem(SORT, this.sort); } catch { /* remembered for this session only */ }
     }
     else if (k === "enter") { if (name && this.ctx.entry(name)?.source) this.checkOne(name, cx); }
     else if (!shift && k === "u") this.askUpdate(name);
-    else if (!shift && k === "d") this.discuss(cx, name);
+    else if (!shift && k === "a") this.discuss(cx, name);
     else if (!shift && k === "s") this.startEdit(name);
+    else if (!shift && k === "o") this.openSource(name);
     else if (!shift && k === "m") this.markInstalled(name, cx);
     else if (!shift && k === "x") this.untrack(name, cx);
     else if (!shift && k === "z") this.askRestore(name);
@@ -488,19 +497,27 @@ export default class Moddr extends View {
       const self = name === "moddr";
       const acts = [];
       if (s === "updates" && !self) acts.push(["update", "Update", () => this.askUpdate(name), "u"]);
-      if (edits.length || s === "unknown") acts.push(["drift", "Discuss drift", (cx) => this.discuss(cx, name), "d"]);
+      if (edits.length || s === "unknown") acts.push(["drift", "Discuss drift", (cx) => this.discuss(cx, name), "a"]);
       if (s === "unknown") acts.push(["mark", "Mark installed", (cx) => this.markInstalled(name, cx), "m"]);
       if (s === "untracked") acts.push(["set", "Set source", () => this.startEdit(name), "s"]);
       if (s === "error" || s === "unchecked") acts.push(["check", "Check", (cx) => this.checkOne(name, cx), "enter"]);
       const ver = !e?.installed ? ""
         : c?.latest && c.latest.sha !== e.installed ? `${short(e.installed)} → ${short(c.latest.sha)}`
         : `${short(e.installed)}${c?.latest?.date ? ` · ${ago(c.latest.date)} old` : ""}`;
-      const repo = e?.source && this.sort !== "source" ? `${e.source.owner}/${e.source.repo}` : "";
-      const meta = e?.source ? [repo, ver].filter(Boolean).join("  ") : "";
-      if (!acts.length && !meta) return box;
+      const src = e?.source ?? e?.candidate;
+      const repo = src && !(e?.source && this.sort === "source") ? `${src.owner}/${src.repo}` : "GitHub";
+      // The repo (or "GitHub" when the heading names it) opens the source in the browser, like o.
+      const open = src
+        ? h_flex().id(`moddr-open-${name}`).flex_none().gap(5).items_center().text_color(t.muted).cursor_pointer()
+          .hover((x) => x.text_color(t.foreground)).tooltip(sourceUrl(src)).on_click(() => this.openSource(name))
+          .child(repo).child(svg("mods/moddr/external.svg").size(10).text_color(t.dim)).child(div().text_color(t.dim).child("o"))
+        : null;
+      if (!acts.length && !src && !ver) return box;
       box.child(h_flex().pt(2).gap(6).items_center()
         .children(acts.slice(0, 2).map(([id, label, on, k], i) => button(`moddr-${id}-${name}`, label, on, { key: k, primary: i === 0, enabled: free })))
-        .child(div().flex_1().min_w(0).truncate().text_right().text_size(11).text_color(t.dim).font_family(mono).child(meta)));
+        .child(h_flex().flex_1().min_w(0).justify_end().gap(10).items_center().text_size(11).font_family(mono)
+          .when(Boolean(ver), (el) => el.child(div().min_w(0).truncate().text_color(t.dim).child(ver)))
+          .when(Boolean(open), (el) => el.child(open))));
       return box;
     };
 
@@ -566,7 +583,7 @@ export default class Moddr extends View {
         .text_color(busy ? t.accent : t.muted)
         .when(!busy && ctx.names.length > 0, (el) => el.cursor_pointer().hover((x) => x.text_color(t.foreground)).on_click((_e, cx) => { this.refresh(cx); cx.notify(); }))
         .child(busy ? div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90) : svg("mods/moddr/refresh.svg").size(13).text_color(t.muted))
-        .when(!busy, (el) => el.child("Refresh").child(keyHint("r"))));
+        .when(!busy, (el) => el.child("Refresh").child(keyHint("ctrl-r"))));
 
     // ---- banners ----
     const runError = !busy ? ctx.data.lastRun?.error : null;
@@ -576,7 +593,7 @@ export default class Moddr extends View {
 
     // ---- footer ----
     const hint = ([k, what]) => h_flex().flex_none().gap(5).child(div().text_color(t.accent).child(k)).child(div().text_color(t.dim).child(what));
-    const core = [["j/k", "move"], ["r", "refresh"], ["o", this.sort === "source" ? "by state" : "by source"], ["?", "keys"]];
+    const core = [["j/k", "move"], ["o", "open source"], ["] / [", this.sort === "source" ? "by state" : "by source"], ["?", "keys"]];
     const keyList = h_flex().flex_none().flex_wrap().px(12).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
       .children(KEYS.map(hint));
     const footer = h_flex().flex_none().h(28).px(12).gap(12).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)

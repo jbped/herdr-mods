@@ -7,7 +7,7 @@ Gitr shows one Repo on one Machine: its Main checkout, every Worktree and every 
 - `alt-shift-g`, or "Gitr: Open" in the palette, runs `mod.open {"name": "gitr"}`. The same key closes it.
 - With no props it shows the Repo of the focused space, resolved from the space's first terminal directory, on that space's Machine. When that directory is in no Repo, it opens the Repo picker.
 - A mod can open it on a given Repo with `openOverlay({ mod: "gitr", kind: "popup", at: "top", offset: 40, width: 860, height: 0.75, props: { repo: "<identity>", machine: "<machine>" } })`. Wranglr's "Open in Gitr" does this. `machine` is null or absent for this computer.
-- It reads the Repo each time it opens, shows "Reading..." until the first read, and reads again after every action and on `ctrl-l`. There is no timer.
+- It reads the Repo each time it opens, shows "Reading..." until the first read, and reads again after every action and on `ctrl-r`. There is no timer.
 
 ## Keys
 
@@ -21,10 +21,10 @@ Gitr shows one Repo on one Machine: its Main checkout, every Worktree and every 
 | `ctrl-w` | give the Branch a Worktree and a space |
 | `ctrl-n` | new Branch from this row's Branch |
 | `ctrl-d` | delete the Branch |
-| `ctrl-r` | rename the Branch |
+| `f2` | rename the Branch |
 | `ctrl-u` | remove the Worktree |
 | `ctrl-f` | fetch all remotes with pruning |
-| `ctrl-l` | read the Repo again |
+| `ctrl-r` | read the Repo again |
 | `ctrl-k` | clean up |
 | `ctrl-s` | sort: recent, A to Z |
 | `ctrl-t` | show: all, with a Worktree, checked out nowhere |

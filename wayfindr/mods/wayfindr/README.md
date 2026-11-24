@@ -27,26 +27,27 @@ Every `minutes` (default 5), Wayfindr refreshes the Profile's Pull Requests and 
 
 ## Keys
 
-The keys follow CodeyPacker's mods (`run`, `jump`, `branch`) and Dockr, so they are the same letters you use there. The letter keys are off until you tick **Vim keys** in Settings (`"vimKeys": true` at the top of `wayfindr.json`, default false). Off, only arrows, `home`/`end`, `enter`, `esc`, `shift-left`/`shift-right`, `ctrl-n`/`ctrl-p` and the overlay's `v`/`p`/`f` work, Pull Request rows have no letters, and the legend lists the arrow keys. The table below applies with it on. `ctrl-shift-j`, the accent border and the legend work either way. `ctrl-shift-j` (or the palette's `Wayfindr: Toggle`) shows Wayfindr and gives it the keyboard, and pressed again while Wayfindr holds the keyboard it hides Wayfindr and gives a terminal the keyboard. While Wayfindr holds the keyboard its border is the accent color, every Pull Request row has a letter, and a legend at the bottom shows the few keys that apply now. `?` lists every key that works now. A click outside Wayfindr hands the keyboard back. In a text box letters type: `esc` leaves the box and keeps a comment draft (a title edit is cancelled), `ctrl-enter` saves it.
+The keys follow CodeyPacker's mods (`run`, `jump`, `branch`) and Dockr, so they are the same letters you use there. The letter keys are off until you tick **Vim keys** in Settings (`"vimKeys": true` at the top of `wayfindr.json`, default false). Off, only arrows, `home`/`end`, `enter`, `esc`, `shift-left`/`shift-right`, `ctrl-n`/`ctrl-p`, `ctrl-d`/`ctrl-u`, `ctrl-r` and the overlay's `v`/`p`/`f` work, Pull Request rows have no letters, and the legend lists the arrow keys. The table below applies with it on. `ctrl-shift-j`, the accent border and the legend work either way. `ctrl-shift-j` (or the palette's `Wayfindr: Toggle`) shows Wayfindr and gives it the keyboard, and pressed again while Wayfindr holds the keyboard it hides Wayfindr and gives a terminal the keyboard. While Wayfindr holds the keyboard its border is the accent color, every Pull Request row has a letter, and a legend at the bottom shows the few keys that apply now. `?` lists every key that works now. A click outside Wayfindr hands the keyboard back. In a text box letters type: `esc` leaves the box and keeps a comment draft (a title edit is cancelled), `ctrl-enter` saves it.
 
 | Key | Action |
 |---|---|
 | `j` / `k`, `down` / `up`, `ctrl-n` / `ctrl-p` | move |
 | `g` / `G` (`home` / `end`) | first / last |
+| `ctrl-d` / `ctrl-u` | half a page down / up |
 | `enter` | open |
-| `r` | refresh (the view, or refetch the open Pull Request) |
+| `ctrl-r` | refresh (the view, or refetch the open Pull Request) |
 | `q` | close this layer; at the top, hide Wayfindr |
 | `esc` | as `q`, and leaves a text box |
 | `?` | every key that works now |
-| `tab` | the other view: Board or Pull Requests |
+| `]` / `[`, `tab` | the other view: Board or Pull Requests |
 | `P` | the next Profile (the legend names it; absent with one Profile) |
 | `,` | Settings (`q` or `esc` returns to the view) |
 | `o` / `y` | open the selected card or Pull Request in the browser / copy its URL |
 
-- **Board:** `h` / `l` (and `left` / `right`) previous and next Column with cards, `j` / `k` the card in the Column, `H` / `L` (and `shift-left` / `shift-right`) move the card one Column, `s` Launch, `enter` opens the detail panel, which then follows the cursor.
+- **Board:** `h` / `l` (and `left` / `right`) previous and next Column with cards, `j` / `k` the card in the Column, `H` / `L` (and `shift-left` / `shift-right`) move the card one Column, `a` Launch, `enter` opens the detail panel, which then follows the cursor.
 - **Detail panel:** the Board's keys, plus `c` the comment box, `e` edit the title, `m` the Move to list (`j` / `k`, `enter` moves there, `q` closes it). With the Launch card open: `enter` launches, `q` closes the card.
-- **Pull Requests:** a cursor over every row (Mine, then Needs my review), a row's letter opens it, `s` Review. The list does not scroll to follow the cursor.
-- **Pull Request overlay and pane:** `j` / `k` next and previous file (`k` from the first file is the Overview), `g` Overview, `G` last file, `v` viewed, `c` Checks (the Overview), `p` Post review, `f` fullscreen (in the pane: Herdr's pane zoom, again to unzoom), `s` Review (overlay only), `r` refetch, `q` closes the overlay (nothing in a pane: its header closes it).
+- **Pull Requests:** a cursor over every row (Mine, then Needs my review), a row's letter opens it, `a` Review. The list does not scroll to follow the cursor.
+- **Pull Request overlay and pane:** `j` / `k` next and previous file (`k` from the first file is the Overview), `g` Overview, `G` last file, `v` viewed, `c` Checks (the Overview), `p` Post review, `f` fullscreen (in the pane: Herdr's pane zoom, again to unzoom), `a` Review (overlay only), `ctrl-r` refetch, `q` closes the overlay (nothing in a pane: its header closes it).
 - **Post review:** `p` or `enter` asks to post when the review is ready, `q` back to the Overview. Then `y` posts, `n` or `q` cancels.
 - **Settings:** `q` or `esc` goes back to the last view. Its boxes take letters.
 - The legend and the `?` list come from `keys.js`, the same function that decides what a key does, so they never name a key that does nothing.

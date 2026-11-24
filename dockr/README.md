@@ -51,7 +51,7 @@ Or by hand:
 | `enter` | open the container, or fold a group |
 | `s` / `x` / `r` | start / stop / restart |
 | `t` / `c` / `b` | terminal / change checkout / rebuild image |
-| `p` / `d` / `o` | live build output / diagnose / open its first link |
+| `p` / `a` / `o` | live build output / diagnose with an agent / open its first link |
 | `/` | search |
 | `1` / `2` | containers / dashboard |
 | `q`, `esc` | close |

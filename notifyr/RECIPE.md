@@ -16,7 +16,7 @@ A log of every notification Herdr shows. Toasts look as they always did, a bell 
   - An unread row: title in `foreground`, body in `muted`, a 6px `accent` dot before the time, the time in `accent`.
   - A read row: title in `muted`, body in `dim`, the time in `dim`, and under it in 10.5px `dim` how it was read: "clicked", "visited", "opened", "seen" or "read".
   - The selected row is on `selected`.
-  - Legend, 28px with a top border, 11px, keys in `accent` and meanings in `dim`: "j/k move", "enter go", "r read", "d delete", "u unread only", "? keys". `?` swaps it for a wrapping list of every key on `raised`.
+  - Legend, 28px with a top border, 11px, keys in `accent` and meanings in `dim`: "j/k move", "enter go", "r read", "x delete", "u unread only", "? keys". `?` swaps it for a wrapping list of every key on `raised`.
   - Empty: "No notifications yet.", or "Nothing unread." when filtered, centered in `dim`.
 
 ## How it behaves
@@ -32,7 +32,7 @@ A log of every notification Herdr shows. Toasts look as they always did, a bell 
 - A toast that times out without a click stays unread.
 - The bell counts unread entries. A click opens the list.
 - `ctrl-shift-i` opens the list. Again closes it.
-- List keys: `j`/`down` and `k`/`up` move, `g`/`home` and `G`/`end` go to the first and last, `ctrl-d` and `ctrl-u` move 6, `pagedown` and `pageup` move 12, `enter` or `o` goes, `r` toggles read, `R` marks all read, `d` or `x` deletes the entry, `D` deletes all, `u` toggles unread only, `?` toggles the key list, `q` or `escape` closes.
+- List keys: `j`/`down` and `k`/`up` move, `g`/`home` and `G`/`end` go to the first and last, `ctrl-d` and `ctrl-u` move 6, `pagedown` and `pageup` move 12, `enter` goes, `r` toggles read, `R` marks all read, `x` or `delete` deletes the entry, `X` deletes all, `u` toggles unread only, `?` toggles the key list, `q` or `escape` closes.
 - Going to an entry marks it opened, closes the list and runs its command with the stored arguments. An entry with no action is only marked. Clicking a row does the same.
 - The time reads "now", "5m", "3h", then "Nov 16". Its tooltip is `2026-11-16 14:02`. The tooltip on the read word says how and when.
 
@@ -61,7 +61,7 @@ A log of every notification Herdr shows. Toasts look as they always did, a bell 
 - While the dialog has the keyboard `focused()` can be empty. Keep the last space and terminal then, or closing the list counts as arriving.
 - A shifted letter arrives as `key: "g"` with `modifiers.shift`, and `?` arrives as `key: "?"` with no shift. Test the shifted letters before the plain ones.
 - `setShared` inside `render` is avoided: the visit sweep writes from `cx.spawn`.
-- `D` and Clear have no confirmation.
+- `X` and Clear have no confirmation.
 - Store the program on the entry when the toast appears. Looked up at draw time, the icon is lost once the terminal ends.
 - Herdr's agent toasts are level info, so a level dot on every agent row is noise. Draw the corner dot for other levels only.
 
@@ -73,5 +73,5 @@ A log of every notification Herdr shows. Toasts look as they always did, a bell 
 - A toast with no action turns "seen" when the list opens.
 - The bell shows the unread count.
 - An entry for a terminal shows its program icon, and one with no terminal shows the glyph for its level.
-- In the list, `j`, `k`, `g`, `G`, `r`, `R`, `d`, `D`, `u`, `?`, `enter` and `q` do what the legend says.
+- In the list, `j`, `k`, `g`, `G`, `r`, `R`, `x`, `X`, `u`, `?`, `enter` and `q` do what the legend says.
 - `shared.json` holds the entries under `notifyr.log`.

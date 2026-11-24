@@ -574,6 +574,8 @@ export default class Wayfindr extends View {
       c.col = i; c.row = Math.min(c.row, cols[i].tickets.length - 1);
     } else if (action === "prev") c.row = Math.max(0, c.row - 1);
     else if (action === "next") c.row = Math.min(cols[c.col].tickets.length - 1, c.row + 1);
+    else if (action === "halfUp") c.row = Math.max(0, c.row - this.halfPage("board"));
+    else if (action === "halfDown") c.row = Math.min(cols[c.col].tickets.length - 1, c.row + this.halfPage("board"));
     else if (action === "first") c.row = 0;
     else if (action === "last") c.row = Math.max(0, cols[c.col].tickets.length - 1);
     else if (action !== "open") return false;
@@ -1167,6 +1169,15 @@ export default class Wayfindr extends View {
     else if (action === "last") { if (order.length) this.prShown[k] = order[order.length - 1]; }
     else if (action === "next") { if (i + 1 < order.length) this.prShown[k] = order[i + 1]; }
     else if (action === "prev") this.prShown[k] = i <= 0 ? null : order[i - 1];
+    else if (action === "halfDown" || action === "halfUp") {
+      for (let n = this.halfPage("pr"); n > 0; n--) this.prFile(action === "halfDown" ? "next" : "prev");
+    }
+  }
+
+  // Half a page of rows in `layer`'s list (ctrl-d / ctrl-u): Wayfindr's height over about one row's.
+  halfPage(layer) {
+    const rowH = layer === "board" ? 90 : layer === "prs" ? 52 : 28;
+    return Math.max(1, Math.floor((this.height ?? 600) / rowH / 2));
   }
 
   // The Pull Request list's rows in draw order (D6): Mine, then Needs my review, each by Account then repo, as
@@ -1306,7 +1317,7 @@ export default class Wayfindr extends View {
   // What a key's action does (D10).
   doKey(layer, action, cx) {
     const sel = this.selectedPr, k = sel?.pr.key;
-    const nav = action === "next" || action === "prev" || action === "first" || action === "last" || action === "open";
+    const nav = ["next", "prev", "first", "last", "halfDown", "halfUp", "open"].includes(action);
     if (action === "help") { this.help = true; return; }
     if (action === "hide") { this.help = false; return; }
     if (action === "close" || action === "back" || action === "no") return this.closeStep(cx);
@@ -1340,6 +1351,8 @@ export default class Wayfindr extends View {
       const cols = this.moveCols(cc.b, cc.tk), n = cols.length;
       if (action === "next") this.moveCursor = Math.min(n - 1, this.moveCursor + 1);
       else if (action === "prev") this.moveCursor = Math.max(0, this.moveCursor - 1);
+      else if (action === "halfDown") this.moveCursor = Math.min(n - 1, this.moveCursor + this.halfPage("move"));
+      else if (action === "halfUp") this.moveCursor = Math.max(0, this.moveCursor - this.halfPage("move"));
       else if (action === "first") this.moveCursor = 0;
       else if (action === "last") this.moveCursor = Math.max(0, n - 1);
       else if (action === "pick") {
@@ -1358,7 +1371,9 @@ export default class Wayfindr extends View {
       const rows = this.prListRows(), at = rows.findIndex((r) => r.pr.key === this.prCursor), cur = rows[at];
       if (nav && rows.length) {
         const i = action === "first" ? 0 : action === "last" ? rows.length - 1
-          : action === "next" ? Math.min(rows.length - 1, at + 1) : action === "prev" ? Math.max(0, at - 1) : Math.max(0, at);
+          : action === "next" ? Math.min(rows.length - 1, at + 1) : action === "prev" ? Math.max(0, at - 1)
+          : action === "halfDown" ? Math.min(rows.length - 1, Math.max(0, at) + this.halfPage("prs"))
+          : action === "halfUp" ? Math.max(0, at - this.halfPage("prs")) : Math.max(0, at);
         this.prCursor = rows[i].pr.key;
         if (action === "open") this.openPr(rows[i].account, rows[i].pr, cx);
       } else if (cur && (action === "browser" || action === "copy") && cur.pr.url) {
@@ -3105,6 +3120,7 @@ export default class Wayfindr extends View {
       .on_mouse_move((e, cx) => this.prDragMove(e, cx))
       .on_mouse_up("left", (_e, cx) => this.prDragEnd(cx))
       .on_key_down((e, cx) => this.onKey(e, cx))
+      .on_size_change((size) => { this.height = size.height; })
       // A press outside: the keyboard has gone, so no letters, legend or accent border (not in the pane copy).
       .when(!pane, (el) => el.on_mouse_down_out((_e, cx) => { if (!this.gone) { this.gone = true; this.help = false; this.typed = ""; cx.notify(); } }));
     const footer = this.kb ? this.keysFooter(t) : null;

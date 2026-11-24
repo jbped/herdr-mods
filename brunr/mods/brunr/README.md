@@ -158,7 +158,7 @@ Everything on the Response side is held in memory. It is never written to disk.
 
 The dialog has three columns: the tree, the Request column and the Response side. When the dialog is 1150px wide or more they sit side by side, and the Request column and the Response side share the room right of the tree. In a narrower dialog or tab the Request column sits above the Response side, and it is 46px high while it shows nothing. The header's pane button and `shift-f` move an open dialog to a pane, and the same button in the pane moves it back to a dialog. Drafts and the last Response come along. The move waits for a Run to finish, and it asks first when an editor has unsaved edits. In a pane under 760px wide the tree is a 190px strip across the top, with the Request column and the Response side under it. A menu opened with the mouse appears under the button that opened it, and a row's right-click menu appears at the pointer. A menu opened with a key appears at the dialog's top left. The dialog takes 96% of the window's width and 92% of its height, and the tree takes 22% of the dialog, between 240px and 380px. When the Response side is under 620px wide, the Search box of a folder Run sits on its own line with the filter controls under it.
 
-A click on a Request row, `j` or `k` onto one, and `o` show the Request in the Request column. Nothing is sent. `o` and the row menu's Open file show it on its File tab. Selecting a folder, a Collection or the Global environment row keeps the last Request shown, as Bruno keeps a Request's tab open. Double-click and `enter` on the tree still run the Request.
+A click on a Request row, `j` or `k` onto one, and `t` show the Request in the Request column. Nothing is sent. `t` and the row menu's Open file show it on its File tab. Selecting a folder, a Collection or the Global environment row keeps the last Request shown, as Bruno keeps a Request's tab open. Double-click and `enter` on the tree still run the Request.
 
 The Request column, top to bottom:
 
@@ -313,7 +313,7 @@ The edit actions work on Collections on this computer. A row of another Machine 
 | New Request | `n` | Collection, folder, Request |
 | New folder | `shift-n` | Collection, folder, Request |
 | Clone | menu only | Request |
-| Rename | `shift-r` | folder, Request |
+| Rename | `f2` | folder, Request |
 | Delete | `delete` | folder, Request |
 | Move to… | `m` | folder, Request |
 | Move up, Move down | `ctrl-up`, `ctrl-down` | folder, Request |
@@ -436,7 +436,8 @@ In the dialog the keyboard is on the tree, the Request column or the Response si
 | Key | Action |
 |---|---|
 | `up` / `k`, `down` / `j` | previous / next row in the tree, or previous / next Request of a Run on the Response side |
-| `home` / `end` | first / last row |
+| `g` / `G`, `home` / `end` | first / last row |
+| `ctrl-d` / `ctrl-u` | half the tree's height down / up |
 | `left` / `h` | fold the Collection or folder, else go to the parent row |
 | `right` / `l` | unfold, else go to the first child |
 | `enter` | run a Request, fold or unfold a Collection or folder, pick on the Global environment row. On the Request column: into the URL field |
@@ -444,14 +445,14 @@ In the dialog the keyboard is on the tree, the Request column or the Response si
 | `r` | run the Request, folder or Collection |
 | `p` | run the Request with other values for its URL's `{{variables}}` |
 | `e` | pick the Environment (or the Global environment on its row) |
-| `o` | show the Request on its File tab |
+| `t` | show the Request on its File tab |
 | `y` | copy the Request's URL |
-| `b` | open Bruno desktop (Collections on this computer only) |
+| `o` | open Bruno desktop (Collections on this computer only) |
 | `n`, `shift-n` | New Request, New folder |
-| `shift-r` | Rename |
+| `f2` | Rename |
 | `m` | Move to… |
 | `ctrl-up` / `ctrl-down` | Move up / Move down |
-| `delete` | Delete |
+| `x` / `delete` | Delete |
 | `1` to `4` | Response, Headers, Timeline or Tests view |
 | `/` | search a Run's Requests |
 | `f` | fill the window, or leave full screen (dialog only) |
@@ -460,10 +461,11 @@ In the dialog the keyboard is on the tree, the Request column or the Response si
 | `?` | show every key under the dialog, or only the main ones |
 | `shift-f` | move Brunr from the dialog to a pane in the current tab, or from the pane back to the dialog |
 | `,` | open the settings |
+| `q` | close the dialog (dialog only) |
 | `ctrl-x` | close the tab (tab only) |
 | `esc` | step back: close a picker, a form, an editor's question, an editor, the settings or the Search box, leave a field, else close the dialog |
 
-`r`, `p`, `e`, `o`, `y`, `b`, `f`, `ctrl-r`, `ctrl-s` and the seven edit keys can be switched off or moved to another key in the settings. The other keys always work, and so does every button and menu entry. Each key is also a command: `herdr-app do brunr.<command>`. The edit commands are `new-request`, `new-folder`, `rename`, `clone`, `move-to`, `move-up`, `move-down`, `delete`, `environments` and `edit-dotenv`, on the selected row.
+`r`, `p`, `e`, `t`, `y`, `o`, `f`, `ctrl-r`, `ctrl-s` and the seven edit keys can be switched off or moved to another key in the settings. The other keys always work, and so does every button and menu entry. Each key is also a command: `herdr-app do brunr.<command>`. The edit commands are `new-request`, `new-folder`, `rename`, `clone`, `move-to`, `move-up`, `move-down`, `delete`, `environments` and `edit-dotenv`, on the selected row.
 
 In a picker: `up` / `k` / `ctrl-k`, `down` / `j` / `ctrl-j`, `enter` or `space`, and `esc`. In the "run with values" form: `tab` / `down` and `shift-tab` / `up` move between boxes, `enter` runs and `esc` closes. In a tree form: `tab` and `shift-tab` move, `enter` confirms and `esc` closes.
 
@@ -517,7 +519,7 @@ The gear or `,` opens them:
 - `p` passes each typed value to the CLI as a command-line argument (`--env-var NAME=VALUE`), which other programs on the machine can see while the Run executes. Do not use it for secrets.
 - Closing the dialog during a Run leaves that Run's report file in the app's data folder (`data/brunr/`) until Brunr is next opened.
 - Editing works on this computer only. Requests, Environments and `.env` files on another Machine are read-only.
-- Herdr's own keys reach Herdr before the dialog: `f2` renames a tab and `alt-up` and `alt-down` step through agents. That is why Rename is on `shift-r` and Move up and Move down on `ctrl-up` and `ctrl-down`.
+- Herdr's own keys reach Herdr before the dialog: `f2` renames a tab and `alt-up` and `alt-down` step through agents. The dialog binds `f2` in its own key context so Rename gets it. Move up and Move down are on `ctrl-up` and `ctrl-down`.
 - A masked field shows one dot per character, so the length of a value is visible. The Raw view and a revealed row show values on screen and in screenshots. A revealed value or the Raw text can be selected and copied with the system keys, as any Herdr text field allows.
 - The editors are not separate windows. A Herdr window sits under a dialog, so they take the dialog's columns while open, and only one is open at a time.
 

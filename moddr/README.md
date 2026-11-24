@@ -7,9 +7,9 @@ Finds where each of your mods came from on GitHub, tells you when one has an upd
 ## Features
 
 - **Finds sources by itself.** Moddr looks for each mod in the repos its README links, in repos where your other mods were found, and in GitHub's `herdr-mod` repos that mention it. A mod whose files match a version there is tracked without asking.
-- **Checks on its own.** Every 6 hours by default, from the status-bar badge or when you open the list. `r` checks now.
+- **Checks on its own.** Every 6 hours by default, from the status-bar badge or when you open the list. `ctrl-r` checks now.
 - **Updates in place.** `u` installs the newest version: only the changed files, one at a time, after a backup. Restore puts the backup back.
-- **Talk drift through with an agent.** `d` opens a new space where your agent compares your copy with the source, explains what changed on each side and helps you merge.
+- **Talk drift through with an agent.** `a` opens a new space where your agent compares your copy with the source, explains what changed on each side and helps you merge.
 - **A badge in your status bar.** It shows how many mods have updates and opens the list when clicked.
 - **A toast for new updates.** Each new update is announced once, with the names of the mods.
 - **What changed.** A mod with updates lists the new commits that touched its folder, with their messages and ages.
@@ -24,7 +24,7 @@ Finds where each of your mods came from on GitHub, tells you when one has an upd
 - It runs `git hash-object` on the files in your mods folder, and `gh auth token` when it starts. The token stays in memory and is sent only to api.github.com.
 - It reads `installed.json` and each mod's `README.md`, and writes `moddr.json` in the Herdr config folder.
 - An update or restore rewrites that mod's folder. It downloads the source with `git clone`, and keeps the last 3 backups and the drift folders in `data/moddr/`.
-- `d` starts your most-used installed agent (from Herdr's agent list) in a new space.
+- `a` starts your most-used installed agent (from Herdr's agent list) in a new space.
 - It calls the GitHub API every 6 hours while the badge or the list is shown. Signed out, a first run over a dozen mods takes about 50 of the 60 requests GitHub allows an hour. Later runs take about 2 per mod.
 
 ## Install
@@ -50,10 +50,11 @@ Click the badge, press the key or pick "Moddr: Open" in the palette. The first t
 |---|---|
 | `ctrl-shift-g` | open the list, again closes it |
 | `j` / `k` | down / up |
-| `r` | look for new sources and check every tracked mod |
-| `o` | group the list by state or by source repo |
+| `ctrl-r` | look for new sources and check every tracked mod |
+| `o` | open the selected mod's source on GitHub |
+| `]` / `[` | group the list by source repo or by state |
 | `u` | update the selected mod, after a confirmation |
-| `d` | discuss its drift with an agent in a new space |
+| `a` | discuss its drift with an agent in a new space |
 | `z` | restore the last backup |
 | `s` | set or change the source |
 | `x` | stop tracking, and stop looking for its source |
