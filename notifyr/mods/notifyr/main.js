@@ -35,7 +35,8 @@ const HOW_TIP = {
 const KEYS = [
   ["j / k", "down / up"], ["g / G", "first / last"], ["ctrl-d / ctrl-u", "half a page"],
   ["enter", "go to it"], ["r", "read / unread"], ["R", "all read"],
-  ["d", "delete"], ["D", "delete all"], ["u", "unread only"], ["q", "close"],
+  ["x / delete", "delete"], ["X", "delete all"], ["u", "unread only"], ["q", "close"],
+  ["?", "hide this list"],
 ];
 
 function entries() {
@@ -319,11 +320,11 @@ export default class Notifyr extends View {
     else if (k === "g" || k === "home") this.at = 0;
     else if (k === "pagedown") this.at = Math.min(last, this.at + HALF_PAGE * 2);
     else if (k === "pageup") this.at = Math.max(0, this.at - HALF_PAGE * 2);
-    else if (k === "enter" || (!shift && k === "o")) this.go(rows[this.at]);
+    else if (k === "enter") this.go(rows[this.at]);
     else if (k === "R" || (shift && k === "r")) { this.fresh.clear(); markRead(() => true, "marked"); }
     else if (k === "r") this.toggleRead(rows[this.at]);
-    else if (k === "D" || (shift && k === "d")) { setShared(LOG, []); this.at = 0; }
-    else if (k === "d" || (!shift && k === "x")) {
+    else if (k === "X" || (shift && k === "x")) { setShared(LOG, []); this.at = 0; }
+    else if (k === "delete" || (!shift && k === "x")) {
       const e = rows[this.at];
       if (e) update((x) => (x.id === e.id ? null : x));
     }
@@ -392,7 +393,7 @@ export default class Notifyr extends View {
       ? h_flex().flex_none().flex_wrap().px(14).py(8).gap_x(16).gap_y(4).bg(t.raised).border_t(1).border_color(t.border).text_size(11)
           .children(KEYS.map(([k, what]) => key(k, what)))
       : h_flex().flex_none().h(28).px(14).gap(14).items_center().border_t(1).border_color(t.border).text_size(11)
-          .child(key("j/k", "move")).child(key("enter", "go")).child(key("r", "read")).child(key("d", "delete")).child(key("u", "unread only")).child(key("?", "keys"));
+          .child(key("j/k", "move")).child(key("enter", "go")).child(key("r", "read")).child(key("x", "delete")).child(key("u", "unread only")).child(key("?", "keys"));
 
     return v_flex()
       .id("notifyr-list")

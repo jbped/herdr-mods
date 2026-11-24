@@ -25,6 +25,7 @@ const OPEN = "dockr.open"; // true while the dialog is open: the status bar's co
 const BACK = "dockr.back"; // set when a popup or dialog opened from the list closes: the list then takes the keyboard again
 const WAKE = "dockr.wake"; // set when the dialog reads Docker again: the status bar's copy then does too, which restarts a watch that ended
 const REQUEST = "dockr.request"; // the picker's ask, handed to the panel through shared state
+const HALF_PAGE = 6; // rows ctrl-d and ctrl-u move
 const LAST = "dockr.last"; // what the dialog knew when it closed, so the next one opens on it and not on an empty list
 const load = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback; } catch { return fallback; } };
 const idOf = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, "_");
@@ -286,6 +287,7 @@ export default class Dockr extends View {
   setTab(tab) { this.tab = tab; this.help = false; localStorage.setItem("tab", tab); }
 
   panelKey(e, cx) {
+    if (this.kb && e.keystroke === "ctrl-r") { cx.stop_propagation(); cx.spawn(async (cx) => { await this.reload(cx); cx.notify(); }); return; }
     if (this.typing) {
       if (e.key === "escape") { this.enterKeys(); cx.stop_propagation(); cx.notify(); }
       return;
@@ -309,6 +311,7 @@ export default class Dockr extends View {
     if (nav === "close" && this.help) { this.help = false; cx.stop_propagation(); cx.notify(); return; }
     if (nav === "close") { this.leaveKeys(); cx.stop_propagation(); cx.notify(); return; }
     if (nav === "done" || nav === "hit") { cx.stop_propagation(); cx.notify(); return; }
+    if (!nav && (e.keystroke === "ctrl-d" || e.keystroke === "ctrl-u")) { pick(state.at + (e.keystroke === "ctrl-d" ? HALF_PAGE : -HALF_PAGE)); cx.stop_propagation(); cx.notify(); return; }
     if (!nav && (e.modifiers.control || e.modifiers.alt || e.modifiers.platform)) return;
     const item = items[state.at] ?? null;
     const a = model.keyAction(nav === "act" ? "enter" : e.keystroke, item, this.facts(item));
@@ -890,7 +893,7 @@ export default class Dockr extends View {
           .tooltip("Only show running containers")
           .on_click((_e, cx) => { this.onlyRunning = !this.onlyRunning; localStorage.setItem("running", this.onlyRunning ? "1" : "0"); cx.notify(); })
           .child(h_flex().h_full().items_center().child("Running")))
-        .child(this.iconButton(t, "reload", "restart", "Refresh: read Docker, the worktrees and dockr.json again", (cx) => this.reload(cx))))
+        .child(this.iconButton(t, "reload", "restart", "Refresh (ctrl-r): read Docker, the worktrees and dockr.json again", (cx) => this.reload(cx))))
       .child(h_flex().w_full().h(30).px(10).gap(4).flex_none().items_end().border_b(1).border_color(t.border).children(
         [["list", "Containers", "1"], ["dash", "Dashboard", "2"]].map(([id, label, key]) => h_flex().id(`tab-${id}`).h(30).px(10).gap(6).items_center().cursor_pointer()
           .border_b(2).border_color(this.tab === id ? t.accent : "#00000000").text_color(this.tab === id ? t.foreground : t.muted).hover((x) => x.text_color(t.foreground))
@@ -919,7 +922,7 @@ export default class Dockr extends View {
 
   /** Every key that works on the selected item, in two columns, after "?". */
   renderKeys(t, hints) {
-    const all = [...hints.filter(([k]) => k !== "q"), ["g / G", "first / last"], ["h / l", "fold / unfold group"], ["a letter", "jump to that row"], ["q", this.modal ? "close" : "leave"], ["?", "hide this list"]];
+    const all = [...hints.filter(([k]) => k !== "q"), ["g / G", "first / last"], ["ctrl-d/u", "half a page"], ["h / l", "fold / unfold group"], ["ctrl-r", "read everything again"], ["a letter", "jump to that row"], ["q", this.modal ? "close" : "leave"], ["?", "hide this list"]];
     const half = Math.ceil(all.length / 2);
     const col = (list) => v_flex().flex_1().min_w(0).gap(3).children(list.map(([k, what]) => h_flex().w_full().h(18).gap(8).items_center().text_size(11)
       .child(div().w(46).flex_none().font_semibold().text_color(t.accent).child(k))
@@ -1035,7 +1038,7 @@ export default class Dockr extends View {
         if (e.key === "down" || k === "ctrl-j" || k === "ctrl-n") this.at = Math.min(count - 1, this.at + 1);
         else if (e.key === "up" || k === "ctrl-k" || k === "ctrl-p") this.at = Math.max(0, this.at - 1);
         else if (e.key === "enter") this.ask("switch");
-        else if (k === "ctrl-r") this.ask("rebuild");
+        else if (k === "ctrl-b") this.ask("rebuild");
         else if (k === "ctrl-s") this.start = !this.start;
         else if (e.key === "escape") closeOverlay(props().overlay);
         else return;
@@ -1056,7 +1059,7 @@ export default class Dockr extends View {
         .child(div().flex_1().min_w(0).child(this.check(t, "start", this.start, "Start if stopped", () => { this.start = !this.start; })))
         .child(this.button(t, "rebuild", "Rebuild", () => this.ask("rebuild"), { tip: "Rebuild the image from the Source it is set to" }))
         .child(this.button(t, "switch", pickedBranch ? "Check out" : "Switch", () => this.ask("switch"), { primary: !idle, dim: idle, tip: p.row.running ? "Enter. The Service is recreated from this checkout." : "Enter. The Service stays stopped unless Start if stopped is ticked." })))
-      .child(legend(t, [["↑/↓", "move"], ["ctrl-j/k", "move"], ["enter", "switch"], ["ctrl-r", "rebuild"], ["ctrl-s", "start if stopped"], ["esc", "close"]]));
+      .child(legend(t, [["↑/↓", "move"], ["ctrl-j/k", "move"], ["enter", "switch"], ["ctrl-b", "rebuild"], ["ctrl-s", "start if stopped"], ["esc", "close"]]));
   }
 
   // The bar over a peeked terminal.

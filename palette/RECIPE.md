@@ -1,6 +1,6 @@
 # Palette
 
-A command palette that opens as a popup at the top of the window. It lists your own entries under Custom, then the entries other mods declare under Mods, then every Herdr command in groups (Tab, Pane, Space and so on), each with the key bound to it. It opens with the keyboard on the list. You move to a row and it runs, or press `s` and type to filter. A command that needs arguments asks for them in the same box first. `ctrl-b` sets the selected row's key.
+A command palette that opens as a popup at the top of the window. It lists your own entries under Custom, then the entries other mods declare under Mods, then every Herdr command in groups (Tab, Pane, Space and so on), each with the key bound to it. It opens with the keyboard on the list. You move to a row and it runs, or press `/` and type to filter. A command that needs arguments asks for them in the same box first. `ctrl-b` sets the selected row's key.
 
 ![Palette](preview.png)
 
@@ -8,7 +8,7 @@ A command palette that opens as a popup at the top of the window. It lists your 
 
 A popup 760px wide on `popover`, with 12px padding and a 6px gap between its parts. Top to bottom:
 
-- **Search box**, 36px high, radius 8, on `background`, with a 1px border: `accent` while the text field or a prompt has the keyboard, `border` otherwise. Left to right: a 14px search icon in `dim`, the text field (12.8px, `foreground`, placeholder "Press s to search…"), and "Esc" in 11px `dim`.
+- **Search box**, 36px high, radius 8, on `background`, with a 1px border: `accent` while the text field or a prompt has the keyboard, `border` otherwise. Left to right: a 14px search icon in `dim`, the text field (12.8px, `foreground`, placeholder "Press / to search…"), and "Esc" in 11px `dim`.
 - **Group index**, a 120px column on the left with a 1px `border` line on its right. One 24px label per group that has rows, 12px text, radius 5. The selected row's group is `foreground` on `hover`. The others are `dim`.
 - **List**, right of the index, at most 360px high. It holds:
   - group headings, 26px high, 11px `dim`.
@@ -16,7 +16,7 @@ A popup 760px wide on `popover`, with 12px padding and a 6px gap between its par
   - keycaps: one box per part of the key (`ctrl-shift-t` draws `ctrl`, `shift`, `t`), 18px high, at least 18px wide, radius 4, a 1px `border` outline, 10.5px `dim` text, 3px apart.
 - With no match, the index and list give way to "No matching command" in 12px `dim`.
 - **Legend**, always last, under a 1px `border` line with 8px above its text and 8px at its sides. Key hints 12px apart in 11px, wrapping: each key in `accent` semibold, 4px, then its meaning in `dim`. It follows the keyboard:
-  - on the list: `j/k/↑/↓` move, `ctrl-j/k/↑/↓` page, `shift-j/k/↑/↓` group, `s` search, `enter` run, `ctrl-b` set key, `esc` close.
+  - on the list: `j/k/↑/↓` move, `ctrl-j/k/↑/↓` page, `shift-j/k/↑/↓` group, `/` search, `enter` run, `ctrl-b` set key, `q/esc` close.
   - in the text field: `tab` list, `↑/↓` move, `ctrl-j/k/↑/↓` page, `shift-↑/↓` group, `enter` run, `ctrl-b` set key, `esc` close.
   - in the argument prompt: `enter` run, `esc` close. In the key prompt: `enter` save, `esc` close.
 
@@ -39,7 +39,7 @@ While it asks for a key, the index and list are replaced by:
 ## How it behaves
 
 - `ctrl-shift-p` opens it with the keyboard on the list, not in the text field. The same key closes it.
-- On the list, `j` and `k` move one row, `enter` runs the selected row and `s` puts the keyboard in the text field. In the text field, `tab` puts it back on the list, and so does a click outside the field. Leaving a prompt returns the keyboard to where it was.
+- On the list, `j` and `k` move one row, `enter` runs the selected row, `/` puts the keyboard in the text field and `q` closes the palette. In the text field, `tab` puts it back on the list, and so does a click outside the field. Leaving a prompt returns the keyboard to where it was.
 - Typing in the text field filters the list and selects the first row. Every typed word must appear in a row's title, command name, mod name or description. Case is ignored.
 - `down` and `up` move one row. `pagedown` and `pageup` move 8 rows. `ctrl-j`, `ctrl-down` and `ctrl-d` act as `pagedown`, `ctrl-k`, `ctrl-up` and `ctrl-u` as `pageup`, `ctrl-n` as `down` and `ctrl-p` as `up`. On the list, `shift-j` and `shift-k` act as `shift-down` and `shift-up`. `shift-down` and `shift-up` select the first row of the next or previous group and put its heading at the top.
 - The list scrolls only as far as the selected row needs. The mouse wheel scrolls it, and the selection moves to stay in view.
@@ -92,7 +92,7 @@ Entry format, for `~/.config/herdr-app/palette.json` (a JSON list) and for a `pa
 - The mod is created anew on each open, so entries and keys are reread every time. No watcher is needed.
 - The mod focuses its own handle (the list) in `init` and again after 600 ms, unless the text field or a prompt has taken the keyboard. Keep both calls.
 - The text field's `focus` and `blur` events set whether it has the keyboard. The field handles `tab` itself after the mod's key handler, which leaves the keyboard nowhere, so the `blur` handler focuses the list 30 ms later.
-- `s` pressed on the list does not end up typed in the field.
+- `/` pressed on the list does not end up typed in the field.
 - Arrow and page keys are handled in `on_key_down` on the root, which calls `cx.stop_propagation()` for the keys it handles.
 - After a wheel scroll the selection must be moved into view. Otherwise the next render scrolls back to it.
 - `mod.json` gives `height` as 0.7 and the list caps itself at 360px, so the popup's real height comes from its content.
@@ -109,8 +109,8 @@ Entry format, for `~/.config/herdr-app/palette.json` (a JSON list) and for a `pa
 
 - `herdr-app check ~/.config/herdr-app/mods/palette` passes.
 - `mod.open {"name": "palette"}` shows the popup with the search box border in `border`, and running it again closes it.
-- The legend starts with `j/k` on open, with `tab` after `s`, and reads `enter` save, `esc` close in the key prompt.
-- `j`, `j`, `k` selects the second row. `s`, some text, `tab`, then `j` moves the selection and leaves the text unchanged.
+- The legend starts with `j/k` on open, with `tab` after `/`, and reads `enter` save, `esc` close in the key prompt.
+- `j`, `j`, `k` selects the second row. `/`, some text, `tab`, then `j` moves the selection and leaves the text unchanged.
 - With the `palette.json` above in place, the list starts with a Custom group holding "Split down" and "Open Notes".
 - A mod whose `mod.json` has a `palette` list shows its entries under Mods with the mod's folder name on each row.
 - The row for `tab.new` shows the keycaps of the key that `keys.json` binds to it.

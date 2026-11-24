@@ -8,19 +8,21 @@
 // Facts, all booleans: url, canLaunch, canReview, canUpdate, canMove, canComment, canPost, pane, full,
 // hasFile (a file is shown, not the Overview), hasRows, vim. In "pr", f is "full" (the overlay) or "zoom" (the pane copy). In "review", canPost means the review is ready to post.
 // `nextProfile` is a string, the Profile that P switches to, or null with one Profile. `vim` is the "vimKeys" setting (D13). Off, only the keys Wayfindr had before work: arrows, home, end, enter,
-// esc, shift-left/right, ctrl-n/ctrl-p, and v/p/f in the overlay. No letters, q, g/G, ? or letter jumps.
+// esc, shift-left/right, ctrl-n/ctrl-p, and v/p/f in the overlay, plus ctrl-r (refresh) and ctrl-d/ctrl-u (half a page).
+// No letters, q, g/G, ? or letter jumps.
 
 /** The letters the "prs" layer's own keys use, so no Pull Request row gets one as its hint. */
-export const RESERVED = "jkghlsoyrqnv";
+export const RESERVED = "jkghlsoyqnv";
 
 const NAV = {
   j: "next", down: "next", "ctrl-n": "next",
   k: "prev", up: "prev", "ctrl-p": "prev",
   g: "first", home: "first",
   "shift-g": "last", end: "last",
+  "ctrl-d": "halfDown", "ctrl-u": "halfUp",
 };
 const HELP = new Set(["?", "shift-/"]);
-const PLAIN = new Set(["up", "down", "left", "right", "home", "end", "enter", "escape", "shift-left", "shift-right", "ctrl-n", "ctrl-p"]);
+const PLAIN = new Set(["up", "down", "left", "right", "home", "end", "enter", "escape", "shift-left", "shift-right", "ctrl-n", "ctrl-p", "ctrl-r", "ctrl-d", "ctrl-u"]);
 const LAYERS = ["board", "ticket", "move", "launch", "prs", "pr", "review", "confirm", "help", "settings"];
 
 const act = (action, arg) => (arg === undefined ? { action } : { action, arg });
@@ -61,7 +63,7 @@ export function keyAction(layer, k, facts = {}) {
     if (k === "p" || k === "enter") return when(f.canPost, "ask");
     if (k === "q" || k === "escape") return act("back");
     if (NAV[k]) return act(NAV[k]);
-    if (k === "r") return act("refresh");
+    if (k === "ctrl-r") return act("refresh");
     return null;
   }
   if (layer === "pr") {
@@ -73,7 +75,7 @@ export function keyAction(layer, k, facts = {}) {
     if (k === "o") return when(f.url, "browser");
     if (k === "y") return when(f.url, "copy");
     if (k === "s") return when(f.canReview && !f.pane, "review");
-    if (k === "r") return act("refresh");
+    if (k === "ctrl-r") return act("refresh");
     if (k === "q" || k === "escape") return when(!f.pane, "close");
     return null;
   }
@@ -82,10 +84,10 @@ export function keyAction(layer, k, facts = {}) {
     if (k === "o") return when(f.url, "browser");
     if (k === "y") return when(f.url, "copy");
     if (k === "s") return when(f.canReview, "review");
-    if (k === "tab") return act("toggleView");
+    if (k === "tab" || k === "v" || k === "shift-v") return act("toggleView");
     if (k === "shift-p") return when(Boolean(f.nextProfile), "profile");
     if (k === ",") return act("settings");
-    if (k === "r") return act("refresh");
+    if (k === "ctrl-r") return act("refresh");
     if (k === "q" || k === "escape") return act("close");
     if (/^[a-z]$/.test(k) && !RESERVED.includes(k)) return when(f.hasRows, "letter");
     return null;
@@ -99,10 +101,10 @@ export function keyAction(layer, k, facts = {}) {
     if (k === "o") return when(f.url, "browser");
     if (k === "y") return when(f.url, "copy");
     if (k === "s") return when(f.canLaunch, "launch");
-    if (k === "tab") return act("toggleView");
+    if (k === "tab" || k === "v" || k === "shift-v") return act("toggleView");
     if (k === "shift-p") return when(Boolean(f.nextProfile), "profile");
     if (k === ",") return act("settings");
-    if (k === "r") return act("refresh");
+    if (k === "ctrl-r") return act("refresh");
     if (k === "q" || k === "escape") return act("close");
     if (layer === "ticket") {
       if (k === "c") return when(f.canComment, "comment");
@@ -116,26 +118,26 @@ export function keyAction(layer, k, facts = {}) {
 
 /** The keystroke a hint's label stands for, where the label is not itself one. */
 export const HINT_KEYS = { "j/k": "j", "g/G": "g", "h/l": "h", "H/L": "shift-h", P: "shift-p", "a letter": "a", "?": "?",
-  "up/down": "down", "left/right": "left", "home/end": "home", "shift-left/right": "shift-left", esc: "escape" };
+  "up/down": "down", "left/right": "left", "home/end": "home", "shift-left/right": "shift-left", esc: "escape", "ctrl-d/u": "ctrl-d" };
 // The labels the legend uses with vim off. With it on, j/k, h/l, g/G, H/L and q say the same.
 const PLAIN_LABELS = new Set(["up/down", "left/right", "home/end", "shift-left/right", "esc"]);
 
 // Every hint each layer can show, in order: [label, what]. keyHints keeps the ones whose key does something.
 const ALL = {
   board: [["up/down", "card"], ["left/right", "column"], ["home/end", "first / last"], ["shift-left/right", "move card"], ["esc", "close"],
-    ["j/k", "card"], ["h/l", "column"], ["g/G", "first / last"], ["enter", "open"], ["H/L", "move card"],
-    ["s", "launch"], ["o", "browser"], ["y", "copy URL"], ["tab", "Pull Requests"], ["P", "profile"], [",", "Settings"], ["r", "refresh"], ["q", "close"]],
+    ["j/k", "card"], ["h/l", "column"], ["g/G", "first / last"], ["ctrl-d/u", "half a page"], ["enter", "open"], ["H/L", "move card"],
+    ["s", "launch"], ["o", "browser"], ["y", "copy URL"], ["v", "Pull Requests"], ["tab", "Pull Requests"], ["P", "profile"], [",", "Settings"], ["ctrl-r", "refresh"], ["q", "close"]],
   ticket: [["up/down", "card"], ["left/right", "column"], ["home/end", "first / last"], ["shift-left/right", "move card"], ["esc", "close"],
-    ["j/k", "card"], ["h/l", "column"], ["g/G", "first / last"], ["enter", "open"], ["H/L", "move card"],
+    ["j/k", "card"], ["h/l", "column"], ["g/G", "first / last"], ["ctrl-d/u", "half a page"], ["enter", "open"], ["H/L", "move card"],
     ["c", "comment"], ["e", "edit title"], ["m", "move to"], ["s", "launch"], ["o", "browser"], ["y", "copy URL"],
-    ["tab", "Pull Requests"], ["P", "profile"], [",", "Settings"], ["r", "refresh"], ["q", "close"]],
-  move: [["up/down", "column"], ["esc", "close"], ["j/k", "column"], ["g/G", "first / last"], ["enter", "move here"], ["q", "close"]],
+    ["v", "Pull Requests"], ["tab", "Pull Requests"], ["P", "profile"], [",", "Settings"], ["ctrl-r", "refresh"], ["q", "close"]],
+  move: [["up/down", "column"], ["esc", "close"], ["j/k", "column"], ["g/G", "first / last"], ["ctrl-d/u", "half a page"], ["enter", "move here"], ["q", "close"]],
   launch: [["enter", "launch"], ["esc", "close"], ["q", "close"]],
-  prs: [["up/down", "move"], ["home/end", "first / last"], ["esc", "close"], ["j/k", "move"], ["a letter", "open that row"], ["g/G", "first / last"], ["enter", "open"], ["s", "review"],
-    ["o", "browser"], ["y", "copy URL"], ["tab", "Board"], ["P", "profile"], [",", "Settings"], ["r", "refresh"], ["q", "close"]],
-  pr: [["up/down", "file"], ["home/end", "Overview / last file"], ["esc", "close"], ["j/k", "file"], ["g/G", "Overview / last file"], ["v", "viewed"], ["c", "checks"], ["p", "post review"],
-    ["s", "review"], ["f", "fullscreen"], ["o", "browser"], ["y", "copy URL"], ["r", "refetch"], ["q", "close"]],
-  review: [["up/down", "file"], ["esc", "back"], ["p", "post"], ["enter", "post"], ["j/k", "file"], ["r", "refetch"], ["q", "back"]],
+  prs: [["up/down", "move"], ["home/end", "first / last"], ["esc", "close"], ["j/k", "move"], ["a letter", "open that row"], ["g/G", "first / last"], ["ctrl-d/u", "half a page"], ["enter", "open"], ["s", "review"],
+    ["o", "browser"], ["y", "copy URL"], ["v", "Board"], ["tab", "Board"], ["P", "profile"], [",", "Settings"], ["ctrl-r", "refresh"], ["q", "close"]],
+  pr: [["up/down", "file"], ["home/end", "Overview / last file"], ["esc", "close"], ["j/k", "file"], ["g/G", "Overview / last file"], ["ctrl-d/u", "half a page"], ["v", "viewed"], ["c", "checks"], ["p", "post review"],
+    ["s", "review"], ["f", "fullscreen"], ["o", "browser"], ["y", "copy URL"], ["ctrl-r", "refetch"], ["q", "close"]],
+  review: [["up/down", "file"], ["esc", "back"], ["p", "post"], ["enter", "post"], ["j/k", "file"], ["ctrl-d/u", "half a page"], ["ctrl-r", "refetch"], ["q", "back"]],
   confirm: [["esc", "no"], ["y", "yes, post"], ["n", "no"], ["q", "no"]],
   help: [["esc", "hide this list"], ["?", "hide this list"], ["q", "hide this list"]],
   settings: [["esc", "back"], ["q", "back"]],

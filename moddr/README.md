@@ -7,7 +7,7 @@ Finds where each of your mods came from on GitHub, tells you when one has an upd
 ## Features
 
 - **Finds sources by itself.** Moddr looks for each mod in the repos its README links, in repos where your other mods were found, and in GitHub's `herdr-mod` repos that mention it. A mod whose files match a version there is tracked without asking.
-- **Checks on its own.** Every 6 hours by default, from the status-bar badge or when you open the list. `r` checks now.
+- **Checks on its own.** Every 6 hours by default, from the status-bar badge or when you open the list. `ctrl-r` checks now.
 - **Updates in place.** `u` installs the newest version: only the changed files, one at a time, after a backup. Restore puts the backup back.
 - **Talk drift through with an agent.** `d` opens a new space where your agent compares your copy with the source, explains what changed on each side and helps you merge.
 - **A badge in your status bar.** It shows how many mods have updates and opens the list when clicked.
@@ -50,8 +50,9 @@ Click the badge, press the key or pick "Moddr: Open" in the palette. The first t
 |---|---|
 | `ctrl-shift-g` | open the list, again closes it |
 | `j` / `k` | down / up |
-| `r` | look for new sources and check every tracked mod |
-| `o` | group the list by state or by source repo |
+| `ctrl-r` | look for new sources and check every tracked mod |
+| `o` | open the selected mod's source on GitHub |
+| `v` | group the list by state or by source repo |
 | `u` | update the selected mod, after a confirmation |
 | `d` | discuss its drift with an agent in a new space |
 | `z` | restore the last backup |

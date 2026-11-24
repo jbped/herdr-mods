@@ -3,7 +3,7 @@
 //
 // moddr.json: { "token"?: "<GitHub token>", "mods": { "<name>": { source, installed, tracked, check } } }
 // The person may add "token" by hand; it wins over gh's. Moddr keeps every field it does not know.
-import { appHome, exec, readTextFile, writeTextFile } from "herdr";
+import { appHome, exec, readTextFile, window as win, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
 import { ignored } from "./track.js";
 
@@ -54,6 +54,15 @@ export async function ghToken() {
   } catch {
     return null;
   }
+}
+
+/** Opens a GitHub URL in the system browser. rundll32 gets it as one argument, so nothing in it
+ *  reaches a shell. */
+export function openUrl(url) {
+  if (!/^https:\/\/github\.com\/[^\s"'<>]+$/.test(url)) return;
+  const p = win()?.platform;
+  const [cmd, args] = p === "windows" ? ["rundll32", ["url.dll,FileProtocolHandler", url]] : p === "macos" ? ["open", [url]] : ["xdg-open", [url]];
+  exec(cmd, args).catch(() => null);
 }
 
 /** The mods folder's own mods: every folder in it that Herdr did not ship. */

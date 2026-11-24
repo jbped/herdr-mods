@@ -58,11 +58,11 @@ Every entry is unread until one of these happens. The list shows which one, unde
 | `g` / `home`, `G` / `end` | first, last |
 | `ctrl-d`, `ctrl-u` | half a page (6 entries) |
 | `pagedown`, `pageup` | a page (12 entries) |
-| `enter` or `o` | go: mark it opened, close the list and run its action. With no action it is only marked. |
+| `enter` | go: mark it opened, close the list and run its action. With no action it is only marked. |
 | `r` | mark read or unread |
 | `R` | mark all read |
-| `d` or `x` | delete the entry |
-| `D` | delete all |
+| `x` or `delete` | delete the entry |
+| `X` | delete all |
 | `u` | show unread only, again shows all |
 | `?` | show every key |
 | `q` or `escape` | close |
@@ -87,5 +87,5 @@ Any mod can read them with `shared("notifyr.log")`.
 - Only layouts whose root names `notifyr` are recorded. Toasts shown before install, on another layout, or while the window is closed are not in the list.
 - It replaces Herdr's toast mod in that layout, so later changes to Herdr's toasts do not reach it.
 - The list is a centered dialog, not a menu at the bell.
-- `D` and Clear delete at once, with no confirmation and no undo.
+- `X` and Clear delete at once, with no confirmation and no undo.
 - No search or filter by text.

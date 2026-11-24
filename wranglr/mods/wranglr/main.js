@@ -45,6 +45,7 @@ const base = (path) => path.replace(/\/+$/, "").split("/").pop();
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
 const CONFIG_EVERY = 5000;
+const HALF_PAGE = 6; // rows ctrl-d and ctrl-u move the cursor
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
@@ -501,22 +502,24 @@ export default class Wranglr extends View {
     return (this.nav.find((x) => x.key === want) ?? this.nav[0])?.key ?? null;
   }
 
-  // While the list holds the keyboard: one line, or after "?" every key.
+  // While the list holds the keyboard: the legend line (key in accent, word dim), or after "?" every key on raised.
   keyHelp(t) {
-    const box = v_flex().flex_none().px(12).py(4).text_size(10.5).text_color(t.dim);
-    if (!this.help) return box.child(div().truncate().child("j/k move · enter open · ? keys"));
-    // One job per key here. enter also folds a header, as c does.
+    const box = v_flex().flex_none().px(12).py(6).border_t(1).border_color(t.border).text_size(11);
+    if (!this.help) return box.child(h_flex().flex_wrap().gap(12).children([["j/k", "move"], ["enter", "open"], ["?", "keys"]].map(([key, what]) => h_flex().gap(4).items_center()
+      .child(div().text_color(t.accent).font_semibold().child(key))
+      .child(div().text_color(t.dim).child(what)))));
+    // One job per key here. enter also folds a header, as h and l do.
     const keys = [
-      ["Move"], ["j/k", "down, up"], ["g/G", "top, bottom"],
-      ["Spaces"], ["enter", "open it"], ["t", "show or hide its tabs"], ["n", "new space here"], ["f", "find a space"],
-      ["Groups"], ["c", "fold or open this group"], ["C", "fold or open all groups"],
-      ["Sidebar"], ["s/a", "Spaces list, Agents list"], ["esc", "back to the terminal"], ["?", "hide these keys"],
+      ["Move"], ["j/k", "down, up"], ["g/G", "top, bottom"], ["ctrl-d/u", "half a page"],
+      ["Spaces"], ["enter", "open it"], ["t", "show or hide its tabs"], ["n", "new space here"], ["/", "find a space"],
+      ["Groups"], ["h/l", "fold, open this group"], ["C", "fold or open all groups"],
+      ["Sidebar"], ["s/a", "Spaces list, Agents list"], ["esc/q", "back to the terminal"], ["?", "hide these keys"],
     ];
-    return box.gap(2).border_t(1).border_color(t.border).pt(6).children(keys.map(([key, what], i) => what === undefined
+    return box.gap(2).bg(t.raised).children(keys.map(([key, what], i) => what === undefined
       ? div().mt(i ? 5 : 0).text_color(t.muted).font_semibold().child(key)
       : h_flex().pl(10).gap(8)
-        .child(div().w(36).flex_none().text_color(t.foreground).child(key))
-        .child(div().flex_1().min_w(0).truncate().child(what))));
+        .child(div().w(48).flex_none().text_color(t.accent).font_semibold().child(key))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(what))));
   }
 
   // The keyboard goes back to the pane beside the sidebar.
@@ -561,6 +564,8 @@ export default class Wranglr extends View {
     else if (k === "k" || k === "up") to(i - 1);
     else if (k === "g") to(0);
     else if (k === "shift-g") to(nav.length - 1);
+    else if (k === "ctrl-d") to(i + HALF_PAGE);
+    else if (k === "ctrl-u") to(i - HALF_PAGE);
     // Not Tab: the window takes it to step the keyboard to the next control.
     else if (k === "s" || k === "a") this.showTab(k === "a" ? "agents" : "spaces");
     else if (k === "escape" || k === "q") this.leaveKeys();
@@ -571,9 +576,11 @@ export default class Wranglr extends View {
       if (g?.can.plus) { if (g.kind === "repo" && this.config.settings.plus === "worktree") this.popupOpened(); this.plus(g, over.sub, cx); }
       else this.newSpace();
     }
-    else if (k === "f") { this.popupOpened(); run("mod.open", { name: "picker" }); }
-    else if (k === "c") {
-      if (over) { this.dispatch({ type: "fold", group: over.group, sub: over.sub }, cx); this.cursor = over.key; this.reveal = true; }
+    else if (k === "/" || e.key === "/") { this.popupOpened(); run("mod.open", { name: "picker" }); }
+    else if (k === "h" || k === "left" || k === "l" || k === "right") {
+      // h folds the cursor's Group or Subgroup, l opens it.
+      const shut = k === "h" || k === "left";
+      if (over && !!over.folded !== shut) { this.dispatch({ type: "fold", group: over.group, sub: over.sub }, cx); this.cursor = over.key; this.reveal = true; }
     }
     else if (k === "shift-c") {
       // Folds every Group while any is open, else opens them all.

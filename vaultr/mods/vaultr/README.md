@@ -51,6 +51,8 @@ The keys work while Vaultr has the keyboard: click it, or move onto it with `pan
 |---|---|
 | `/` | put the cursor in the search box |
 | `j` / `down`, `k` / `up` | move down / up the list |
+| `g` / `home`, `shift-g` / `end` | go to the first / last row of the list |
+| `ctrl-d` / `ctrl-u` | move half a page down / up the list |
 | `enter` | open the selected note, or open and close the selected folder |
 | `l` / `right`, `h` / `left` | open / close the selected folder |
 | `]` / `[` | scroll to the next / previous heading |
@@ -59,7 +61,8 @@ The keys work while Vaultr has the keyboard: click it, or move onto it with `pan
 | `b` | show or hide the list |
 | `?` | show or hide the list of every key |
 | `o` | open the note in Obsidian |
-| `r` | read the vault again |
+| `ctrl-r` | read the vault again, also from the search box |
+| `q` | close the dialog |
 | `escape` | leave the search box, or clear the search |
 
 In the search box, `down` and `up` move through the results and `enter` opens the selected one, or the first.
@@ -98,7 +101,7 @@ A link finds its note the way Obsidian does: a path from the vault's root, then 
 - The list draws every row of every open folder. It was tested with 280 notes.
 - `]`, `[` and heading links put the heading at the top of the view. Near the end of a note there is not enough text below it, so it stops lower.
 - Each image you view is copied to `~/.config/herdr-app/data/vaultr/<vault id>/`, because Herdr only draws images from its own folder. The copies are refreshed when the file changes and are never removed. Delete the folder to clear them.
-- On Linux, Herdr refuses to watch a vault with more than 4096 folders. Vaultr then stops following changes. Press `r` to read the vault again.
+- On Linux, Herdr refuses to watch a vault with more than 4096 folders. Vaultr then stops following changes. Press `ctrl-r` to read the vault again.
 - Only Windows has been tested. The macOS and Linux paths (`cp`, `open`, `xdg-open`) have not been run.
 
 ## Files

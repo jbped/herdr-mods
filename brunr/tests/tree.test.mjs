@@ -61,16 +61,19 @@ test("keys: move, fold, unfold, parent, run, run many, pickers, file, leave", ()
   assert.equal(keyAction("r", rows, folder).act, "runMany");
   assert.equal(keyAction("r", rows, 0).act, "runMany");
   assert.equal(keyAction("e", rows, req).act, "env");
-  assert.equal(keyAction("o", rows, req).act, "open");
-  assert.equal(keyAction("o", rows, 0), null);
-  assert.equal(keyAction("b", rows, req).act, "bruno");
+  assert.equal(keyAction("t", rows, req).act, "open");
+  assert.equal(keyAction("t", rows, 0), null);
+  assert.equal(keyAction("o", rows, req).act, "bruno");
+  assert.deepEqual(keyAction("half-down", rows, 0, 2), { act: "move", to: Math.min(rows.length - 1, 2) });
+  assert.deepEqual(keyAction("half-down", rows, rows.length - 1, 2), { act: "move", to: rows.length - 1 });
+  assert.deepEqual(keyAction("half-up", rows, 1, 5), { act: "move", to: 0 });
   assert.deepEqual(keyAction("escape", rows, 0), { act: "leave" });
 });
 
 test("Open Bruno is not offered for a Collection on another Machine", () => {
   const e = entry("box", "/srv/shop");
   const rows = buildRows({ entries: [e], loaded: new Map([[e.key, { collection: shop }]]), isOpen: () => false });
-  assert.equal(keyAction("b", rows, 0), null);
+  assert.equal(keyAction("o", rows, 0), null);
 });
 
 test("findBlock finds the panel's block and whether it shows", () => {
@@ -117,7 +120,7 @@ test("edit keys: n, shift-n, f2, delete, alt-up, alt-down and m on this computer
   assert.deepEqual(["n", "shift-n", "f2", "delete", "m", "alt-up"].map((k) => keyAction(k, rows, 0)?.act ?? null), ["newRequest", "newFolder", null, null, null, null], "a Collection row: new items only");
   assert.deepEqual(["alt-up", "alt-down", "enter", "r"].map((k) => keyAction(k, rows, broken)), [null, null, null, null], "a file that does not parse is not reordered or run");
   assert.equal(keyAction("f2", rows, broken).act, "rename");
-  assert.equal(keyAction("o", rows, broken).act, "open");
+  assert.equal(keyAction("t", rows, broken).act, "open");
   const remote = buildRows({ entries: [entry("box", "/srv/shop")], loaded: new Map([["box|/srv/shop", { collection: shop }]]), isOpen: () => true });
   const r = remote.findIndex((x) => x.kind === "request" && !x.broken);
   assert.deepEqual(["n", "f2", "delete", "m", "alt-up"].map((k) => keyAction(k, remote, r)), [null, null, null, null, null]);

@@ -77,7 +77,7 @@ function pick(v) {
 }
 
 test("the edit keys are in the dialog's shortcuts registry, on free keys, and can be switched off", () => {
-  assert.deepEqual(SHORTCUTS.map((s) => `${s.id}=${s.key}`), ["new-request=n", "new-folder=shift-n", "rename=shift-r", "move-to=m", "move-up=ctrl-up", "move-down=ctrl-down", "delete=delete"]);
+  assert.deepEqual(SHORTCUTS.map((s) => `${s.id}=${s.key}`), ["new-request=n", "new-folder=shift-n", "rename=f2", "move-to=m", "move-up=ctrl-up", "move-down=ctrl-down", "delete=delete"]);
   const all = dialog.shortcuts.keys.map((k) => k.key);
   assert.equal(new Set(all).size, all.length, "no two shortcuts share a key");
   for (const s of SHORTCUTS) assert.ok(dialog.shortcuts.keys.some((k) => k.id === s.id), `${s.id} can be switched off or moved in the settings`);
@@ -91,7 +91,7 @@ test("the edit keys are in the dialog's shortcuts registry, on free keys, and ca
 test("the row menu lists the edit actions with their keys; a Collection on another Machine gets none", () => {
   dialog.openMenu(row(key(ROOT(), "products")));
   const labels = dialog.pickers.open.options.map((o) => `${o.label}${o.hint ? ` [${o.hint}]` : ""}`);
-  for (const l of ["New Request [n]", "New folder [shift-n]", "Rename [shift-r]", "Move to… [m]", "Delete [delete]"]) assert.ok(labels.includes(l), `${l} in ${labels.join(", ")}`);
+  for (const l of ["New Request [n]", "New folder [shift-n]", "Rename [f2]", "Move to… [m]", "Delete [delete]"]) assert.ok(labels.includes(l), `${l} in ${labels.join(", ")}`);
   dialog.pickers.close();
   dialog.openMenu(row(key(ROOT())));
   assert.ok(dialog.pickers.open.options.some((o) => o.label === "Environments…"));
@@ -108,7 +108,7 @@ test("n opens New Request in the folder; typed letters run no tree key; enter cr
   assert.equal(f.open, true);
   assert.equal(f.form.title, "New Request");
   const calls = herdr.calls.length;
-  for (const k of ["b", "y", "r", "e", "j", "n", "f2"]) press_key(dialog, k);
+  for (const k of ["o", "y", "r", "e", "j", "n", "f2"]) press_key(dialog, k);
   assert.equal(herdr.calls.length, calls, "no key started a program while the form was open");
   assert.equal(dialog.vars, null);
   type(f.inputs.name, "Top: Sellers?", cx);
@@ -143,13 +143,13 @@ test("a name check shows under the field, and esc closes the form without a chan
   assert.equal(existsSync(join(ROOT(), "products/CON")), false);
 });
 
-test("shift-r renames the shown Request with a Draft: the Draft and the Request column follow the file", async () => {
+test("f2 renames the shown Request with a Draft: the Draft and the Request column follow the file", async () => {
   const k = key(ROOT(), "products/List Products.yml");
   select(k);
   await waitFor(() => dialog.request.req?.key === k && dialog.request.reqText != null, "the Request");
   dialog.request.replaceText(dialog.request.reqText.replace("/products", "/products?draft=1"));
   assert.ok(drafts.has(k));
-  press_key(dialog, "shift-r");
+  press_key(dialog, "f2");
   const f = dialog.treeForm;
   type(f.inputs.name, "Catalog", cx);
   type(f.inputs.file, "Catalog", cx);
@@ -291,7 +291,7 @@ test("ctrl-s saves the open editor and not the Request's Draft; once it closes, 
   assert.ok(drafts.has(k), "the Draft is still a Draft");
   // Typed keys while the editor is open run nothing outside it.
   const calls = herdr.calls.length;
-  for (const c of ["b", "y", "r", "n", "delete"]) press_key(dialog, c);
+  for (const c of ["o", "y", "r", "n", "delete"]) press_key(dialog, c);
   assert.equal(herdr.calls.length, calls);
   assert.equal(dialog.pickers.open, null);
   // esc closes it, asking first only when there are unsaved edits.

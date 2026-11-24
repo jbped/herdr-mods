@@ -53,6 +53,9 @@ function bindHomeEnd(cx) {
       { keystroke: "end", action: "gitr::End", context: "Gitr > Input" },
       { keystroke: "escape", action: "gitr::Escape", context: "Gitr" },
       { keystroke: "escape", action: "gitr::Escape", context: "Gitr > Input" },
+      // Herdr binds f2 to tab.rename; a binding in Gitr's own context reaches Gitr first.
+      { keystroke: "f2", action: "gitr::Rename", context: "Gitr" },
+      { keystroke: "f2", action: "gitr::Rename", context: "Gitr > Input" },
     ]);
   } catch (e) { console.log(`gitr: home and end not bound: ${e?.message ?? e}`); }
 }
@@ -460,6 +463,7 @@ export default class Gitr extends View {
       .on_key_down((e, cx) => this.key(e, cx, view))
       .on_action("gitr::Home", (_e, cx) => { if (!this.ask) this.move(-view.order.length, view.order, cx); })
       .on_action("gitr::Escape", (_e, cx) => this.escape(cx))
+      .on_action("gitr::Rename", (_e, cx) => { if (!this.ask) this.perform({ type: "rename", row: this.sel }, cx); })
       .on_action("gitr::End", (_e, cx) => { if (!this.ask) this.move(view.order.length, view.order, cx); })
       .child(this.titleRow(t))
       .children(this.ask ? [this.askPanel(t)] : this.listPanel(t, view));
@@ -580,10 +584,10 @@ export default class Gitr extends View {
   }
 
   keyBar(t, items) {
-    return h_flex().flex_none().flex_wrap().pt(6).px(4).gap(4).border_t_1().border_color(t.border).text_size(11.5)
-      .children(items.map((it, i) => h_flex().id(`gitr-key-${i}`).flex_none().px(6).py(2).gap(5).rounded(5).cursor_pointer()
+    return h_flex().flex_none().flex_wrap().pt(6).px(4).gap(2).border_t_1().border_color(t.border).text_size(11)
+      .children(items.map((it, i) => h_flex().id(`gitr-key-${i}`).flex_none().px(6).py(2).gap(4).rounded(5).cursor_pointer()
         .hover((s) => s.bg(t.hover)).on_click((_e, cx) => it.run(cx))
-        .child(div().text_color(t.foreground).child(keyLabel(it.key)))
+        .child(div().text_color(t.accent).font_semibold().child(keyLabel(it.key)))
         .child(div().text_color(t.dim).child(it.label))));
   }
 

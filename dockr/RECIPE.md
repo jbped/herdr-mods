@@ -64,7 +64,7 @@ Updating:
 
 - The list changes when Docker reports a container created, started, stopped, removed, renamed or changing health. No timer runs.
 - CPU and memory update about every two seconds while the panel shows, and stop while it is hidden.
-- Showing the panel again reads `dockr.json`, the worktrees and Docker once. The refresh icon does the same.
+- Showing the panel again reads `dockr.json`, the worktrees and Docker once. The refresh icon and `ctrl-r` do the same.
 - Three exits inside one minute show as "restart loop".
 - While the panel is hidden, a container of a configured Stack earns a toast: "gateway started", "gateway is unhealthy", "gateway exited 1" or "gateway keeps restarting". Clicking it shows the panel. Containers you acted on in the last 30 seconds earn none.
 - A build that fails earns one toast, "Rebuild gateway failed". Clicking it opens the output.
@@ -87,6 +87,8 @@ Panel keys, after `ctrl-shift-d`:
 | `j` / `k`, arrows, `ctrl-n` / `ctrl-p` | move |
 | a row's letter | jump to it |
 | `g` / `G` | first / last |
+| `ctrl-d` / `ctrl-u` | half a page down / up |
+| `ctrl-r` | read Docker, the worktrees and `dockr.json` again |
 | `enter` | open the container, or fold the group |
 | `s` / `x` / `r` | start / stop / restart |
 | `t` | terminal in the container |
@@ -94,7 +96,7 @@ Panel keys, after `ctrl-shift-d`:
 | `d` | diagnose, on a bad container |
 | `o` | open its first link or port |
 | `y` | copy the container name |
-| `u` / `X` | start all / stop all in the group |
+| `S` / `X` | start all / stop all in the group |
 | `D` | remove the group's containers, after a confirm |
 | `h` / `l` | fold / unfold the group |
 | `m` | the menu (`j`/`k`, `enter`, `esc`) |
@@ -114,7 +116,7 @@ Container window:
 
 Checkout picker:
 
-- Typing filters by branch or path. Arrows or `ctrl-j`/`ctrl-k` move, `enter` switches, `ctrl-r` rebuilds, `ctrl-s` toggles "Start if stopped", `esc` closes.
+- Typing filters by branch or path. Arrows or `ctrl-j`/`ctrl-k` move, `enter` switches, `ctrl-b` rebuilds, `ctrl-s` toggles "Start if stopped", `esc` closes.
 - Each checkout says what it costs. "recreate" brings the container up again. "rebuild" builds the image first.
 - When other services have a worktree on the picked branch, "also move <service>" is ticked for each.
 - A switch of a running service starts at once. A stopped one stays stopped unless "Start if stopped" is ticked, and the note says "set. Nothing was running, so nothing was started."

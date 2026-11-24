@@ -61,13 +61,14 @@ export const foldable = (row) => row?.kind === "collection" || row?.kind === "fo
 export const runsMany = foldable;
 
 /**
- * What a key does on the selected row: `{ act, ... }` or null.
+ * What a key does on the selected row: `{ act, ... }` or null. `half`: how many rows half-down
+ * and half-up (ctrl-d and ctrl-u) move.
  * Acts: move (`to`, an index), fold (`key`, `open`), run (`row`), runMany (`row`), env (`row`),
  * global (`row`), open (`row`: show it in the pane), bruno (`row`), leave, and the edit actions
  * on this computer (`row`): newRequest (n), newFolder (shift-n), rename (f2), delete, moveUp
  * (alt-up), moveDown (alt-down), moveTo (m).
  */
-export function keyAction(keystroke, rows, at) {
+export function keyAction(keystroke, rows, at, half = 1) {
   const row = rows[at] ?? null;
   const last = rows.length - 1;
   switch (keystroke) {
@@ -75,6 +76,8 @@ export function keyAction(keystroke, rows, at) {
     case "down": case "j": return rows.length ? { act: "move", to: Math.min(last, at + 1) } : null;
     case "home": return rows.length ? { act: "move", to: 0 } : null;
     case "end": return rows.length ? { act: "move", to: last } : null;
+    case "half-down": return rows.length ? { act: "move", to: Math.min(last, at + half) } : null;
+    case "half-up": return rows.length ? { act: "move", to: Math.max(0, at - half) } : null;
     case "escape": case "q": return { act: "leave" };
   }
   if (!row) return null;
@@ -99,13 +102,13 @@ export function keyAction(keystroke, rows, at) {
     case "e":
       if (row.kind === "global") return { act: "global", row };
       return row.ck ? { act: "env", row } : null;
-    case "o": return row.kind === "request" ? { act: "open", row } : null;
-    case "b": return row.ck && row.machine == null ? { act: "bruno", row } : null;
+    case "t": return row.kind === "request" ? { act: "open", row } : null;
+    case "o": return row.ck && row.machine == null ? { act: "bruno", row } : null;
   }
   return editKey(keystroke, row);
 }
 
-const EDIT_KEYS = { n: "newRequest", "shift-n": "newFolder", N: "newFolder", f2: "rename", delete: "delete", "alt-up": "moveUp", "alt-down": "moveDown", m: "moveTo" };
+const EDIT_KEYS = { n: "newRequest", "shift-n": "newFolder", N: "newFolder", f2: "rename", delete: "delete", x: "delete", "alt-up": "moveUp", "alt-down": "moveDown", m: "moveTo" };
 
 /** The edit action a key starts on a row of this computer, or null. */
 function editKey(keystroke, row) {

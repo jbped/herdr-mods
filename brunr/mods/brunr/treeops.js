@@ -175,10 +175,10 @@ export function rowMenu(row, { canRun = true, up = false, down = false, busy = f
   const edit = (label, action, hint = "", disabled = false) => (local ? [item(label, action, hint, busy || disabled)] : []);
   const order = [...edit("Move to…", "moveTo", "m"), ...edit("Move up", "moveUp", "Alt+Up", !up), ...edit("Move down", "moveDown", "Alt+Down", !down)];
   if (row.kind === "request" && row.broken) {
-    return [item("Open", "open", "o"), ...edit("Rename", "rename", "F2"), ...edit("Move to…", "moveTo", "m"), ...edit("Delete", "delete", "Del")];
+    return [item("Open", "open", "t"), ...edit("Rename", "rename", "F2"), ...edit("Move to…", "moveTo", "m"), ...edit("Delete", "delete", "Del")];
   }
   if (row.kind === "request") {
-    return [item("Open", "open", "o"), item("Run", "run", "Enter", !canRun), ...edit("Clone", "clone"), ...edit("Rename", "rename", "F2"), ...order, ...edit("Delete", "delete", "Del")];
+    return [item("Open", "open", "t"), item("Run", "run", "Enter", !canRun), ...edit("Clone", "clone"), ...edit("Rename", "rename", "F2"), ...order, ...edit("Delete", "delete", "Del")];
   }
   if (row.kind === "folder") {
     return [item("Run folder", "runMany", "r", !canRun), ...edit("New Request", "newRequest", "n"), ...edit("New folder", "newFolder", "Shift+N"),

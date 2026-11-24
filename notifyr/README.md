@@ -12,7 +12,7 @@ A log of every notification Herdr shows, with a bell that counts the new ones an
 - **Icons that say what it was.** An agent's entry shows that agent's icon. Any other entry shows a glyph for its level: success, warning, error or info.
 - **A bell with a count.** A small mark you place anywhere in your layout. It shows how many entries are unread.
 - **Entries still act.** Open an entry to run what its toast would have run, such as going to the agent that needed you.
-- **Vim keys.** `j` and `k` move, `enter` goes, `r` marks read or unread, `d` deletes, `u` shows unread only.
+- **Vim keys.** `j` and `k` move, `enter` goes, `r` marks read or unread, `x` deletes, `u` shows unread only.
 - **History that lasts.** The last 200 are kept across restarts. Clear empties the list.
 - **Toasts look the same.** Notifications are drawn as Herdr draws them, including the Copy button on a machine login notice.
 
@@ -48,7 +48,7 @@ Click the bell or press the key to open the list. Click an entry to go to it. Th
 | `j` / `k` | down / up |
 | `enter` | go to the entry |
 | `r` | mark read or unread |
-| `d` | delete the entry |
+| `x` | delete the entry |
 | `u` | show unread only |
 | `?` | every key |
 | `q` or `escape` | close |

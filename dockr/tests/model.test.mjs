@@ -455,14 +455,14 @@ test("panelItems, keyAction and keyHints follow the run mod's keys", () => {
   assert.equal(act("d", row, { ...up, created: false }), null);
   assert.equal(act("o", row, up), "row:browser");
   assert.equal(act("enter", row, up), "row:open");
-  assert.equal(act("u", row, up), "group:up");
+  assert.equal(act("shift-s", row, up), "group:up");
   assert.equal(act("shift-x", row, up), "group:stop");
   assert.equal(act("shift-d", row, up), "group:down");
   assert.equal(act("h", row, up), "group:fold");
   assert.equal(act("enter", head), "group:toggle");
   assert.equal(act("s", head), null);
-  assert.equal(act("u", loose), null); // the containers in no project have no group actions
-  assert.equal(act("u", row, { ...up, anyDown: false }), null); // nothing to start
+  assert.equal(act("shift-s", loose), null); // the containers in no project have no group actions
+  assert.equal(act("shift-s", row, { ...up, anyDown: false }), null); // nothing to start
   assert.equal(act("shift-x", row, { ...up, anyUp: false }), null); // nothing to stop
   assert.equal(act("shift-d", loose), null);
   assert.equal(act("q", null), "panel:leave");
@@ -476,8 +476,8 @@ test("panelItems, keyAction and keyHints follow the run mod's keys", () => {
   assert.deepEqual(m.coreHints(row, up).map(([k]) => k), ["j/k", "enter", "d", "t", "r", "x", "c", "b", "m", "?"]);
   assert.ok(m.coreHints(row, up).some(([k, w]) => k === "enter" && w === "logs"));
   assert.deepEqual(m.coreHints(row, down).map(([k]) => k).slice(0, 4), ["j/k", "enter", "d", "s"]);
-  assert.ok(!m.coreHints(row, down).some(([k]) => k === "t" || k === "u"));
-  assert.ok(m.coreHints(head, up).some(([k]) => k === "u"));
+  assert.ok(!m.coreHints(row, down).some(([k]) => k === "t" || k === "S"));
+  assert.ok(m.coreHints(head, up).some(([k]) => k === "S"));
   assert.equal(act("?", row, up), "panel:help");
   assert.equal(act("shift-/", null), "panel:help");
 });

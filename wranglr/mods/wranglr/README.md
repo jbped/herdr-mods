@@ -65,11 +65,12 @@ Every command is also in the palette (the `palette` mod).
 |---|---|
 | `j` / `k`, or the arrows | Cursor down, up |
 | `g` / `G` | Cursor to the top, the bottom |
+| `ctrl-d` / `ctrl-u` | Cursor half a page (6 rows) down, up |
 | `enter` | Open the space, tab or agent and give the keyboard back. On a Group or Subgroup: fold or open it |
 | `t` | Show or hide the space's tabs |
 | `n` | New space in the cursor's Group, as its "+" starts one |
-| `f` | Herdr's picker, to find a space |
-| `c` | Fold or open the cursor's Group or Subgroup |
+| `/` | Herdr's picker, to find a space |
+| `h` / `l`, or `left` / `right` | Fold, open the cursor's Group or Subgroup |
 | `C` | Fold every Group while one is open, else open them all |
 | `s` / `a` | The Spaces list, the Agents list |
 | `esc` or `q` | Give the keyboard back to the pane it came from |

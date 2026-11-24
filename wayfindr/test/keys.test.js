@@ -8,14 +8,17 @@ const NONE = {};
 const LAYERS = ["board", "ticket", "move", "launch", "prs", "pr", "review", "confirm", "help", "settings"];
 const a = (layer, k, facts = ALL_FACTS) => keyAction(layer, k, facts)?.action ?? null;
 
-test("shared movement: j/k, arrows, ctrl-n/ctrl-p, g/G, enter, r, q, ?", () => {
+test("shared movement: j/k, arrows, ctrl-n/ctrl-p, g/G, ctrl-d/ctrl-u, enter, ctrl-r, q, ?", () => {
   for (const layer of ["board", "ticket", "prs"]) {
     for (const k of ["j", "down", "ctrl-n"]) assert.equal(a(layer, k), "next", `${layer} ${k}`);
     for (const k of ["k", "up", "ctrl-p"]) assert.equal(a(layer, k), "prev", `${layer} ${k}`);
     assert.equal(a(layer, "g"), "first");
     assert.equal(a(layer, "shift-g"), "last");
     assert.equal(a(layer, "enter"), "open");
-    assert.equal(a(layer, "r"), "refresh");
+    assert.equal(a(layer, "ctrl-d"), "halfDown");
+    assert.equal(a(layer, "ctrl-u"), "halfUp");
+    assert.equal(a(layer, "ctrl-r"), "refresh");
+    assert.equal(a(layer, "r"), layer === "prs" ? "letter" : null);
     assert.equal(a(layer, "q"), "close");
     assert.equal(a(layer, "?"), "help");
     assert.equal(a(layer, "shift-/"), "help");
@@ -45,6 +48,9 @@ test("board: columns, moving a card, browser, copy, launch, views", () => {
   assert.equal(a("board", "s"), "launch");
   assert.equal(a("board", "s", { ...ALL_FACTS, canLaunch: false }), null);
   assert.equal(a("board", "tab"), "toggleView");
+  assert.equal(a("board", "v"), "toggleView");
+  assert.equal(a("board", "shift-v"), "toggleView");
+  assert.equal(a("ticket", "v"), "toggleView");
   assert.equal(a("board", "shift-p"), "profile");
   assert.equal(a("board", "shift-p", { ...ALL_FACTS, nextProfile: null }), null);
   assert.equal(a("board", "b"), null);
@@ -67,6 +73,7 @@ test("ticket: the Board's keys plus comment, edit and Move", () => {
 test("move: j/k move in the list, enter picks, q and esc close it", () => {
   assert.equal(a("move", "j"), "next");
   assert.equal(a("move", "up"), "prev");
+  assert.equal(a("move", "ctrl-u"), "halfUp");
   assert.equal(a("move", "enter"), "pick");
   assert.equal(a("move", "q"), "close");
   assert.equal(a("move", "escape"), "close");
@@ -86,6 +93,8 @@ test("prs: browser, copy, review, views and a letter per row", () => {
   assert.equal(a("prs", "s"), "review");
   assert.equal(a("prs", "s", { ...ALL_FACTS, canReview: false }), null);
   assert.equal(a("prs", "tab"), "toggleView");
+  assert.equal(a("prs", "v"), "toggleView");
+  assert.equal(a("prs", "shift-v"), "toggleView");
   assert.equal(a("prs", "shift-p"), "profile");
   assert.equal(a("prs", "b"), "letter");
   assert.equal(a("prs", "p"), "letter");
@@ -110,7 +119,9 @@ test("pr: files, viewed, checks, post, fullscreen, browser, copy, review, refetc
   assert.equal(a("pr", "o"), "browser");
   assert.equal(a("pr", "y"), "copy");
   assert.equal(a("pr", "s"), "review");
-  assert.equal(a("pr", "r"), "refresh");
+  assert.equal(a("pr", "ctrl-d"), "halfDown");
+  assert.equal(a("pr", "ctrl-r"), "refresh");
+  assert.equal(a("pr", "r"), null);
   assert.equal(a("pr", "q"), "close");
   assert.equal(a("pr", "enter"), null);
 });
@@ -189,7 +200,7 @@ test("keyHints lists every key that works, and drops the rest", () => {
   assert.deepEqual(keyHints("help", ALL_FACTS).map(([k]) => k), ["?", "q"]);
 });
 
-// D13: with vim off, only the keys Wayfindr had before, plus ctrl-n/ctrl-p.
+// D13: with vim off, only the keys Wayfindr had before, plus ctrl-n/ctrl-p, ctrl-r and ctrl-d/ctrl-u.
 for (const layer of LAYERS) {
   test(`vim off: ${layer} lists and takes no letter keys but the overlay's v/p/f`, () => {
     for (const facts of [PLAIN, { ...PLAIN, pane: true }, NONE]) {
@@ -207,7 +218,7 @@ for (const layer of LAYERS) {
   });
 }
 
-test("vim off: arrows, home/end, enter, esc, shift-arrows and ctrl-n/ctrl-p still work", () => {
+test("vim off: arrows, home/end, enter, esc, shift-arrows, ctrl-n/ctrl-p, ctrl-r and ctrl-d/ctrl-u still work", () => {
   assert.equal(a("board", "down", PLAIN), "next");
   assert.equal(a("board", "ctrl-n", PLAIN), "next");
   assert.equal(a("board", "ctrl-p", PLAIN), "prev");
@@ -219,6 +230,9 @@ test("vim off: arrows, home/end, enter, esc, shift-arrows and ctrl-n/ctrl-p stil
   assert.equal(a("board", "shift-right", PLAIN), "moveRight");
   assert.equal(a("pr", "up", PLAIN), "prev");
   assert.equal(a("pr", "home", PLAIN), "first");
+  assert.equal(a("board", "ctrl-r", PLAIN), "refresh");
+  assert.equal(a("board", "ctrl-d", PLAIN), "halfDown");
+  assert.equal(a("prs", "ctrl-u", PLAIN), "halfUp");
   for (const [k, act] of [["v", "viewed"], ["p", "post"], ["f", "full"]]) assert.equal(a("pr", k, PLAIN), act);
   assert.equal(a("prs", "enter", PLAIN), "open");
   assert.equal(a("move", "enter", PLAIN), "pick");

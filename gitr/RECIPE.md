@@ -19,7 +19,7 @@ A popup 860px wide on `popover`, 40px below the top of the window, with 12px pad
   - at the right, 12px, 10px apart: `↑n ↓n` in `dim`, `±n` in `done`, `gone` or `prunable` in `blocked`, and the age in a 34px `dim` column.
   - space rows are indented 12px more: a 7px round dot in the status color (`working`, `blocked`, `done`, `idle`, else `unknown`), the space name, and the status word at the right in its color.
 - With nothing to show, the list holds one `dim` line ("No branches", or `Nothing matches "<text>"`). Before the first read it shows a spinner and "Reading...". A failed first read shows git's message in `muted`.
-- **Footer**, under a 1px `border` line, 11.5px: `key label` pairs (key in `foreground`, `^o` for `ctrl-o`, label in `dim`), each a clickable pill with `hover`.
+- **Footer**, under a 1px `border` line, 11px: `key label` pairs (key in semibold `accent`, `^o` for `ctrl-o`, label in `dim`), about 14px apart, each a clickable pill with `hover`.
 
 A question replaces everything under the title row (the chips hide) with a 520px panel: a 15px semibold title, its body, Cancel (`raised`, `input` outline) and the yes button (`solid`, or `blocked` when it can lose work), both 32px with radius 8, and a footer of its keys.
 
@@ -34,7 +34,7 @@ A question replaces everything under the title row (the chips hide) with a 520px
 - Typing filters by Branch name, Worktree directory and space name. A space that matches keeps its Branch, a Branch that matches keeps its spaces. A search unfolds remote branches. Typing a valid name no Branch has adds a `Create "<name>"` row.
 - `up`, `down`, `pageup`, `pagedown` (10 rows), `home`, `end` move the selection. The selection keeps its row across refreshes and moves to the nearest row when its row goes.
 - `enter` runs the row's default: a space row goes to that space and closes Gitr. The Main checkout and a Branch with a Worktree go to their first space, else start one there. A Branch checked out nowhere, a remote branch and a Create row get a Worktree and a space, or a checkout in the Main checkout, as the setting says.
-- `ctrl-o` checkout, `ctrl-w` Worktree, `ctrl-n` new Branch, `ctrl-d` delete, `ctrl-r` rename, `ctrl-u` remove Worktree, `ctrl-f` fetch, `ctrl-l` refresh, `ctrl-k` clean up, `ctrl-s` sort, `ctrl-t` filter, `ctrl-g` fold remote branches, `ctrl-p` switch Repo, `ctrl-e` switch Machine.
+- `ctrl-o` checkout, `ctrl-w` Worktree, `ctrl-n` new Branch, `ctrl-d` delete, `f2` rename, `ctrl-u` remove Worktree, `ctrl-f` fetch, `ctrl-r` refresh, `ctrl-k` clean up, `ctrl-s` sort, `ctrl-t` filter, `ctrl-g` fold remote branches, `ctrl-p` switch Repo, `ctrl-e` switch Machine.
 - `escape` closes a question, else clears the search, else closes Gitr.
 - A click selects a row. A click on the selected row or a double click runs Enter. Chips, the Repo and Machine names, the remote section title and footer items run their action on click.
 - Agent status shows only on space rows: the dot and the word take the `working`, `blocked`, `done` or `idle` color. Nothing animates except the spinners.

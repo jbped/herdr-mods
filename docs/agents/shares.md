@@ -42,7 +42,7 @@ Mods are edited in `~/.config/herdr-app/mods/`, where Herdr hot-reloads them, th
 ## Adding a share
 
 1. Create `<share>/mods/<name>/`, then `./sync.sh <share>`.
-2. Add `keys.json` with the keys it expects, and a `LICENSE` when the mod is cloned from someone else's.
+2. Choose its keys from `docs/agents/keys.md`. Add `keys.json` with the keys it expects, and a `LICENSE` when the mod is cloned from someone else's.
 3. Write the reference, then the page.
 4. Take `preview.png`.
 5. `./check.sh` prints `ok`.

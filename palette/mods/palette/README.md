@@ -15,7 +15,7 @@ A command palette that mods can add entries to, styled after Herdr's own. It lis
 
 ## Use
 
-The palette opens with the keyboard on the list: `j` / `k` move and `enter` runs. `s` goes to the search box, where you type to filter (every word must match), and `tab` returns to the list. On the list, `shift-j` / `shift-k` jump to the next or previous group. In both places `up` / `down` or the wheel move, `ctrl` with `j` / `k` or the arrows moves a page (`pagedown` / `pageup` and `ctrl-d` / `ctrl-u` too), `ctrl-n` / `ctrl-p` move a row, `shift-down` / `shift-up` jump a group, `enter` to run, `escape` to close. A command with required arguments asks for them first: type a value for its first argument, or a JSON object such as `{"direction": "right", "mod": "wingman"}`. `escape` goes back to the list.
+The palette opens with the keyboard on the list: `j` / `k` move and `enter` runs. `/` goes to the search box, where you type to filter (every word must match), and `tab` returns to the list. On the list, `shift-j` / `shift-k` jump to the next or previous group, and `q` closes. In both places `up` / `down` or the wheel move, `ctrl` with `j` / `k` or the arrows moves a page (`pagedown` / `pageup` and `ctrl-d` / `ctrl-u` too), `ctrl-n` / `ctrl-p` move a row, `shift-down` / `shift-up` jump a group, `enter` to run, `escape` to close. A command with required arguments asks for them first: type a value for its first argument, or a JSON object such as `{"direction": "right", "mod": "wingman"}`. `escape` goes back to the list.
 
 ## Setting a key
 
